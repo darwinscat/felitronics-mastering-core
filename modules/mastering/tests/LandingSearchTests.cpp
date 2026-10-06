@@ -395,35 +395,18 @@ int main()
                 && clipExcerptResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe);
         std::printf ("  out-of-excerpt clip peak: %d full, %.3f dB maximum reduction\n",
             clipExcerptResult.answer.passes, clipExcerptResult.answer.measured.peakClipReductionMaxDb);
-        test::ok (clipExcerptResult.done && ! fullPeakProbe && clipExcerptResult.answer.passes == 5
+        test::ok (clipExcerptResult.done && fullPeakProbe
                   && clipExcerptResult.answer.measured.peakClipReductionMaxDb <= 1.001,
-            "whole-programme peak windows find the transient outside the loudness excerpt: the first full render is a "
-            "candidate and the clipper respects its one-decibel cut");
+            "clipper calibration measures the whole file and respects its one-decibel cut");
         LandingSetup peakWall; peakWall.target = -5; peakWall.slopeBelow = .2;
         peakWall.peakClipCutDb = 1.0;
         peakWall.peakClipPeakDb = 20.0 * std::log10 (*std::max_element (pcm.begin(), pcm.end(),
             [] (float a, float b) noexcept { return std::fabs (a) < std::fabs (b); }));
         const auto peakWallResult = land (dense, peakWall);
-        test::ok (peakWallResult.done && peakWallResult.answer.logCount > 1
-                  && peakWallResult.answer.log[0].reason != SolvePassRecord::Reason::PeakProbe
+        test::ok (peakWallResult.done && peakWallResult.answer.logCount > 2
+                  && peakWallResult.answer.log[0].reason == SolvePassRecord::Reason::PeakProbe
                   && (! peakWallResult.answer.limiterWall || peakWallResult.answer.limiterSlope > 0.0),
-            "a confirmed peak forecast makes the first full render eligible for the limiter wall");
-        std::vector<float> missedPcm (std::size_t (8 * kRate));
-        for (std::size_t i = 0; i < missedPcm.size(); ++i)
-        {
-            const double t = double (i) / kRate;
-            missedPcm[i] = float (.9 * core::det::sin (6.283185307179586 * 20.0 * t));
-            if (t >= 6.5 && t < 7.5) missedPcm[i] += float (.4 * core::det::sin (6.283185307179586 * 6000.0 * t));
-        }
-        LandingSetup missed; missed.target = -10; missed.highPassHz = 1000.0;
-        missed.peakClipPeakDb = 20.0 * std::log10 (.9); missed.peakClipCutDb = 1.0;
-        const auto missedResult = land (Programme (missedPcm), missed);
-        bool fellBack = false;
-        for (int i = 0; i < missedResult.answer.logCount; ++i)
-            fellBack = fellBack || missedResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe;
-        test::ok (missedResult.done && fellBack && missedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
-            "a short-window forecast that misses the filtered programme maximum falls back to the full probe and keeps "
-            "the clipper bound");
+            "the uncalibrated peak probe cannot establish the limiter wall");
         LandingSetup loud; loud.target = -5; loud.limiterBudgetDb = 7.5; loud.slopeBelow = .2;
         const auto wall = land (dense, loud);
         auto before = loud; before.slopeBelow = 0;
@@ -1132,9 +1115,9 @@ int main()
         std::printf ("        one pass, the clip's peak a forecast: status %d; measured: status %d, %d pass, gain %.3f dB\n",
                      (int) forecast.answer.status, (int) measured.answer.status, measured.answer.passes,
                      measured.answer.preLimiterGainDb);
-        test::ok (forecast.done && measured.done
+        test::ok (! forecast.done && forecast.answer.status == MasteringSolveStatus::Unavailable && measured.done
                   && measured.answer.passes == 1 && std::fabs (measured.answer.preLimiterGainDb - 6.0) <= 1.0e-12,
-                  "a confirmed peak forecast and a peak given as measured both spend no extra full pass");
+                  "a peak given as measured spends no pass: one pass renders the given gain and delivers it");
     }
 
     return test::report();

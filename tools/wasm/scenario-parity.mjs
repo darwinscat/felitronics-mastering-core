@@ -20,7 +20,7 @@ const native = {
     // windows graded (v0.14.0); plan did not. The limiter budget's search aimed at its crossing (v0.17.0) is the max
     // modes' alone: this manual master keeps the previous search and PCM to the bit. In v0.18.0 the empty tonal fact
     // was removed, moving only the facts digest.
-    parity: 'plan=8043eff22be0264c facts=459ec288daa044be pcm=5d2f3e053b69ad1f wav=9844e4d1243a07b2',
+    parity: 'plan=8043eff22be0264c facts=d018777c3a8dab20 pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0',
 };
 for (const [name, want] of Object.entries(native)) {
     const lines = [...output.matchAll(new RegExp(`^scenario-${name} (.+)$`, 'gm'))];

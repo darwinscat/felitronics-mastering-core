@@ -94,7 +94,7 @@ const std::uint64_t kGrWindowBytes =
 constexpr auto kSolutionReturnBytes = felitronics::mastering::TargetLoudnessSolver::solutionReturnBytes();
 
 // The manual limiter wall adds 32 P95 readings (256 B) and its result flag and two numbers (24 B), on both tiers.
-constexpr std::uint64_t kSolutionRecordRest = sizeof (void*) == 8 ? 3592u : 3588u;
+constexpr std::uint64_t kSolutionRecordRest = sizeof (void*) == 8 ? 3336u : 3332u;
 
 // The topology axis of the memory-exhaustion (law 11d) create/configure matrix — see the switch that reads it.
 constexpr int kTopologies = 9;
@@ -2309,8 +2309,7 @@ int main()
         (void) fc_solution_destroy (sol);
         ok (fc_solution_gr_trace (sol, FC_GR_STAGE_LIMITER, again.data(), 1000u, &w) == FC_ERR_HANDLE, "a destroyed solution is stale");
 
-        // THE PRICE, PINNED: the v0.18 pass log appends 16 bytes to each of its 32 inline records (512 bytes total),
-        // and the short peak forecast retains its three source coordinates and one resumable render's state (256 B).
+        // THE PRICE, PINNED: the v0.18 pass log appends 16 bytes to each of its 32 inline records (512 bytes total).
         // Traces, histograms, dynamic-band vectors and their stores remain accounted separately below.
         {
             using felitronics::mastering::GainReductionTrace;
