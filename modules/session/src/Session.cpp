@@ -115,6 +115,7 @@ void Session::clearMasters() noexcept
     jobRecipe_ = {};
     jobWaiting_ = false;                       // a load ends a waiting master too: the needles are the new project's
     jobMasterAnyway_ = false;
+    jobBudgetResolutionDb_.reset();
     masterJob_.reset();
     masterJobBytes_ = 0;
     lateMasterJob_.reset();

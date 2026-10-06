@@ -36,7 +36,7 @@ enum class LandingConstraint : std::uint8_t
 };
 enum class LandingPassReason : std::uint8_t
 {
-    AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, Excerpt, DeliverWinner
+    AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, DeliverWinner
 };
 struct LandingPass
 {
@@ -46,8 +46,6 @@ struct LandingPass
     bool overBudget = false;   // the limiter took more than the landing's budget on this render: no candidate
     std::optional<double> limiterP95Db;
     LandingPassReason reason = LandingPassReason::AimAtTarget;
-    bool excerpt = false;
-    std::uint64_t excerptFromFrame = 0, excerptFrames = 0;
 };
 struct LandingTraceBucket
 {

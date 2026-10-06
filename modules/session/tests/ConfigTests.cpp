@@ -144,6 +144,8 @@ void theSchemaRefuses()
     const auto T = Document::Targets;
     mustRefuse (E, "limiterSlopeBelow = 0.2", "limiterSlopeBelow = 0", "0", Fault::OutOfRange, "landing.limiterSlopeBelow");
     mustRefuse (E, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0", "0", Fault::OutOfRange, "landing.limiterSlopeSpacingDb");
+    mustRefuse (E, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.01", "0.01", Fault::OutOfRange,
+                "landing.max.budgetResolutionDb");
 
     // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
     // key the typo stood for is missing, pointed at the table that lacks it.

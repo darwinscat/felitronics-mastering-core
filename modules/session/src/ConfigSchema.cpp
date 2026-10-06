@@ -249,7 +249,7 @@ struct Doc
     }
 
     // The limiter's budget is a whole number of quarter dB, as written: the drive the landing resolves its proof to
-    // (LandingSearch kBudgetResolutionDb, 0.25 dB), and two decimals print it whole.
+    // (LandingSearch's default budgetResolutionDb, 0.25 dB), and two decimals print it whole.
     void onQuarterDb (Reader& in, std::string_view key)
     {
         const auto x = decimalAt (in, key);
@@ -335,6 +335,7 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         const bool ceiling = t.required ("ceilingLufs", o.maxCeilingLufs, R { -20.0, 0.0 });
         const bool floor = t.required ("floorLufs", o.maxFloorLufs, R { -30.0, 0.0 });
         d.notAbove (t, floor && ceiling, o.maxFloorLufs, o.maxCeilingLufs, "ceilingLufs");   // the floor under the ceiling
+        t.required ("budgetResolutionDb", o.maxBudgetResolutionDb, R { 0.05, 1.0 });
         const auto mode = [&] (std::string_view key, double& budget)
         {
             t.table (key, Need::Required, [&] (Reader& m)

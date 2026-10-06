@@ -85,7 +85,7 @@ constexpr Golden kGolden[] = {
     // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
     // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
     // It was 3ca74d45e21253d9; updated in place before the release.
-    { "2026-10", 0x0aea937888c4b21full },
+    { "2026-10", 0x086fda481af08315ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -210,6 +210,8 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.landing.denseBudgetDb, 1.75), "max dense: the limiter's budget 1.75 dB, about −11 LUFS (owner, 04.10, by ear)");
     need (same (e.landing.maxCeilingLufs, -5.0), "the max modes search up to −5 LUFS");
     need (same (e.landing.maxFloorLufs, -14.0), "a max master never lands under −14 LUFS, whichever target (owner, 04.10)");
+    need (same (e.landing.maxBudgetResolutionDb, 0.25),
+          "the limiter-budget edge is proved to 0.25 dB unless a master asks for 0.05…1 dB");
     need (same (e.landing.quietBudgetDb, 4.0) && same (e.landing.middleBudgetDb, 7.0)
           && same (e.landing.loudBudgetDb, 7.5)
           && same (e.landing.middleLufs.min, -10.0) && same (e.landing.middleLufs.max, -8.0),
@@ -354,6 +356,8 @@ void aDepartureIsNamed()
           "max dense: the limiter's budget 1.75 dB, about −11 LUFS (owner, 04.10, by ear)" },
         { false, "ceilingLufs = -5", "ceilingLufs = -6", "the max modes search up to −5 LUFS" },
         { false, "floorLufs = -14", "floorLufs = -13", "a max master never lands under −14 LUFS, whichever target (owner, 04.10)" },
+        { false, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.5",
+          "the limiter-budget edge is proved to 0.25 dB unless a master asks for 0.05…1 dB" },
         { true, "loudnessMode = \"maxDense\" }", "loudnessMode = \"maxClean\" }", "targets.maxDense.loudnessMode" },
         { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "loudDb = 7.5,", "loudDb = 10,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },

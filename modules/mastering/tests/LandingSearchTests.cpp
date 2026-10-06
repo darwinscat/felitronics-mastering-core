@@ -332,7 +332,7 @@ int main()
         test::ok (oldStyle.violated == oldMask && std::isnan (oldStyle.limiterP95Db),
             "the pre-v0.18 positional pass record still initializes its violation mask");
         test::ok (offsetof (LoudnessRequest, clipperLoudShare)
-                     > offsetof (LoudnessRequest, limiterStatisticSkipFrames),
+                     > offsetof (LoudnessRequest, budgetResolutionDb),
             "release-added request fields remain after the older aggregate layout");
     }
     {
@@ -368,18 +368,18 @@ int main()
                 + .05 * core::det::sin (.72 * double (i)));
         clipPcm[500] = .95f;
         const Programme clipProgramme (clipPcm);
-        LandingSetup clipExcerpt; clipExcerpt.target = -5; clipExcerpt.limiterBudgetDb = .5;
-        clipExcerpt.maxMode = true; clipExcerpt.excerptSearch = true;
-        clipExcerpt.peakClipPeakDb = 20.0 * std::log10 (.95); clipExcerpt.peakClipCutDb = 1.0;
-        const auto clipExcerptResult = land (clipProgramme, clipExcerpt);
+        LandingSetup clipProgrammeSetup; clipProgrammeSetup.target = -5; clipProgrammeSetup.limiterBudgetDb = .5;
+        clipProgrammeSetup.maxMode = true;
+        clipProgrammeSetup.peakClipPeakDb = 20.0 * std::log10 (.95); clipProgrammeSetup.peakClipCutDb = 1.0;
+        const auto clipProgrammeResult = land (clipProgramme, clipProgrammeSetup);
         bool fullPeakProbe = false;
-        for (int i = 0; i < clipExcerptResult.answer.logCount; ++i)
-            fullPeakProbe = fullPeakProbe || (! clipExcerptResult.answer.log[i].excerpt
-                && clipExcerptResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe);
-        std::printf ("  out-of-excerpt clip peak: %d full, %.3f dB maximum reduction\n",
-            clipExcerptResult.answer.passes, clipExcerptResult.answer.measured.peakClipReductionMaxDb);
-        test::ok (clipExcerptResult.done && fullPeakProbe
-                  && clipExcerptResult.answer.measured.peakClipReductionMaxDb <= 1.001,
+        for (int i = 0; i < clipProgrammeResult.answer.logCount; ++i)
+            fullPeakProbe = fullPeakProbe
+                || clipProgrammeResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe;
+        std::printf ("  full-programme clip peak: %d renders, %.3f dB maximum reduction\n",
+            clipProgrammeResult.answer.passes, clipProgrammeResult.answer.measured.peakClipReductionMaxDb);
+        test::ok (clipProgrammeResult.done && fullPeakProbe
+                  && clipProgrammeResult.answer.measured.peakClipReductionMaxDb <= 1.001,
             "clipper calibration measures the whole file and respects its one-decibel cut");
         LandingSetup peakWall; peakWall.target = -5; peakWall.slopeBelow = .2;
         peakWall.peakClipCutDb = 1.0;

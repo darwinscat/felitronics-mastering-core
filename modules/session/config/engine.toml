@@ -85,6 +85,8 @@ limiterSlopeSpacingDb = 0.5
 [landing.max]
 ceilingLufs = -5
 floorLufs = -14
+# The drive interval that proves the limiter-budget edge. The master command may override it within 0.05…1 dB.
+budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
 
