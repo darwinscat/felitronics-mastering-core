@@ -417,13 +417,17 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.maxExcerptPercentile = number (max.find ("excerptPercentile"));
         result.request.maxExcerptToleranceDb = number (max.find ("excerptToleranceDb"));
         result.request.maxExcerptOffsetDb = number (max.find ("excerptOffsetDb"));
+        const auto peakP95 = max.find ("excerptPeakP95").boolean();
+        result.request.maxExcerptPeakP95 = peakP95 && *peakP95;
+        result.request.maxExcerptPeakOffsetDb = number (max.find ("excerptPeakOffsetDb"));
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
-            || ! std::isfinite (result.floorLufs) || ! excerpt
+            || ! std::isfinite (result.floorLufs) || ! excerpt || ! peakP95
             || ! std::isfinite (result.request.maxExcerptSeconds)
             || ! std::isfinite (result.request.maxExcerptPreRollSeconds)
             || ! std::isfinite (result.request.maxExcerptPercentile)
             || ! std::isfinite (result.request.maxExcerptToleranceDb)
-            || ! std::isfinite (result.request.maxExcerptOffsetDb))
+            || ! std::isfinite (result.request.maxExcerptOffsetDb)
+            || ! std::isfinite (result.request.maxExcerptPeakOffsetDb))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;

@@ -154,6 +154,10 @@ void theSchemaRefuses()
                 "landing.max.excerptToleranceDb");
     mustRefuse (E, "excerptOffsetDb = 0.5", "excerptOffsetDb = 25", "25", Fault::OutOfRange,
                 "landing.max.excerptOffsetDb");
+    mustRefuse (E, "excerptPeakP95 = true", "excerptPeakP95 = 1", "1", Fault::WrongType,
+                "landing.max.excerptPeakP95");
+    mustRefuse (E, "excerptPeakOffsetDb = 0", "excerptPeakOffsetDb = 25", "25", Fault::OutOfRange,
+                "landing.max.excerptPeakOffsetDb");
     mustRefuse (E, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.01", "0.01", Fault::OutOfRange,
                 "landing.max.budgetResolutionDb");
 

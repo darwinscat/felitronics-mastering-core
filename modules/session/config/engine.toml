@@ -94,6 +94,10 @@ excerptPreRollSeconds = 2
 excerptPercentile = 90
 excerptToleranceDb = 0.25
 excerptOffsetDb = 0.5
+# The measured alternative: match the window's P95 of 4 ms source-peak blocks to the file's. Off retains the loudness
+# P90 rule above and its offset; on uses its own offset, calibrated on the 37-song native study.
+excerptPeakP95 = true
+excerptPeakOffsetDb = 0
 budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
