@@ -899,6 +899,8 @@ struct LoudnessRequest
     double maxExcerptPeakOffsetDb = 0.0;
     // Re-render the excerpt's opening drive with the calibrated whole-programme clipper after a forecast miss.
     bool maxExcerptSurvivesForecastMiss = false;
+    // Warm each one-second peak forecast window, excluding the run-up from its statistics and reconstructed peak.
+    double peakForecastPreRollSeconds = 0.0;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to
@@ -2446,8 +2448,8 @@ private:
                         {
                             p.limSum->add (a);
                             p.limActive->add (a, (double) pk);
+                            if (pk > maxReconLin_) maxReconLin_ = pk;
                         }
-                        if (pk > maxReconLin_) maxReconLin_ = pk;
                         p.clipTrace->add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
                     }
                     if (applied) p.limTrace->add ((std::uint64_t) (s - limAppliedFrom), a);

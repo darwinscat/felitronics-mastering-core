@@ -422,6 +422,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.maxExcerptPeakOffsetDb = number (max.find ("excerptPeakOffsetDb"));
         const auto survive = max.find ("excerptSurvivesForecastMiss").boolean();
         result.request.maxExcerptSurvivesForecastMiss = survive && *survive;
+        result.request.peakForecastPreRollSeconds = number (max.find ("peakForecastPreRollSeconds"));
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
             || ! std::isfinite (result.floorLufs) || ! excerpt || ! peakP95 || ! survive
             || ! std::isfinite (result.request.maxExcerptSeconds)
@@ -429,7 +430,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             || ! std::isfinite (result.request.maxExcerptPercentile)
             || ! std::isfinite (result.request.maxExcerptToleranceDb)
             || ! std::isfinite (result.request.maxExcerptOffsetDb)
-            || ! std::isfinite (result.request.maxExcerptPeakOffsetDb))
+            || ! std::isfinite (result.request.maxExcerptPeakOffsetDb)
+            || ! std::isfinite (result.request.peakForecastPreRollSeconds))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
