@@ -142,7 +142,7 @@ typedef enum fc_session_status
     FC_SESSION_ERR_MEMORY = 10,         // create demand exceeds the supplied ceiling
     FC_SESSION_ERR_TOO_SMALL = 11,      // caller output capacity is insufficient
     FC_SESSION_ERR_CONTRACT = 12,       // invalid transfer value
-    FC_SESSION_ERR_OVERLAP = 13,        // output overlaps another output or an input
+    FC_SESSION_ERR_OVERLAP = 13,        // output overlaps another output, an input or a retained master PCM
     FC_SESSION_ERR_TRAP = 14,           // shell maps a thrown wasm trap/abort to this status; see POISON
     FC_SESSION_ERR_STRUCT_TOO_SMALL = 15, // size is below the v1 record size
     FC_SESSION_ERR_STRUCT_TOO_LARGE = 16, // size exceeds the record this build understands
@@ -260,6 +260,9 @@ typedef enum fc_session_step_state
 // Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
 // while no command or step intervenes. No pointer into session memory survives a call except the
 // explicitly scoped master audio view below, which expires at the next module call or memory.grow.
+// Every entry that writes a caller buffer, the kit's included, refuses an output inside any live
+// session's retained master PCM with ERR_OVERLAP, so a stale view never becomes a destination. A call that may free
+// that PCM (load, load_measured, attach_audio, command) refuses an input inside it the same way, before freeing anything.
 //
 // Additive v1 measurement data: reading payloads include a fixed source-frame grid, window reasons,
 // detailed clip rows and total/stored counts. Reports live in snapshot measurements with per-field reasons.
