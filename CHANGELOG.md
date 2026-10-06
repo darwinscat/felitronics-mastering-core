@@ -2,7 +2,7 @@
 
 # Changelog
 
-## Unreleased
+## v0.18.0 — 2026-10-06
 
 ### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)
 
@@ -49,9 +49,8 @@
   the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
 - **ABI 13** appends the delivery fields, `masterAnyway`, `budgetResolutionDb`, landing pass P95/reason, source facts
   454–457, the as-worked entry points and
-  `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. The package version is unchanged pending review.
-  Config is `b2ad32d4f400fb52`, sound `0aea937888c4b21f`: the target classes and delivery ceilings now participate in the
-  sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.
+  `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. Config is `3b84f25acb565a44`, sound
+  `086fda481af08315`: the target classes and delivery ceilings now participate in the sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.
 
 ## v0.17.0 — 2026-10-05
 
