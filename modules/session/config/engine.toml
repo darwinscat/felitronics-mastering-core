@@ -179,8 +179,11 @@ lowestNoteFromHz = 25
 infraLowCrossoverHz = 30
 
 # THE GEOMETRY OF THE MAIN RUN — the core's LowEnd defaults written out as numbers, so that nothing depends on a default
-# that may move. With these the table is 59 semitone bands, MIDI 4…62 (10.30…293.66 Hz): from 10 Hz since 06.10 (owner: the
-# rubbish under 20 Hz is of interest), the lowest note from [lowEnd] lowestNoteFromHz. fftOrder 17: a 2.73 s window and a
+# that may move. With these the table is 68 semitone bands, MIDI 4…71 (10.30…493.88 Hz): from 10 Hz since 06.10 (owner: the
+# rubbish under 20 Hz is of interest), the lowest note from [lowEnd] lowestNoteFromHz; to 500 Hz since 07.10 for the
+# drawings (LowSpectrum, LowSide: the side share for mono bass up to 500), while noteTopHz keeps every reading of the
+# note — occupancy, the loudest band, the lowest band, the NoEnergy gate — on the bands up to 300 Hz, MIDI 4…62, as
+# before: a band above it carries energy, density and side for a drawing, and an occupancy of 0. fftOrder 17: a 2.73 s window and a
 # 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo); its bands are four bins wide — a Hann
 # main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1, 50.71 at 96), and the bands under that are published as unresolved. skipBlocks 0 is a named
 # impossibility rather than a choice: the settling count the core derives from the filter is not on its interface, and
@@ -190,7 +193,8 @@ infraLowCrossoverHz = 30
 [lowEnd.run]
 crossoverHz = 120
 lowNoteHz = 10
-highNoteHz = 300
+highNoteHz = 500
+noteTopHz = 300
 fftOrder = 17
 dutyThresholdDb = 20
 skipBlocks = 0
