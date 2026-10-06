@@ -75,6 +75,9 @@ struct KitTravel
 // window, 0 inside, +1 above. The windows and their outer bounds, all from the config:
 //   the target's loudness and ceiling   [edit] lufs/tp green, out to the knob's travel (targets.toml)
 //   the high-pass's cutoff              [hpf] comfort lowHz…highHz, out to warningLowHz / warningHighHz
+//   mono bass's crossover               [monoBass] comfort lowHz…highHz, out to warningLowHz / warningHighHz
+//   the glue's amount and mix           [glue] comfort, mixComfort: low…high, out to warningLow / warningHigh
+//   the saturation's drive              [saturation] driveComfort: low…high, out to warningLow / warningHigh
 //   tilt and low                        [tilt]/[low] normal, out to hard
 //   the five EQ bands' gains            [bands.*] normal, out to hard (owner, 02.10: coloured as tilt and low)
 // A knob without a window answers window = false, heat 0, side 0.

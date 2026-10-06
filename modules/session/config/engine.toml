@@ -271,6 +271,9 @@ marks = [
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
 # frequencyRange, frequencyStep: the crossover knob's travel and its step — 0, no step (owner, 07.10: as the high-pass's
 #   cutoff; it was 5 Hz from 02.10): a typed value is kept as typed, the travel is continuous.
+# comfort (owner, 07.10: "everything as in HPF"): the crossover knob's field is neutral from lowHz to highHz and shades
+#   towards warningLowHz below and warningHighHz above, red past them — a hint to the knob, as [hpf] comfort is; it
+#   changes neither the machine nor the travel.
 [monoBass]
 frequencyDomain = [60, 300]
 lowWidthDomain = [0, 1]
@@ -279,6 +282,7 @@ lowWidthRange = [0, 1]
 lowWidthStep = 0.05
 frequencyRange = [60, 300]
 frequencyStep = 0
+comfort = { lowHz = 100, highHz = 180, warningLowHz = 75, warningHighHz = 250 }
 loss = { warnFromDb = 1, offAboveDb = 3, soundingWithinDb = 20, soundingAtLeastS = 3 }
 
 # The knob's scale shows two regions, each with a physical reason rather than a taste; the map is static — it follows
@@ -366,8 +370,11 @@ trustedConfidence = "high"
 #   1.25, 1.52 for 2.6 and 1.54 for 3 (1.86 for 0.5, 1.74 for 6); with 1.5 the median is 1.27, 2.61 and 3.02 dB, the
 #   single mixes 1.02…1.55, 2.19…3.04 and 2.56…3.48 (at 0 it was 1.68, 3.24 and 3.70). The report states what each
 #   master's compressor really took.
-# STEPLESS (owner, 07.10, as the high-pass, mono bass and the EQ): knobStepDb and mixStep 0 — a typed value is kept as
-# typed.
+# STEPLESS AND COLOURED (owner, 07.10, as the high-pass, mono bass and the EQ): knobStepDb and mixStep 0 — a typed value is
+# kept as typed. comfort, mixComfort: the knobs' fields, as [hpf] comfort — neutral from low to high, shading towards
+# warningLow below and warningHigh above, red past them. A side that does not exist is an edge AT the domain's end
+# (low = warningLow = 0 for the amount, high = warningHigh = 1 for the mix): no value lies beyond it. The amount's red at
+# 6 dB is the domain's end; the knob's travel ends at 3 dB, where the field stands a third of the way to red.
 [glue]
 domain = [0, 6]
 default = 0
@@ -382,6 +389,7 @@ divisor = { from = 2, to = 8, law = "geometric" }
 knobMinDb = 0
 knobMaxDb = 3
 knobStepDb = 0
+comfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 6 }
 # THE GLUE IN PARALLEL (owner decision, 05.10, v0.17.0: «делай ручку 40% по дефолту»): the compressed signal's share of the
 # glue's output — the rest the dry signal (the chain's compressorMix), 1 the downward glue as it always was. mix: what the
 # machine's layer takes, the auto plan and a manual glue alike; the overnight study (parallel variants at the same share)
@@ -392,6 +400,7 @@ mixDomain = [0, 1]
 mix = 0.4
 mixRange = [0, 1]
 mixStep = 0
+mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
 
 # SATURATION — the peak-normalised saturator, the chain's clipper stage. A taste of the manual mode: the machine never
 # sets it, and it does not shorten needles (the peak clipper inside the limiter does).
@@ -418,7 +427,8 @@ mixStep = 0
 #   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the mix is
 #   in both). The report gives the largest cut and the usual one over the
 #   loud places — the loudShare of the quanta with the highest input peaks: their largest, and their median.
-# STEPLESS (owner, 07.10): driveStep 0 — a typed value is kept as typed.
+# STEPLESS AND COLOURED (owner, 07.10): driveStep 0 — a typed value is kept as typed; driveComfort: the drive knob's field,
+# as [glue] comfort — neutral 0…1.5 dB, red at 8 dB, no low side (an edge at the domain's start).
 [saturation]
 driveDomain = [0, 12]
 mixDomain = [0, 1]
@@ -426,6 +436,7 @@ shape = "tape"
 driveDb = 0
 driveRange = [0, 12]
 driveStep = 0
+driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }
 bias = 0
 mix = 1
 mixRange = [0, 1]

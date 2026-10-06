@@ -100,13 +100,25 @@ std::optional<Window> windowOf (const Rules& r, Term field) noexcept
         w.outHigh = number (edit.find ("to"));
         return w;
     }
-    if (field == Term::FieldHpfFq)
+    if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq)
     {
-        const View comfort = r.engine.find ("hpf").find ("comfort");
+        const View comfort = r.engine.find (field == Term::FieldHpfFq ? "hpf" : "monoBass").find ("comfort");
         w.low = number (comfort.find ("lowHz"));
         w.high = number (comfort.find ("highHz"));
         w.outLow = number (comfort.find ("warningLowHz"));
         w.outHigh = number (comfort.find ("warningHighHz"));
+        return w;
+    }
+    // The glue's amount and mix, the saturation's drive (owner, 07.10): low, high, warningLow, warningHigh.
+    if (field == Term::FieldGlueUpToDb || field == Term::FieldGlueMix || field == Term::FieldSaturationDrive)
+    {
+        const View comfort = field == Term::FieldGlueUpToDb ? r.engine.find ("glue").find ("comfort")
+                           : field == Term::FieldGlueMix ? r.engine.find ("glue").find ("mixComfort")
+                           : r.engine.find ("saturation").find ("driveComfort");
+        w.low = number (comfort.find ("low"));
+        w.high = number (comfort.find ("high"));
+        w.outLow = number (comfort.find ("warningLow"));
+        w.outHigh = number (comfort.find ("warningHigh"));
         return w;
     }
     if (field == Term::FieldTiltDb || field == Term::FieldLowDb)

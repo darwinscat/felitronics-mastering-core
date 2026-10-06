@@ -166,6 +166,13 @@ struct Limiter
     PeakClipper peakClipper;
 };
 
+// A knob's coloured window (owner, 07.10): neutral from low to high, shading out to warningLow / warningHigh. A side that
+// does not exist is an edge at the domain's end.
+struct Comfort
+{
+    double low = 0.0, high = 0.0, warningLow = 0.0, warningHigh = 0.0;
+};
+
 struct LowEndRun
 {
     double crossoverHz = 0.0;
@@ -237,6 +244,7 @@ struct MonoBass
     double lossSoundingWithinDb = 0.0, lossSoundingAtLeastS = 0.0;  // loss.soundingWithinDb, loss.soundingAtLeastS
     Zone clubZone;                             // zones.club
     Zone vinylZone;                            // zones.vinyl
+    HpfComfort comfort;                        // comfort: the crossover knob's field, read as [hpf] comfort is
 };
 
 enum class Detector : std::uint8_t { Peak, Rms };
@@ -292,6 +300,7 @@ struct Glue
     // `mixStep` inside `mixDomain`.
     Span mixDomain, mixRange;
     double mix = 0.0, mixStep = 0.0;
+    Comfort comfort, mixComfort;               // the amount's and the mix's fields
 };
 
 // felitronics-core's WaveShaper::Shape, in its order and values (Tube … Tape since v0.57.0). The machine's type; a person
@@ -305,6 +314,7 @@ struct Saturation
     double driveDb = 0.0;
     Span driveRange;
     double driveStep = 0.0;
+    Comfort driveComfort;                      // the drive's field
     double bias = 0.0;
     double mix = 0.0;
     Span mixRange;
