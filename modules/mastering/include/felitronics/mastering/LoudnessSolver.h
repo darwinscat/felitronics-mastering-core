@@ -878,14 +878,8 @@ struct LoudnessRequest
     // The manual landing's wall: LU bought per dB of active P95 cut, measured between existing passes. Zero disables it.
     double limiterSlopeBelow = 0.0;
     double limiterSlopeSpacingDb = 0.5;
-    // A max landing may first bracket its limiter budget on the loudest source excerpt. Off preserves v0.17.0's max
-    // search to the bit. The pre-roll warms the chain but is excluded from the excerpt's budget statistic.
-    bool maxExcerptSearch = false;
-    double maxExcerptSeconds = 30.0;
-    double maxExcerptPreRollSeconds = 2.0;
-    double maxExcerptToleranceDb = 0.25;
-    double maxExcerptOffsetDb = 1.0;
-    long long limiterStatisticSkipFrames = 0;
+    // The full-file budget proof's drive resolution, independently chosen by the caller.
+    double budgetResolutionDb = 0.25;
     // Optional product-report snapshot of the clipper's loudest input quanta. LandingSearch takes it whenever the
     // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
     // Appended so positional initialisers written against the older public aggregate retain their meaning.
@@ -903,13 +897,11 @@ struct SolvePassRecord
     // Why this render exists. Appended so old aggregate initialisers retain their meaning.
     enum class Reason : std::uint8_t
     {
-        AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, Excerpt, DeliverWinner
+        AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, DeliverWinner
     };
     std::uint32_t violated = 0;
     double limiterP95Db = std::numeric_limits<double>::quiet_NaN(); // active windows, product landing only
     Reason reason = Reason::AimAtTarget;
-    bool excerpt = false;
-    long long excerptFromFrame = 0, excerptFrames = 0;
 };
 
 struct LoudnessSolution
@@ -948,7 +940,7 @@ struct LoudnessSolution
     }
 
     // FULL-PROGRAMME RENDERS SPENT. `maxPasses` bounds the SEARCH; an ordinary solve's delivery and rescue can add
-    // renders as documented by solve(). Product excerpt renders are logged but do not increment this number.
+    // renders as documented by solve().
     int    passes = 0;
     double activityThresholdDb = 0.1;           // echoed, because a fraction without its threshold is not a number
 
@@ -956,8 +948,7 @@ struct LoudnessSolution
     double achievedBelowLufs = 0.0, achievedAboveLufs = 0.0;
     double gainBelowDb = 0.0, gainAboveDb = 0.0;
 
-    // Every render in order. Product excerpt rows precede the full rows, so `logCount` may exceed `passes`; a fallback
-    // delivery re-render is last and repeats an earlier candidate's gain and ceiling.
+    // Every render in order. A fallback delivery re-render is last and repeats an earlier candidate's gain and ceiling.
     SolvePassRecord log[TargetLoudnessSolverLimits::kMaxPasses] {};
     int logCount = 0;
 
@@ -2413,8 +2404,6 @@ private:
             }
             if (s >= satFrom && s < satTo) p.satTrace->add ((std::uint64_t) (s - satFrom), (double) shaveTap_[(std::size_t) j]);
             const bool detector = s >= limDetectorFrom && s < limDetectorTo;
-            const bool statisticDetector = detector
-                && s - limDetectorFrom >= p.req->limiterStatisticSkipFrames;
             const bool applied = s >= limAppliedFrom && s < limAppliedTo;
             if (detector || applied)
                 for (int k = 0; k < p.chain->tapOversampleFactor(); ++k)
@@ -2423,12 +2412,9 @@ private:
                     const double a = std::fabs ((double) limTap_[idx]);
                     if (detector)
                     {
+                        p.limSum->add (a);
                         const float pk = limPeak_[idx];
-                        if (statisticDetector)
-                        {
-                            p.limSum->add (a);
-                            p.limActive->add (a, (double) pk);
-                        }
+                        p.limActive->add (a, (double) pk);
                         if (pk > maxReconLin_) maxReconLin_ = pk;
                         p.clipTrace->add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
                     }

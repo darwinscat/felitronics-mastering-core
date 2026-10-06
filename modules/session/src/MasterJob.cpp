@@ -379,9 +379,9 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         || result.request.clipperLoudShare <= 0.0 || result.request.clipperLoudShare > 1.0)
     { result.rejection = Rejection::MandatoryUnavailable; return result; }
     const auto* momentary = findArray (s.measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
-    if (momentary && momentary->complete && momentary->stored != 0)
+    if (*onGate && momentary && momentary->complete && momentary->stored != 0)
     {
-        result.request.landingOnSourceGate = *onGate;
+        result.request.landingOnSourceGate = true;
         result.request.sourceMomentaryLufs = momentary->values.data();
         result.request.sourceMomentaryCount = (long long) momentary->stored;
         result.request.sourceMomentaryHopFrames = (long long) momentary->grid.stepFrames;
@@ -406,18 +406,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.targetLufs = number (max.find ("ceilingLufs"));
         result.request.limiterGr.limitDb = maxBudgetDb (engine, result.loudnessMode);
         result.request.budgetAimsAtCrossing = true;   // v0.17.0: a manual landing keeps the previous search, to the bit
-        const auto excerpt = max.find ("excerptSearch").boolean();
-        result.request.maxExcerptSearch = excerpt && *excerpt;
-        result.request.maxExcerptSeconds = number (max.find ("excerptSeconds"));
-        result.request.maxExcerptPreRollSeconds = number (max.find ("excerptPreRollSeconds"));
-        result.request.maxExcerptToleranceDb = number (max.find ("excerptToleranceDb"));
-        result.request.maxExcerptOffsetDb = number (max.find ("excerptOffsetDb"));
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
-            || ! std::isfinite (result.floorLufs) || ! excerpt
-            || ! std::isfinite (result.request.maxExcerptSeconds)
-            || ! std::isfinite (result.request.maxExcerptPreRollSeconds)
-            || ! std::isfinite (result.request.maxExcerptToleranceDb)
-            || ! std::isfinite (result.request.maxExcerptOffsetDb))
+            || ! std::isfinite (result.floorLufs))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
@@ -528,7 +518,6 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     floorRequest.targetLufs = plan.floorLufs;
     floorRequest.limiterGr = {};
     floorRequest.landingOnSourceGate = false;
-    floorRequest.maxExcerptSearch = false;
     floorPass = false;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;

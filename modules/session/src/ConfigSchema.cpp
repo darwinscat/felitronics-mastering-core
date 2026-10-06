@@ -335,11 +335,6 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         const bool ceiling = t.required ("ceilingLufs", o.maxCeilingLufs, R { -20.0, 0.0 });
         const bool floor = t.required ("floorLufs", o.maxFloorLufs, R { -30.0, 0.0 });
         d.notAbove (t, floor && ceiling, o.maxFloorLufs, o.maxCeilingLufs, "ceilingLufs");   // the floor under the ceiling
-        t.required ("excerptSearch", o.maxExcerptSearch);
-        t.required ("excerptSeconds", o.maxExcerptSeconds, R { 1.0, 600.0 });
-        t.required ("excerptPreRollSeconds", o.maxExcerptPreRollSeconds, R { 0.0, 30.0 });
-        t.required ("excerptToleranceDb", o.maxExcerptToleranceDb, R { 0.01, 6.0 });
-        t.required ("excerptOffsetDb", o.maxExcerptOffsetDb, R { -24.0, 24.0 });
         const auto mode = [&] (std::string_view key, double& budget)
         {
             t.table (key, Need::Required, [&] (Reader& m)

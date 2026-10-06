@@ -1928,15 +1928,6 @@ above it, as 615's; within it as it is) — no claim of what held the first land
 floor (the true peak, the passes) says what held it instead (`TruePeak`, `Passes`), never `Floor`. A max row's `lufs` is where its
 manual mode starts (−13 clean, −11 dense): the planner reads it as before.
 
-Before those full-file renders, `[landing.max] excerptSearch = true` finds the loudest 30-second source window from the
-momentary loudness series already held by the landing. It renders that excerpt through the same chain with two seconds
-of pre-roll; the pre-roll warms state but is excluded from the limiter statistic. A bounded Brent search brackets the
-P95 budget edge to `excerptToleranceDb` (0.25 dB), then the first full render starts at that edge plus
-`excerptOffsetDb` (+1 dB). The full search uses the same safeguarded interpolation inside its narrow bracket without
-the v0.17.0 five-percent guard; its proof remains the delivered drive no more than 0.25 dB below the lowest full drive
-measured over budget. Missing or unusable momentary rows, or an excerpt render that cannot measure P95, fall back to the
-v0.17.0 full-programme path bit for bit. The switch off does the same. Manual landings never enter the excerpt path.
-
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
 frames, block hops, three band corners, frame count, block count, completeness and provenance travel with

@@ -532,12 +532,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 end ? 1.0 : std::min (0.999999, fraction),
                 config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->search.startedRenders()), expectedRenders,
                 masterUnit_, total, end ? std::nullopt : masterJob_->stepFraction() };
-            if (! delivery && ! end && masterJob_->search.renderingExcerpt())
-            {
-                masterProgress_.excerpt = true;
-                masterProgress_.excerptFromFrame = masterJob_->search.excerptFromFrame();
-                masterProgress_.excerptFrames = masterJob_->search.excerptFrames();
-            }
             event.payload.phase = masterProgress_;
             emit (event);
             if (! delivery && masterJob_->search.startedPasses() != beforePass)
