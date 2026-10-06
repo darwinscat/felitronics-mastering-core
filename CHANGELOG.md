@@ -6,6 +6,11 @@
 
 ### mastering · session — retained winners, explanatory pass logs and excerpt-first max search (owner, 05.10)
 
+- **The max excerpt can be selected by source peaks**: `[landing.max] excerptPeakP95 = true` uses one source walk and
+  bounded quarter-dB histograms to take the earliest 20-second window whose P95 of 4-ms stereo block peaks is nearest
+  the file's. Deterministic core logarithms make the decision identical native/wasm, and the histogram work is counted.
+  Its separately measured `excerptPeakOffsetDb` is 0 dB. Switching it off restores the loudness-P90 selector and its
+  +0.5 dB offset.
 - **The winning render is retained as PCM** and restored without a duplicate render. Its optional nothrow allocation
   falls back to the previous counted delivery render on failure. Fresh and retained memory declarations name the third
   full PCM buffer, and the session memory gate includes it.

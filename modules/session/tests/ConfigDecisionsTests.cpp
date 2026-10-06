@@ -85,7 +85,7 @@ constexpr Golden kGolden[] = {
     // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
     // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
     // It was 3ca74d45e21253d9; updated in place before the release.
-    { "2026-10", 0x6ee5bb40a36f1ea4ull }, // v0.18: measured excerpt-first max search defaults
+    { "2026-10", 0xa45fbb28a46a91d6ull }, // v0.18: measured excerpt-first max search defaults
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -214,8 +214,9 @@ std::vector<std::string> departures (const config::Config& c)
           && same (e.landing.maxExcerptPreRollSeconds, 2.0)
           && same (e.landing.maxExcerptPercentile, 90.0)
           && same (e.landing.maxExcerptToleranceDb, 0.25) && same (e.landing.maxExcerptOffsetDb, 0.5)
+          && e.landing.maxExcerptPeakP95 && same (e.landing.maxExcerptPeakOffsetDb, 0.0)
           && same (e.landing.maxBudgetResolutionDb, 0.25),
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB");
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB");
     need (same (e.landing.quietBudgetDb, 4.0) && same (e.landing.middleBudgetDb, 7.0)
           && same (e.landing.loudBudgetDb, 7.5)
           && same (e.landing.middleLufs.min, -10.0) && same (e.landing.middleLufs.max, -8.0),
@@ -361,19 +362,23 @@ void aDepartureIsNamed()
         { false, "ceilingLufs = -5", "ceilingLufs = -6", "the max modes search up to −5 LUFS" },
         { false, "floorLufs = -14", "floorLufs = -13", "a max master never lands under −14 LUFS, whichever target (owner, 04.10)" },
         { false, "excerptSearch = true", "excerptSearch = false",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "excerptSeconds = 20", "excerptSeconds = 21",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "excerptPreRollSeconds = 2", "excerptPreRollSeconds = 3",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "excerptPercentile = 90", "excerptPercentile = 80",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "excerptToleranceDb = 0.25", "excerptToleranceDb = 0.5",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "excerptOffsetDb = 0.5", "excerptOffsetDb = 1",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
+        { false, "excerptPeakP95 = true", "excerptPeakP95 = false",
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
+        { false, "excerptPeakOffsetDb = 0", "excerptPeakOffsetDb = 1",
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.5",
-          "max modes find the edge on the 20 s P90 excerpt, start the v0.17 file search +0.5 dB away and prove to 0.25 dB" },
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { true, "loudnessMode = \"maxDense\" }", "loudnessMode = \"maxClean\" }", "targets.maxDense.loudnessMode" },
         { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "loudDb = 7.5,", "loudDb = 10,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },

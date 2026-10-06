@@ -1928,17 +1928,22 @@ above it, as 615's; within it as it is) — no claim of what held the first land
 floor (the true peak, the passes) says what held it instead (`TruePeak`, `Passes`), never `Floor`. A max row's `lufs` is where its
 manual mode starts (−13 clean, −11 dense): the planner reads it as before.
 
-Before those full-file renders, `[landing.max] excerptSearch = true` reads the momentary loudness series already held by
-the landing. It scores 20-second windows one source-second
-apart and takes `excerptPercentile = 90`: the loudest minus ten percent, not the single loudest window. It renders that
-excerpt through the same chain with two seconds of pre-roll; the pre-roll warms state but is excluded from the limiter
-statistic. A bounded Brent search brackets the P95 budget edge to `excerptToleranceDb` (0.25 dB), then the first full
-render starts at that edge plus `excerptOffsetDb` (+0.5 dB). That replaces the old first two full renders. From there the
+Before those full-file renders, `[landing.max] excerptSearch = true` chooses a 20-second source window on a one-second
+grid. With `excerptPeakP95 = true`, one existing source walk bins stereo frame peaks into the limiter statistic's 4-ms
+blocks and takes the earliest window whose peak P95 is nearest the whole file's; bounded histograms reuse the retained
+candidate buffer, deterministic core logarithms keep native and wasm on the same window, and the histogram work is
+included in the search's work count. `excerptPeakOffsetDb = 0` is that rule's independently measured full-render offset.
+With the switch off, the previous selector remains available: it reads the momentary loudness series already held by the
+landing, scores the same windows and takes `excerptPercentile = 90`, the loudest minus ten percent; it then uses
+`excerptOffsetDb = 0.5`. Either rule renders the selected excerpt through the same chain with two seconds of pre-roll;
+the pre-roll warms state but is excluded from the limiter statistic. A bounded Brent search brackets the P95 budget edge
+to `excerptToleranceDb` (0.25 dB), then the first full render starts at that edge plus the selected rule's offset. That
+replaces the old first two full renders. From there the
 file uses v0.17.0's bounded search unchanged: a kept opening advances in 0.5 dB steps until an over-budget render exists,
 an over opening steps back by the measured slope, and the guarded Illinois chord closes the same proof. There is no
 Brent interpolation on the file. The proof resolution defaults to `[landing.max] budgetResolutionDb = 0.25`; a wire
 master command may append `budgetResolutionDb` in the bounded 0.05…1 dB domain (absent takes the config default), so a
-page may trade full renders for a coarser edge. Missing or unusable momentary rows, a programme too short for the window
+page may trade full renders for a coarser edge. Missing or unusable selector input, a programme too short for the window
 and pre-roll, allocation failure, or an excerpt render that cannot measure P95 fall back to the v0.17.0 full-programme
 path bit for bit. The switch off does the same. Manual landings never enter the excerpt path. The peak-clip threshold
 forecast is measured on the excerpt when it is needed, so it does not reintroduce a full-file probe.

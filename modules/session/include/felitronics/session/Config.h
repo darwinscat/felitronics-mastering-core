@@ -141,6 +141,8 @@ struct Landing
     bool maxExcerptSearch = false;
     double maxExcerptSeconds = 0.0, maxExcerptPreRollSeconds = 0.0;
     double maxExcerptPercentile = 0.0, maxExcerptToleranceDb = 0.0, maxExcerptOffsetDb = 0.0;
+    bool maxExcerptPeakP95 = false;
+    double maxExcerptPeakOffsetDb = 0.0;
     double maxBudgetResolutionDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };

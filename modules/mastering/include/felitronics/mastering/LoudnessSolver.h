@@ -893,6 +893,10 @@ struct LoudnessRequest
     // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
     // Appended so positional initialisers written against the older public aggregate retain their meaning.
     double clipperLoudShare = std::numeric_limits<double>::quiet_NaN();
+    // Alternative excerpt selector: match the P95 of the source's 4 ms block peaks to the whole file. False retains
+    // the loudness-percentile selector and its offset. Appended so older positional initialisers keep their meaning.
+    bool maxExcerptPeakP95 = false;
+    double maxExcerptPeakOffsetDb = 0.0;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to

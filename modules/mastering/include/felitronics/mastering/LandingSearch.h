@@ -186,6 +186,9 @@ public:
         excerptExcess_.fill (std::numeric_limits<double>::quiet_NaN());
         excerptCount_ = 0; excerptLow_ = excerptHigh_ = -1; excerptReady_ = false;
         excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
+        peakExcerptPending_ = false; peakExcerptCandidates_ = 0; peakExcerptBlocks_ = 0; peakExcerptUpdates_ = 0;
+        peakBlockFrames_ = peakBlockFill_ = 0; peakBlockPeak_ = 0.0;
+        wholePeakHistogram_.fill (0u);
         peakCandidates_ = {}; peakCandidateCount_ = peakForecastIndex_ = 0;
         peakForecastValid_ = false; peakForecastDb_ = std::numeric_limits<double>::quiet_NaN();
         peakForecastFrames_ = 0;
@@ -209,8 +212,13 @@ public:
             solver_.deliveryConverter_ = converter_; solver_.deliverySource_ = source_;
             solver_.deliveryFrames_ = sourceFrames_;
         }
-        excerptReady_ = budgetOn_ && request_.budgetAimsAtCrossing && request_.maxExcerptSearch
-            && selectExcerpt();
+        const bool wantsExcerpt = budgetOn_ && request_.budgetAimsAtCrossing && request_.maxExcerptSearch;
+        if (wantsExcerpt && request_.maxExcerptPeakP95)
+        {
+            peakExcerptPending_ = preparePeakExcerpt();
+            if (! peakExcerptPending_) excerptReady_ = selectLoudnessExcerpt();
+        }
+        else excerptReady_ = wantsExcerpt && selectLoudnessExcerpt();
         phase_ = Phase::SourceStats;
         return true;
     }
@@ -255,10 +263,12 @@ public:
                 || ! std::isfinite (request.maxExcerptPercentile)
                 || ! std::isfinite (request.maxExcerptToleranceDb)
                 || ! std::isfinite (request.maxExcerptOffsetDb)
+                || ! std::isfinite (request.maxExcerptPeakOffsetDb)
                 || request.maxExcerptSeconds <= 0.0 || request.maxExcerptPreRollSeconds < 0.0
                 || request.maxExcerptPercentile < 0.0 || request.maxExcerptPercentile > 100.0
                 || request.maxExcerptToleranceDb <= 0.0 || request.maxExcerptToleranceDb > 6.0
-                || std::fabs (request.maxExcerptOffsetDb) > 24.0))
+                || std::fabs (request.maxExcerptOffsetDb) > 24.0
+                || std::fabs (request.maxExcerptPeakOffsetDb) > 24.0))
             || (! std::isnan (request.clipperLoudShare)
                 && (! std::isfinite (request.clipperLoudShare)
                     || request.clipperLoudShare <= 0.0 || request.clipperLoudShare > 1.0)))
@@ -298,11 +308,15 @@ public:
                     framePeak = std::fmax (framePeak, std::fabs (x));
                 }
                 observePeak (sourceCursor_ + i, framePeak);
+                if (peakExcerptPending_) observeExcerptPeak (sourceCursor_ + i, framePeak);
             }
             sourceCursor_ += n; work_ += (std::uint64_t) n;
             if (sourceCursor_ == sourceFrames_)
+            {
+                if (peakExcerptPending_) excerptReady_ = finishPeakExcerpt();
                 phase_ = wantsPeakForecast() ? Phase::PeakForecastBegin
                     : gateOn_ ? Phase::SourceGate : excerptReady_ ? Phase::ExcerptBegin : Phase::PassBegin;
+            }
             return StepResult::More;
         }
         if (phase_ == Phase::PeakForecastBegin)
@@ -616,6 +630,7 @@ private:
     static constexpr long long kFirstBlockReading = 3;
     static constexpr double kAbsoluteGateLufs = -70.0;
     static constexpr int kMaxExcerptPasses = 12;
+    static constexpr int kPeakHistogramBins = 1121; // -160..+120 dBFS, in exact quarter-dB cells
 
     struct ExcerptWindow { double score = 0.0; long long from = 0; };
     static_assert (sizeof (ExcerptWindow) == 16u);   // TargetLoudnessSolver::productSearchCallBytes declares these rows
@@ -690,21 +705,137 @@ private:
         return e > energyOf (kAbsoluteGateLufs) && e > gateThreshold_;
     }
 
-    bool selectExcerpt() noexcept
+    bool excerptGeometry (long long& loudFrames, long long& requestedPre,
+                          long long& step, long long& candidates) const noexcept
     {
         const double wantedFrames = request_.maxExcerptSeconds * sourceRate_;
         const double preRollFrames = request_.maxExcerptPreRollSeconds * sourceRate_;
         if (! std::isfinite (wantedFrames) || ! std::isfinite (preRollFrames)
             || wantedFrames >= (double) LLONG_MAX || preRollFrames >= (double) LLONG_MAX
-            || ! core::exactlyEqual (std::floor (sourceRate_), sourceRate_)
-            || request_.sourceMomentaryLufs == nullptr || request_.sourceMomentaryCount <= 0
-            || request_.sourceMomentaryHopFrames <= 0 || sourceFrames_ <= 0) return false;
-        const long long loudFrames = std::max (1LL, (long long) std::floor (wantedFrames + 0.5));
-        const long long requestedPre = std::max (0LL, (long long) std::floor (preRollFrames + 0.5));
-        const long long step = (long long) sourceRate_;   // chooseSegments: one candidate window per source second
+            || ! core::exactlyEqual (std::floor (sourceRate_), sourceRate_)) return false;
+        loudFrames = std::max (1LL, (long long) std::floor (wantedFrames + 0.5));
+        requestedPre = std::max (0LL, (long long) std::floor (preRollFrames + 0.5));
+        step = (long long) sourceRate_;
         if (loudFrames > sourceFrames_ || requestedPre > sourceFrames_ - loudFrames || step <= 0) return false;
-        const long long candidates = 1 + (sourceFrames_ - loudFrames - requestedPre) / step;
-        if (candidates <= 0 || (std::uint64_t) candidates > std::numeric_limits<std::size_t>::max()
+        candidates = 1 + (sourceFrames_ - loudFrames - requestedPre) / step;
+        return candidates > 0 && (std::uint64_t) candidates <= std::numeric_limits<std::size_t>::max();
+    }
+
+    bool setExcerpt (long long loudFrom, long long loudFrames, long long requestedPre) noexcept
+    {
+        const long long pre = std::min (loudFrom, requestedPre);
+        excerptSourceFrom_ = loudFrom - pre;
+        excerptStatisticFrom_ = loudFrom;
+        excerptStatisticFrames_ = loudFrames;
+        excerptSourceFrames_ = pre + loudFrames;
+        const long long deliveredExcerpt = converter_ == nullptr ? excerptSourceFrames_
+            : DeliveryConverter::deliveredFrames (sourceRate_, chain_->sampleRate(), excerptSourceFrames_);
+        const long long deliveredPre = converter_ == nullptr ? pre
+            : DeliveryConverter::deliveredFrames (sourceRate_, chain_->sampleRate(), pre);
+        if (deliveredExcerpt <= 0 || deliveredExcerpt > frames_
+            || deliveredExcerpt > std::numeric_limits<int>::max()
+            || deliveredPre < 0 || deliveredPre > deliveredExcerpt) return false;
+        excerptFrames_ = (int) deliveredExcerpt;
+        excerptSkipFrames_ = deliveredPre;
+        for (int c = 0; c < channels_; ++c) excerptSource_[c] = source_[c] + excerptSourceFrom_;
+        return true;
+    }
+
+    bool preparePeakExcerpt() noexcept
+    {
+        long long loudFrames = 0, requestedPre = 0, step = 0, candidates = 0;
+        if (! excerptGeometry (loudFrames, requestedPre, step, candidates) || saved_ == nullptr
+            || (std::size_t) candidates > std::numeric_limits<std::size_t>::max() / kPeakHistogramBins) return false;
+        const std::size_t cells = (std::size_t) candidates * kPeakHistogramBins;
+        if (cells > savedCapacity_) return false;
+        std::fill_n (saved_.get(), cells, 0.0f);
+        peakExcerptCandidates_ = candidates; peakExcerptFrames_ = loudFrames;
+        peakExcerptPre_ = requestedPre; peakExcerptStep_ = step;
+        peakBlockFrames_ = grQuantileWindowSamples (sourceRate_);
+        return peakBlockFrames_ > 0;
+    }
+
+    static int sourcePeakBin (double peak) noexcept
+    {
+        if (! (peak > 0.0)) return 0;
+        // Deterministic core math, not the platform libm: the selected source window is identical native / wasm.
+        const double db = 20.0 * core::det::log10 (peak);
+        if (! (db > -160.0)) return 0;
+        if (db >= 120.0) return kPeakHistogramBins - 1;
+        return std::clamp ((int) ((db + 160.0) * 4.0), 0, kPeakHistogramBins - 1);
+    }
+
+    void observeExcerptPeak (long long frame, double peak) noexcept
+    {
+        if (peak > peakBlockPeak_) peakBlockPeak_ = peak;
+        ++peakBlockFill_;
+        if (peakBlockFill_ < peakBlockFrames_ && frame + 1 < sourceFrames_) return;
+        const int bin = sourcePeakBin (peakBlockPeak_);
+        ++wholePeakHistogram_[(std::size_t) bin]; ++peakExcerptBlocks_;
+        const long long centre = frame + 1 - peakBlockFill_ + peakBlockFill_ / 2;
+        const long long last = centre >= peakExcerptPre_
+            ? std::min (peakExcerptCandidates_ - 1, (centre - peakExcerptPre_) / peakExcerptStep_) : -1;
+        const long long span = 2 + (peakExcerptFrames_ + peakExcerptStep_ - 1) / peakExcerptStep_;
+        const long long first = std::max (0LL, last - span);
+        for (long long candidate = first; candidate <= last; ++candidate)
+        {
+            const long long from = peakExcerptPre_ + candidate * peakExcerptStep_;
+            if (centre >= from && centre < from + peakExcerptFrames_)
+            {
+                saved_[(std::size_t) candidate * kPeakHistogramBins + (std::size_t) bin] += 1.0f;
+                if (peakExcerptUpdates_ < std::numeric_limits<std::uint64_t>::max()) ++peakExcerptUpdates_;
+            }
+        }
+        peakBlockFill_ = 0; peakBlockPeak_ = 0.0;
+    }
+
+    static int p95Bin (const float* histogram, long long count) noexcept
+    {
+        if (histogram == nullptr || count <= 0) return -1;
+        const long long wanted = count - count / 20;
+        long long seen = 0;
+        for (int bin = 0; bin < kPeakHistogramBins; ++bin)
+            if ((seen += (long long) histogram[(std::size_t) bin]) >= wanted) return bin;
+        return -1;
+    }
+
+    bool finishPeakExcerpt() noexcept
+    {
+        peakExcerptPending_ = false;
+        if (peakExcerptBlocks_ <= 0 || peakExcerptCandidates_ <= 0) return false;
+        const long long wanted = peakExcerptBlocks_ - peakExcerptBlocks_ / 20;
+        long long seen = 0; int whole = -1;
+        for (int bin = 0; bin < kPeakHistogramBins; ++bin)
+            if ((seen += (long long) wholePeakHistogram_[(std::size_t) bin]) >= wanted) { whole = bin; break; }
+        if (whole < 0) return false;
+        long long best = -1; int bestDistance = std::numeric_limits<int>::max();
+        for (long long candidate = 0; candidate < peakExcerptCandidates_; ++candidate)
+        {
+            const float* row = saved_.get() + (std::size_t) candidate * kPeakHistogramBins;
+            long long count = 0;
+            for (int bin = 0; bin < kPeakHistogramBins; ++bin) count += (long long) row[(std::size_t) bin];
+            const int q = p95Bin (row, count);
+            const int distance = q >= 0 ? std::abs (q - whole) : std::numeric_limits<int>::max();
+            if (distance < bestDistance) { best = candidate; bestDistance = distance; }
+        }
+        const auto account = [this] (std::uint64_t amount) noexcept
+        {
+            work_ = amount > std::numeric_limits<std::uint64_t>::max() - work_
+                ? std::numeric_limits<std::uint64_t>::max() : work_ + amount;
+        };
+        account ((std::uint64_t) peakExcerptCandidates_ * kPeakHistogramBins);
+        account ((std::uint64_t) peakExcerptBlocks_);
+        account (peakExcerptUpdates_);
+        return best >= 0 && setExcerpt (peakExcerptPre_ + best * peakExcerptStep_,
+                                        peakExcerptFrames_, peakExcerptPre_);
+    }
+
+    bool selectLoudnessExcerpt() noexcept
+    {
+        long long loudFrames = 0, requestedPre = 0, step = 0, candidates = 0;
+        if (! excerptGeometry (loudFrames, requestedPre, step, candidates)
+            || request_.sourceMomentaryLufs == nullptr || request_.sourceMomentaryCount <= 0
+            || request_.sourceMomentaryHopFrames <= 0
             || (std::size_t) candidates > std::numeric_limits<std::size_t>::max() / sizeof (ExcerptWindow)) return false;
         std::unique_ptr<ExcerptWindow[]> windows (new (std::nothrow) ExcerptWindow[(std::size_t) candidates]);
         if (! windows) return false;
@@ -742,22 +873,7 @@ private:
         });
         const long long pick = (long long) std::floor ((request_.maxExcerptPercentile / 100.0) * (double) (count - 1));
         const long long loudFrom = windows[(std::size_t) std::clamp (pick, 0LL, count - 1)].from;
-        const long long pre = std::min (loudFrom, requestedPre);
-        excerptSourceFrom_ = loudFrom - pre;
-        excerptStatisticFrom_ = loudFrom;
-        excerptStatisticFrames_ = loudFrames;
-        excerptSourceFrames_ = pre + loudFrames;
-        const long long deliveredExcerpt = converter_ == nullptr ? excerptSourceFrames_
-            : DeliveryConverter::deliveredFrames (sourceRate_, chain_->sampleRate(), excerptSourceFrames_);
-        const long long deliveredPre = converter_ == nullptr ? pre
-            : DeliveryConverter::deliveredFrames (sourceRate_, chain_->sampleRate(), pre);
-        if (deliveredExcerpt <= 0 || deliveredExcerpt > frames_
-            || deliveredExcerpt > std::numeric_limits<int>::max()
-            || deliveredPre < 0 || deliveredPre > deliveredExcerpt) return false;
-        excerptFrames_ = (int) deliveredExcerpt;
-        excerptSkipFrames_ = deliveredPre;
-        for (int c = 0; c < channels_; ++c) excerptSource_[c] = source_[c] + excerptSourceFrom_;
-        return true;
+        return setExcerpt (loudFrom, loudFrames, requestedPre);
     }
 
     StepResult completedExcerpt()
@@ -801,7 +917,9 @@ private:
             {
                 restoreFullProgramme();
                 excerptEdgeDrive_ = edge;
-                gain_ = std::clamp (edge + request_.maxExcerptOffsetDb + ceiling_, -60.0, 60.0);
+                const double offset = request_.maxExcerptPeakP95 ? request_.maxExcerptPeakOffsetDb
+                                                                 : request_.maxExcerptOffsetDb;
+                gain_ = std::clamp (edge + offset + ceiling_, -60.0, 60.0);
                 nextReason_ = SolvePassRecord::Reason::InsideBracket;
                 phase_ = Phase::PassBegin;
                 return StepResult::More;
@@ -1362,6 +1480,7 @@ private:
     std::array<SolvePassRecord, kMaxExcerptPasses> excerptRecords_ {};
     std::array<double, kMaxExcerptPasses> excerptDrive_ {}, excerptExcess_ {};
     std::array<PeakCandidate, 3> peakCandidates_ {};
+    std::array<std::uint64_t, kPeakHistogramBins> wholePeakHistogram_ {};
     std::unique_ptr<float[]> saved_;
     std::size_t savedCapacity_ = 0;
     ClipperPeaks bestClipperPeaks_ {};
@@ -1406,6 +1525,11 @@ private:
     long long excerptSourceFrames_ = 0, excerptStatisticFrames_ = 0, excerptSkipFrames_ = 0;
     int excerptFrames_ = 0, excerptCount_ = 0, excerptLow_ = -1, excerptHigh_ = -1;
     double excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
+    long long peakExcerptCandidates_ = 0, peakExcerptBlocks_ = 0, peakExcerptFrames_ = 0;
+    std::uint64_t peakExcerptUpdates_ = 0;
+    long long peakExcerptPre_ = 0, peakExcerptStep_ = 0, peakBlockFrames_ = 0, peakBlockFill_ = 0;
+    double peakBlockPeak_ = 0.0;
+    bool peakExcerptPending_ = false;
     const float* peakForecastSource_[core::kMaxChannels] {};
     long long peakForecastFrom_ = 0, peakForecastFrames_ = 0;
     int peakCandidateCount_ = 0, peakForecastIndex_ = 0;

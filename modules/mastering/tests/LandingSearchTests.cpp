@@ -207,6 +207,8 @@ struct LandingSetup
     double slopeBelow = 0.0;
     bool maxMode = false;
     bool excerptSearch = false;
+    bool excerptPeakP95 = false;
+    double excerptPeakOffsetDb = 0.0;
     double budgetResolutionDb = 0.25;
 };
 
@@ -250,6 +252,8 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.limiterSlopeBelow = w.slopeBelow;
     req.budgetAimsAtCrossing = w.maxMode;
     req.maxExcerptSearch = w.excerptSearch;
+    req.maxExcerptPeakP95 = w.excerptPeakP95;
+    req.maxExcerptPeakOffsetDb = w.excerptPeakOffsetDb;
     req.budgetResolutionDb = w.budgetResolutionDb;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate || w.excerptSearch)
@@ -431,6 +435,32 @@ int main()
                   && missedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
             "a short-window forecast that misses the filtered programme maximum falls back to the full probe and keeps "
             "the clipper bound; the next full render is labelled as the target aim, not the excerpt's stale bracket");
+        std::vector<float> peakWindowPcm (std::size_t (30 * kRate));
+        for (std::size_t i = 0; i < peakWindowPcm.size(); ++i)
+        {
+            const double amplitude = i < std::size_t (22 * kRate) ? .1 : .4;
+            peakWindowPcm[i] = float (amplitude * core::det::sin (
+                6.283185307179586 * 997.0 * double (i) / kRate));
+        }
+        LandingSetup loudnessWindow; loudnessWindow.target = -5; loudnessWindow.limiterBudgetDb = .5;
+        loudnessWindow.maxMode = true; loudnessWindow.excerptSearch = true;
+        auto peakWindow = loudnessWindow; peakWindow.excerptPeakP95 = true;
+        const auto loudnessWindowResult = land (Programme (peakWindowPcm), loudnessWindow);
+        const auto peakWindowResult = land (Programme (peakWindowPcm), peakWindow);
+        const auto firstExcerptFrom = [] (const LoudnessSolution& result) noexcept
+        {
+            for (int i = 0; i < result.logCount; ++i)
+                if (result.log[i].excerpt) return result.log[i].excerptFromFrame;
+            return -1LL;
+        };
+        std::printf ("  excerpt selectors: loudness %.0f s, peak-P95 %.0f s\n",
+            double (firstExcerptFrom (loudnessWindowResult.answer)) / kRate,
+            double (firstExcerptFrom (peakWindowResult.answer)) / kRate);
+        test::ok (loudnessWindowResult.done && peakWindowResult.done
+                  && firstExcerptFrom (loudnessWindowResult.answer) == 9LL * kRate
+                  && firstExcerptFrom (peakWindowResult.answer) == 4LL * kRate,
+            "the switch selects either the loudness-P90 window or the earliest 20-second window whose 4 ms peak P95 "
+            "matches the file");
         LandingSetup loud; loud.target = -5; loud.limiterBudgetDb = 7.5; loud.slopeBelow = .2;
         const auto wall = land (dense, loud);
         auto before = loud; before.slopeBelow = 0;
