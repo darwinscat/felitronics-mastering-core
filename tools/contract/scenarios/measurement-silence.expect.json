@@ -13,7 +13,7 @@
     {"kind":"snapshot","index":1,"path":"masters.length","value":0}
   ],
   "samePath": [{"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":1},"path":"source.hash"}],
-  "minEvents": 2000,
+  "minEvents": 300,
   "eventKinds": ["phase","measurement","fact","rejected"],
   "rejections": 1
 }

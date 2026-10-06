@@ -1432,3 +1432,56 @@ en = "The platform does not normalise loudness: a delivery preset, not a platfor
 [messages.monoBassBelowZones]
 ru = "Моно-бас на {crossover} ниже, чем просят и клуб (от {clubFrom}), и винил (от {vinylFrom})."
 en = "Mono bass at {crossover} is lower than both a club (from {clubFrom}) and vinyl (from {vinylFrom}) ask for."
+
+[messages.masterLandingWall]
+ru = "Сделано {achieved}. Дальше лимитеру пришлось бы срезать намного больше ради совсем небольшой прибавки громкости."
+en = "Made at {achieved}. Going louder would take much more limiting for very little loudness."
+
+# Diagnostic line only; the page shows masterLandingWall as the verdict.
+[messages.masterLandingWallDetail]
+ru = "Стена лимитера: {slope} LU на дБ среза, P95 {p95}."
+en = "Limiter wall: {slope} LU per dB of cut, P95 {p95}."
+
+[messages.rejectedClippedGain]
+ru = "Микс клипует. Добавлять громкость можно только по вашему явному выбору: всё равно мастерить. Лучше экспортировать микс с запасом по пикам."
+en = "The mix clips. Adding loudness needs your explicit choice to master it anyway. Exporting the mix with peak headroom is better."
+
+[messages.sourceNoClipping]
+ru = "Клиппинг не обнаружен."
+en = "No clipping detected."
+
+[messages.sourceClippingUnmeasured]
+ru = "Клиппинг не проверен: {reason}."
+en = "Clipping has not been checked: {reason}."
+
+[messages.sourceRealClipping]
+ru = "Микс клипует: искажения уже в файле, мастеринг их не уберёт. Экспортируйте микс с запасом, пики от −6 до −3 dBFS."
+en = "The mix clips: the distortion is already in the file and mastering cannot undo it. Export the mix with headroom, peaks between −6 and −3 dBFS."
+
+[messages.sourceInterSampleOvers]
+ru = "Между отсчётами пики достигают {peak}, сами отсчёты не клипуют. Эти пики можно убрать простым понижением уровня."
+en = "Peaks between samples reach {peak}; the samples themselves do not clip. A simple gain reduction can bring these peaks down."
+
+[messages.sourceSampleOvers]
+ru = "Есть отсчёты на полном уровне или выше. Проверьте запас по пикам; плоские вершины не обнаружены."
+en = "Some samples reach or exceed full scale. Check the peak headroom; no flat tops were detected."
+
+[messages.sourceAlreadyMastered]
+ru = "Файл уже мастерен: громкость {loudness}, true peak {peak}. Ему уже не нужна ещё одна обработка без веской причины."
+en = "This file is already mastered: loudness {loudness}, true peak {peak}. It needs no more processing without a good reason."
+
+[messages.sourceFormerLossy]
+ru = "Похоже, файл раньше был сжат с потерями. Для мастеринга лучше взять исходный lossless-микс."
+en = "This file appears to have been lossy-compressed before. The original lossless mix is a better source for mastering."
+
+[messages.sourceMasterLouder]
+ru = "Цель громче исходника: это сильнее сплющит уже мастеренный файл. Лучше попросить исходный микс, но по Вашему выбору мы всё равно сделаем мастер."
+en = "The target is louder than this already-mastered source, which means squashing it harder. Please ask for the original mix if possible; we can still master it at your request."
+
+[messages.sourceDeliveryAsIs]
+ru = "Ваш файл так прекрасен, что мы ослеплены блеском этого совершенства. Отдаём оригинал без единого изменения."
+en = "Your file is so splendid that we are dazzled by its perfection. We will deliver the original without changing a single bit."
+
+[messages.sourceDeliveryPeaksOnly]
+ru = "Для стриминга снижать громкость не нужно — платформа сделает это сама. Оставляем мастеринг в покое и только даём пикам запас до {ceiling}: простой gain {gain}."
+en = "There is no need to turn it down for streaming—the platform does that. We leave the mastering alone and only give the peaks headroom to {ceiling}, with a plain {gain} gain."

@@ -72,7 +72,7 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept
-{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0; }
+{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || lateMasterJob_ || crestJoin_ || damageCount_ != 0; }
 std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -105,6 +105,23 @@ void Session::emit (Notification event, const Phase& progress) noexcept
         invalidateQueryCache (Analyzer::Loudness);
         invalidateQueryCache (Analyzer::Clipping);
     }
+    if (event.kind == EventKind::Phase)
+        for (std::size_t i = 0; i < eventCount_; ++i)
+            if ((*events_)[i].kind == EventKind::Phase && (*events_)[i].jobId == event.jobId)
+            {
+                // A phase describes state, not a transition. Keep its latest state at the point it became latest while
+                // every reading, fact, result and terminal event retains its order. This batch owns the tail of the
+                // global sequence, so close the removed number as well.
+                for (std::size_t j = i + 1; j < eventCount_; ++j)
+                {
+                    (*events_)[j - 1] = (*events_)[j];
+                    --(*events_)[j - 1].seq;
+                }
+                --eventCount_;
+                --sequence_;
+                if (oldWorldEvents_ > i) --oldWorldEvents_;
+                break;
+            }
     detail::debugBound (eventCount_ < kEventBatch);
     event.seq = ++sequence_;
     event.source = source_.hash;
@@ -134,6 +151,8 @@ void Session::preferTempo (std::uint32_t waiting) noexcept
 }
 void Session::dropJob (JobId job) noexcept
 {
+    if (job != 0 && job == lateMasterId_)
+    { cancelLateMasterCrest (MeasurementReason::Cancelled, false); return; }
     // The damage's job ends as its own (cancel says its fact first and ends it itself); never as the master's below.
     if (const auto at = damageIndex (job); job != 0 && at < damageCount_) { endDamage (at, MeasurementReason::Cancelled, true); return; }
     if (job == needlesJob_ && job != 0)
@@ -165,7 +184,8 @@ void Session::dropJob (JobId job) noexcept
             event.kind = EventKind::Fact;
             (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
             const auto progress = masterProgress_;
-            mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false;
+            mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false; jobMasterAnyway_ = false;
+            jobBudgetResolutionDb_.reset();
             masterUnit_ = 0; masterProgress_ = {};
             emit (event, progress);
             needlesAfterDroppedMaster();
@@ -181,6 +201,8 @@ void Session::dropJob (JobId job) noexcept
         job_ = 0;
         jobRecipe_ = {};
         jobWaiting_ = false;
+        jobMasterAnyway_ = false;
+        jobBudgetResolutionDb_.reset();
         masterUnit_ = 0;
         masterProgress_ = {};
         needlesAfterDroppedMaster();
@@ -381,7 +403,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
     }
     const auto progress = detail::rules().engine.find ("progress");
     const auto master = progress.find ("master");
-    const auto passes = std::uint32_t (*master.find ("expectedPasses").integer());
+    // The renders a master's bar expects, by the loudness mode it lands in (a waiting master: its recipe's).
+    const auto expectedIn = [] (LoudnessMode mode) { return detail::expectedPasses (detail::rules().engine, mode); };
     const double passWeight = weight (master.find ("passWeight"));
     const double measureWeight = weight (master.find ("measureWeight"));
     std::uint32_t units = 0;
@@ -433,7 +456,16 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     if (job_ == masterJob)
                     {
                         auto& p = masterProgress_;
+                        const auto passes = expectedIn (detail::loudnessModeOf (detail::rules(), jobRecipe_.project));
                         p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
+                        p.analyzers.emplace();
+                        if ((waits & detail::bitOf (Analyzer::Excursions)) != 0)
+                        {
+                            p.analyzers->count = 1;
+                            p.analyzers->items[0] = { Analyzer::Excursions, needlesProgress_.fraction };
+                        }
+                        else if (measurementProgress_.name == PhaseName::Analyzers)
+                            p.analyzers = measurementProgress_.analyzers;
                         if (p.completedUnits < 4294967294u) ++p.completedUnits;
                         p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
                         p.fraction = measureWeight * double (p.completedUnits) /
@@ -449,7 +481,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 // the heap as it is now, and its job starts. Then the needles go back to the project's own ceiling,
                 // where it is another than the recipe's (a cancelled job at the same ceiling is not built again).
                 const auto masterJob = job_;
-                const auto plan = jobWaiting_ ? detail::MasterJob::plan (*this, command::Master {}, jobRecipe_.project)
+                command::Master waitingRequest;
+                waitingRequest.masterAnyway = jobMasterAnyway_;
+                waitingRequest.budgetResolutionDb = jobBudgetResolutionDb_;
+                const auto plan = jobWaiting_ ? detail::MasterJob::plan (*this, waitingRequest, jobRecipe_.project)
                                               : detail::MasterPlan {};
                 if (plan.rejection != Rejection::None) { contract (masterJob); ++units; continue; }
                 const auto roomed = demand ({ Rejection::None, kNoField, plan.bytes, 0, plan.largestBlock });
@@ -476,35 +511,83 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 ++units;
                 continue;
             }
-            const auto beforePass = masterJob_->search.startedPasses();
+            const bool delivery = masterJob_->deliveryMode != DeliveryMode::Mastered;
+            const int beforePass = delivery ? 0 : masterJob_->startedPasses();
             const auto outcome = masterTraceActive_ ? mastering::StepResult::Done : masterJob_->step (1024);
             ++masterUnit_;
             const bool end = outcome != mastering::StepResult::More;
+            const auto expectedRenders = delivery ? 0u : expectedIn (masterJob_->mode);
             const auto total = std::uint32_t (std::min<std::uint64_t> (
-                4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u) * 12u));
+                4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u)
+                    * std::max (1u, expectedRenders)));
+            double fraction = masterProgress_.fraction;
+            if (! delivery && ! end)
+            {
+                const double expected = double (std::max (1u, expectedRenders));
+                const double rendered = masterJob_->renderProgress();
+                const double scaled = rendered <= expected ? 0.8 * rendered / expected
+                    : 1.0 - 0.2 * expected / rendered;
+                fraction = std::max (fraction, scaled);
+                // Once the search and its certificate have ended, leave only the fixed 20% completion reserve.
+                if (! masterJob_->search.active()) fraction = std::max (fraction, 0.8);
+            }
+            // A delivery (as-is, peaks-only) has no search: its bar is its own walks'.
+            else if (! end) fraction = std::max (fraction, masterJob_->deliveryFraction());
             // The master's passes, and how far its current walk over the file has come — a new count for each walk.
             masterProgress_ = { end ? PhaseName::Final : PhaseName::Pass,
-                end ? 1.0 : std::min (0.99, double (masterUnit_) / double (std::max (1u, total))),
-                config::Config::versions().all, std::uint32_t (masterJob_->search.startedPasses()), 12,
+                end ? 1.0 : std::min (0.999999, fraction),
+                config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->startedRenders()), expectedRenders,
                 masterUnit_, total, end ? std::nullopt : masterJob_->stepFraction() };
             event.payload.phase = masterProgress_;
             emit (event);
-            if (masterJob_->search.startedPasses() != beforePass)
+            if (! delivery && masterJob_->startedPasses() != beforePass)
             {
                 event.kind = EventKind::Fact;
                 (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterPass,
-                    text::Arg::count (masterJob_->search.startedPasses())));
+                    text::Arg::count (masterJob_->startedPasses())));
                 emit (event, masterProgress_);
             }
             if (end)
             {
+                if (delivery)
+                {
+                    if (outcome != mastering::StepResult::Done)
+                    { contract (event.jobId); ++units; continue; }
+                    const auto completedJob = job_;
+                    masterTraceActive_ = true; // keep the job until its report and PCM have been moved below
+                    if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
+                    auto& kept = masters_[masterCount_ - 1];
+                    kept.report = masterJob_->reportResult();
+                    kept.report->readings = MasterReportText::readings (*kept.report, 0);
+                    event.kind = EventKind::Fact;
+                    const auto said = kept.report->deliveryMode == DeliveryMode::AsIs
+                        ? text::Fact::of (text::FactId::SourceDeliveryAsIs)
+                        : text::Fact::of (text::FactId::SourceDeliveryPeaksOnly,
+                            text::Arg::value (kept.report->deliveryGainDb, text::Unit::Db, 1),
+                            text::Arg::value (kept.report->ceilingDbTp, text::Unit::DbTp, 1));
+                    (void) event.payload.fact.assign (said); emit (event, masterProgress_);
+                    masterAudioBits_ = masterJob_->ready.deliveryBits;
+                    masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
+                        std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
+                    pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };
+                    masterJob_.reset(); masterJobBytes_ = 0;
+                    masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterReady));
+                    emit (event, masterProgress_);
+                    event.kind = EventKind::Done; event.payload.done.masterId = completedJob;
+                    emit (event, masterProgress_);
+                    ++units;
+                    continue;
+                }
                 auto& rows = masterRows_[masterCount_];
                 const auto& solution = masterJob_->result();
                 const auto trace = std::span<LandingTraceBucket> (rows.traces.get(), rows.traceCapacity);
                 const auto clip = std::span<LandingTraceBucket> (rows.traces.get() + rows.traceCapacity, rows.traceCapacity);
                 if (! masterTraceActive_)
                 {
-                    if (! LandingOps::summarize (solution, { rows.passes.get(), 12 }, masterSummary_))
+                    if (! LandingOps::summarize (solution, masterJob_->floorFirstPasses, masterJob_->floorFirstWork,
+                            { rows.passes.get(), mastering::TargetLoudnessSolverLimits::kMaxPasses }, masterSummary_))
                     { contract (event.jobId); ++units; continue; }
                     masterTraceCursor_ = 0; masterTraceActive_ = true;
                 }
@@ -524,6 +607,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
+                rows.workedReady.params = masterJob_->winningParams();
                 // What its damage grade needs, kept with the master for a grade the shell asks (command::GradeDamage):
                 // the damage's line below says Pending — or why it cannot be graded.
                 if (masterJob_->damageFollows)
@@ -559,6 +643,14 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                                           masterJob_->search.overBudgetDb())
                                                  : MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
+                    // The limiter wall's numbers follow its plain verdict as a line for the log alone (619).
+                    if (masterSummary_.limiterWall && masterSummary_.limiterSlope && masterSummary_.limiterWallP95Db)
+                    {
+                        (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterLandingWallDetail,
+                            text::Arg::value (*masterSummary_.limiterSlope, text::Unit::None, 3),
+                            text::Arg::value (*masterSummary_.limiterWallP95Db, text::Unit::Db, 2)));
+                        emit (event, masterProgress_);
+                    }
                     // Pulled up to the floor: the numbers behind the plain verdict, a line of its own for the log (617).
                     if (const auto detail = MasterReportText::maxFloorDetail (report,
                             detail::maxBudgetDb (detail::rules().engine, report.loudnessMode),
@@ -571,7 +663,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     // Landed on the source's gate and read apart from it by BS.1770: both numbers, in the miss's place.
                     if (const auto gate = MasterReportText::gate (report, measure, toleranceLu))
                     { (void) event.payload.fact.assign (*gate); emit (event, masterProgress_); }
-                    else if (const auto miss = max ? std::optional<text::Fact> {} : MasterReportText::miss (report))
+                    else if (const auto miss = max || masterSummary_.limiterWall ? std::optional<text::Fact> {} : MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
                     for (const auto* hint : { &report.firstHint, &report.secondHint })
                         if (*hint)
@@ -602,7 +694,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
                     say (MasterReportText::limiter (*cost));
                     say (MasterReportText::active (*cost));
-                    (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
                     if (const auto glue = MasterReportText::glue (*cost))
                     { (void) event.payload.fact.assign (*glue); emit (event, masterProgress_); }
                     if (const auto saturation = MasterReportText::saturation (*cost))
@@ -635,7 +726,18 @@ Stepped Session::step (std::uint32_t budget) noexcept
                         std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
                     pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };
                 }
-                masterJob_.reset(); masterJobBytes_ = 0;
+                const bool lateCrest = outcome == mastering::StepResult::Done
+                    && masterJob_->readyForLateCrest() && masterJob_->beginLateCrest();
+                if (lateCrest)
+                {
+                    const auto audioBytes = std::uint64_t (masterJob_->frames) * std::uint64_t (masterJob_->channels)
+                        * sizeof (float);
+                    lateMasterJobBytes_ = masterJobBytes_ > audioBytes ? masterJobBytes_ - audioBytes : 0;
+                    lateMasterId_ = completedJob;
+                    lateMasterJob_ = std::move (masterJob_);
+                    masterJobBytes_ = 0;
+                }
+                else { masterJob_.reset(); masterJobBytes_ = 0; }
                 masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
                 if (masters_[masterCount_ - 1].landing->deliverable)
                 {
@@ -648,6 +750,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 emit (event, masterProgress_);
 
             }
+        }
+        else if (lateMasterJob_)
+        {
+            stepLateMasterCrest();
         }
         else if (crestJoin_)
         {
@@ -664,13 +770,13 @@ Stepped Session::step (std::uint32_t budget) noexcept
         {
             if (damageJobId_ != 0 || startDamage()) stepDamage();
         }
-        else if (waveform_ && ! waveform_->finished)
-        {
-            stepWaveform();
-        }
         else if (liveMeasurements_ && liveMeasurements_->stage < 9 && measurementUnit_ < 2)
         {
             stepMeasurements();
+        }
+        else if (waveform_ && ! waveform_->finished)
+        {
+            stepWaveform();
         }
         else if (sourceMeasurements_)
         {
@@ -687,6 +793,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
         {
             measurementJob_ = 0;
             measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1, std::nullopt };
+            measurementProgress_.analyzers.emplace();
             ++revision_;
         }
         else contract (measurementJob_);

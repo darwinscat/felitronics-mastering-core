@@ -77,7 +77,10 @@
 //  12            v0.17.0: the glue in parallel — the glue device's mix (GlueFieldsValue/Touched.mix, in editDevice and
 //                revertEdits), the plan's share as it sounds (GlueFinding.mix), the field term FieldGlueMix. No entry
 //                point.
-#define FC_SESSION_ABI_VERSION 12u
+//  13            v0.18.0: analyzer progress, damage wait reasons, delivery modes for already-mastered sources and the
+//                read-only as-worked TOML (`fc_session_worked_report_*`); each landing pass's active P95 and reason,
+//                and MasterCommand.budgetResolutionDb. All appended.
+#define FC_SESSION_ABI_VERSION 13u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
@@ -139,13 +142,14 @@ typedef enum fc_session_status
     FC_SESSION_ERR_MEMORY = 10,         // create demand exceeds the supplied ceiling
     FC_SESSION_ERR_TOO_SMALL = 11,      // caller output capacity is insufficient
     FC_SESSION_ERR_CONTRACT = 12,       // invalid transfer value
-    FC_SESSION_ERR_OVERLAP = 13,        // output overlaps another output or an input
+    FC_SESSION_ERR_OVERLAP = 13,        // output overlaps another output, an input or a retained master PCM
     FC_SESSION_ERR_TRAP = 14,           // shell maps a thrown wasm trap/abort to this status; see POISON
     FC_SESSION_ERR_STRUCT_TOO_SMALL = 15, // size is below the v1 record size
     FC_SESSION_ERR_STRUCT_TOO_LARGE = 16, // size exceeds the record this build understands
     FC_SESSION_ERR_NO_SOURCE = 17,        // export: the session has no source
     FC_SESSION_ERR_NOT_PLACED = 18,       // export: the first measurement has not placed devices
-    FC_SESSION_ERR_STALE = 19             // transfer identity no longer names pending audio
+    FC_SESSION_ERR_STALE = 19,            // transfer identity no longer names pending audio
+    FC_SESSION_ERR_UNKNOWN_MASTER = 20    // no completed master is kept under this id
 } fc_session_status;
 
 // ====================================================================================
@@ -256,6 +260,9 @@ typedef enum fc_session_step_state
 // Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
 // while no command or step intervenes. No pointer into session memory survives a call except the
 // explicitly scoped master audio view below, which expires at the next module call or memory.grow.
+// Every entry that writes a caller buffer, the kit's included, refuses an output inside any live
+// session's retained master PCM with ERR_OVERLAP, so a stale view never becomes a destination. A call that may free
+// that PCM (load, load_measured, attach_audio, command) refuses an input inside it the same way, before freeing anything.
 //
 // Additive v1 measurement data: reading payloads include a fixed source-frame grid, window reasons,
 // detailed clip rows and total/stored counts. Reports live in snapshot measurements with per-field reasons.
@@ -305,6 +312,10 @@ fc_session_status fc_session_import_project (fc_session session, uint32_t comman
                                              char* answer, uint32_t capacity, uint32_t* written);
 fc_session_status fc_session_export_project_size (fc_session session, uint32_t* out);
 fc_session_status fc_session_export_project_copy (fc_session session, char* output, uint32_t capacity, uint32_t* written);
+// The immutable flattened TOML for a completed master: target, delivery and every device's final value and origin.
+fc_session_status fc_session_worked_report_size (fc_session session, uint32_t master_id, uint32_t* out);
+fc_session_status fc_session_worked_report_copy (fc_session session, uint32_t master_id,
+                                                 char* output, uint32_t capacity, uint32_t* written);
 
 // Work units, never milliseconds. Zero polls; one call takes at most the session's kStepUnits.
 fc_session_status fc_session_step (fc_session session, uint32_t budget, uint32_t* out);
@@ -314,6 +325,10 @@ fc_session_status fc_session_events_copy (fc_session session, char* json, uint32
 fc_session_status fc_session_snapshot_size (fc_session session, fc_session_sizes* out);
 fc_session_status fc_session_snapshot_copy (fc_session session, char* json, uint32_t json_capacity,
                                             double* rows, uint32_t row_capacity);
+// Full source evidence with masters' heavy rows/traces omitted. The ordinary snapshot is unchanged.
+fc_session_status fc_session_source_snapshot_size (fc_session session, fc_session_sizes* out);
+fc_session_status fc_session_source_snapshot_copy (fc_session session, char* json, uint32_t json_capacity,
+                                                   double* rows, uint32_t row_capacity);
 // row_capacity is BYTES, divisible by 8. JSON descriptors {byteOffset,length,stride} address the
 // separate LITTLE-ENDIAN IEEE-754 f64 buffer (big-endian builds are refused at compile time): points [index,value], runs [first,count,value], machine differences
 // [device,field,fileValue,coreValue]. The page reads Float64Array. Binary non-finite values keep

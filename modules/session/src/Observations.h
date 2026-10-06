@@ -33,6 +33,10 @@ struct ObservationInputs
 
 // Every kind's observation for the inputs.
 void observe (const ObservationInputs& in, Observations& out) noexcept;
+[[nodiscard]] SourceReport sourceReport (const ObservationInputs& in, const Project* project = nullptr) noexcept;
+// Apply the selected target's already-mastered delivery policy to supplied readings. Kept separate from recognition so
+// its as-is branch is testable without changing the recognition thresholds.
+void masteredDelivery (SourceReport& report, const Rules& rules, const Project& project) noexcept;
 
 // Is the source clipped — confirmed clips at [limiter.peakClipper] clippedPerMinute a minute or more? The one rule the
 // limiter's needles and the observations share.

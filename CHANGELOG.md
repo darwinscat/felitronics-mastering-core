@@ -2,6 +2,56 @@
 
 # Changelog
 
+## v0.18.0 — 2026-10-06
+
+### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)
+
+- **A landing keeps its winning full-file render in an optional PCM buffer**, so a non-final winner is delivered without
+  a repeated render; allocation failure retains the former counted re-render path. Every pass reports its active-window
+  limiter P95 and one of `AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge` or `DeliverWinner`.
+  `MasterCommand.budgetResolutionDb` optionally chooses the limiter-budget proof resolution from 0.05…1 dB; absent takes
+  `[landing.max] budgetResolutionDb = 0.25`.
+- **A manual landing stops at the limiter's wall**: less than 0.2 LU gained per dB of active P95 cut between existing
+  passes at least 0.5 dB apart. No extra pass; the limiter budgets still hold, max modes stay as before. The landing
+  carries `limiterWall`, `limiterSlope`, `limiterWallP95Db`; fact 618 is the plain verdict, 619 its log-only numbers.
+  `[landing] limiterSlopeBelow` and `limiterSlopeSpacingDb` own the rule and move the sound version.
+- **The source report starts with clipping** (`Snapshot.sourceReport.facts`): confirmed flat tops ask for a new export
+  with −6…−3 dBFS peaks; inter-sample overs are distinguished from that distortion. A clipped source cannot silently
+  gain loudness: `Master.allowClippedGain=true` is the explicit choice, otherwise `ClippedGain` (39, fact 139).
+  `SourceAlreadyMastered` (453) follows only when LUFS > −12, true peak > −1.5 dBTP and PLR < 11 dB, all three;
+  `[observations.alreadyMastered]` owns the thresholds. A detected former-lossy source also asks for the original
+  lossless mix (fact 454), after the clipping verdict.
+- **An already-mastered source is not mastered again by default** for streaming and other quieter targets. Within the
+  configured ceiling it is delivered `AsIs`, bit-exact at the source rate/depth, with no gain or dither (fact 456);
+  above it, `PeaksOnly` applies the exact gain down to −2 dBTP when louder than −14 LUFS, otherwise −1 dBTP, with only
+  delivery-format dither (fact 457). Specification targets still master normally. A louder target, max modes included,
+  warns and masters normally (fact 455). `Master.masterAnyway=true` explicitly chooses the normal chain.
+- **Every completed master has an immutable as-worked TOML**: `Session::exportWorked*` and
+  `fc_session_worked_report_size/copy` export its captured target, delivery, mode/gain/dither and every device's final
+  value, each marked `# default`, `# machine`, `# hand` or `# target`. It is keyed by `masterId`, independent of later
+  edits, and remains separate from the replayable project file.
+- **The Analyzers phase names its running analyzer**, with its own fraction (`Phase.analyzers`, a bounded list, null
+  outside that phase). A waiting damage grade says whether it waits for the source measurement or its queue turn
+  (`DamageJobEntry.waitReason`, null while running). The overall Analyzers fraction keeps rising after the shared
+  low-end walk, and an as-is or peaks-only delivery moves its phase fraction with its own copy or renders (the first
+  render to 0.8, a correction render to 0.9) instead of holding 0 until the end.
+- **A max master pulled up to its floor keeps one record**: the first landing's passes, with their reasons, stay in the
+  landing log ahead of the floor landing's; the pass count, the "pass N" label and the bar run on across both landings
+  (`LandingSummary.passes` up to 24). The max modes' progress expectation is config, `[progress.master]
+  expectedPassesMaxClean = 7` / `expectedPassesMaxDense = 6` (owner, 06.10; the pump's literal was 6 for both; manual
+  `expectedPasses` stays 3), for a master waiting for its measurements as for a rendering one; the config's version
+  moves, the sound's does not.
+- **No facade entry writes into a retained master PCM**: every entry that writes a caller buffer, the kit's included,
+  refuses a destination inside any live session's pending master audio with `ERR_OVERLAP`, before the session is asked.
+  A call that may free that audio (load, measured load, attached audio, a command) refuses an input inside it the same
+  way, before anything is freed — a load handed the master's own PCM used to read it after freeing it.
+- **The unread `[compressor] mix` is removed**, including its schema and typed member; the glue device's mix stays
+  the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
+- **ABI 13** appends the delivery fields, `masterAnyway`, `budgetResolutionDb`, landing pass P95/reason, source facts
+  454–457, the as-worked entry points and
+  `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. Config is `3b84f25acb565a44`, sound
+  `086fda481af08315`: the target classes and delivery ceilings now participate in the sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.
+
 ## v0.17.0 — 2026-10-05
 
 ### session — the glue is a parallel compressor: its mix, 40 % by default, a knob 0…100 % (owner, 05.10)

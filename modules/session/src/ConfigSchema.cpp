@@ -82,6 +82,9 @@ template <class E> struct Name
 };
 constexpr Name<Group> kGroups[] = { { "streaming", Group::Streaming }, { "delivery", Group::Delivery },
                                     { "aggregator", Group::Aggregator } };
+constexpr Name<TargetClass> kTargetClasses[] = { { "specification", TargetClass::Specification },
+                                                  { "streaming", TargetClass::Streaming },
+                                                  { "other", TargetClass::Other } };
 constexpr Name<LoudnessMode> kLoudnessModes[] = { { "manual", LoudnessMode::Manual }, { "maxClean", LoudnessMode::MaxClean },
                                                   { "maxDense", LoudnessMode::MaxDense } };
 constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
@@ -246,7 +249,7 @@ struct Doc
     }
 
     // The limiter's budget is a whole number of quarter dB, as written: the drive the landing resolves its proof to
-    // (LandingSearch kBudgetResolutionDb, 0.25 dB), and two decimals print it whole.
+    // (LandingSearch's default budgetResolutionDb, 0.25 dB), and two decimals print it whole.
     void onQuarterDb (Reader& in, std::string_view key)
     {
         const auto x = decimalAt (in, key);
@@ -315,6 +318,8 @@ void readLanding (Doc& d, Reader& in, Landing& o)
     in.required ("toleranceLu", o.toleranceLu, R { 0.001, 1.0 });
     in.required ("truePeakAimDb", o.truePeakAimDb, R { 0.0, 1.0 });
     in.required ("onSourceGate", o.onSourceGate);
+    in.required ("limiterSlopeBelow", o.limiterSlopeBelow, R { 0.001, 1.0 });
+    in.required ("limiterSlopeSpacingDb", o.limiterSlopeSpacingDb, R { 0.01, 60.0 });
     in.table ("limiterBudget", Need::Required, [&] (Reader& t)
     {
         const bool quiet = t.required ("quietDb", o.quietBudgetDb, R { 1.0, 60.0 });
@@ -330,6 +335,7 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         const bool ceiling = t.required ("ceilingLufs", o.maxCeilingLufs, R { -20.0, 0.0 });
         const bool floor = t.required ("floorLufs", o.maxFloorLufs, R { -30.0, 0.0 });
         d.notAbove (t, floor && ceiling, o.maxFloorLufs, o.maxCeilingLufs, "ceilingLufs");   // the floor under the ceiling
+        t.required ("budgetResolutionDb", o.maxBudgetResolutionDb, R { 0.05, 1.0 });
         const auto mode = [&] (std::string_view key, double& budget)
         {
             t.table (key, Need::Required, [&] (Reader& m)
@@ -550,7 +556,6 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
     in.required ("rangeDb", o.rangeDb, R { 0.0, 120.0 });
     in.required ("makeupDb", o.makeupDb, R { -24.0, 24.0 });
     in.required ("autoMakeup", o.autoMakeup);
-    in.required ("mix", o.mix, share());
     in.required ("lookaheadMs", o.lookaheadMs, R { 0.0, 20.0 });
     in.required ("sidechainHpfHz", o.sidechainHpfHz, R { 0.0, 1000.0 });
     d.name (in, "thresholdFrom", o.thresholdFrom, kThresholdFrom);
@@ -750,6 +755,13 @@ void readDither (Doc& d, Reader& in, Dither& o)
     }
     in.required ("autoBlank", o.autoBlank);
     in.required ("autoBlankSamples", o.autoBlankSamples, I { 1, 1 << 20 });
+}
+
+void readMasteredDelivery (Doc&, Reader& in, MasteredDelivery& o)
+{
+    in.required ("loudAboveLufs", o.loudAboveLufs, anyLufs());
+    in.required ("loudCeilingDbTp", o.loudCeilingDbTp, R { -12.0, 0.0 });
+    in.required ("regularCeilingDbTp", o.regularCeilingDbTp, R { -12.0, 0.0 });
 }
 
 // The chain's fixed geometry: types and signs here; whether a chain of every stage can be built with it — and with the
@@ -991,6 +1003,12 @@ void readObservations (Doc& d, Reader& in, Observations& o)
     {
         t.required ("aboveHz", o.vinylTopAboveHz, R { 1000.0, 192000.0 });
     });
+    in.table ("alreadyMastered", Need::Required, [&] (Reader& t)
+    {
+        t.required ("aboveLufs", o.masteredAboveLufs, anyLufs());
+        t.required ("peakAboveDbTp", o.masteredPeakAboveDbTp, R { -60.0, 24.0 });
+        t.required ("plrBelowDb", o.masteredPlrBelowDb, R { 0.0, 60.0 });
+    });
     in.table ("kinds", Need::Required, [&] (Reader& t) { readKinds (d, t, o.kinds); });
     in.table ("sibilance", Need::Required, [&] (Reader& t) { readSibilance (d, t, o.sibilance); });
 }
@@ -1126,6 +1144,8 @@ void readProgress (Doc& d, Reader& in, Progress& o)
         t.required ("passWeight", o.masterPassWeight, R { 0.0, 1000.0 });
         t.required ("measureWeight", o.masterMeasureWeight, R { 0.0, 1000.0 });
         t.required ("expectedPasses", o.masterExpectedPasses, I { 1, 1000 });
+        t.required ("expectedPassesMaxClean", o.masterExpectedPassesMaxClean, I { 1, 1000 });
+        t.required ("expectedPassesMaxDense", o.masterExpectedPassesMaxDense, I { 1, 1000 });
         if (! (o.masterPassWeight * o.masterExpectedPasses + o.masterMeasureWeight > 0)) d.outOfRange (t, "passWeight");
     });
 }
@@ -1185,6 +1205,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     if (chain && ! chainAdmits (o)) d.refuse (in, "chain", Refusal::AnalyzerRefuses);
     in.table ("stages", Need::Required, [&] (Reader& t) { readStages (d, t, o.stages); });
     in.table ("dither", Need::Required, [&] (Reader& t) { readDither (d, t, o.dither); });
+    in.table ("masteredDelivery", Need::Required, [&] (Reader& t) { readMasteredDelivery (d, t, o.masteredDelivery); });
     in.table ("deEsser", Need::Required, [&] (Reader& t) { readDeEsser (d, t, o.deEsser, bands); });
     bool bursts = false, crest = false;
     in.table ("stereoBursts", Need::Required, [&] (Reader& t) { bursts = readStereoBursts (t, o.stereoBursts); });
@@ -1230,6 +1251,7 @@ void readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, R& domain)
 void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
 {
     d.name (row, "group", x.group, kGroups);
+    d.name (row, "class", x.targetClass, kTargetClasses);
     row.required ("lufs", x.lufs, b.lufs);
     row.required ("tp", x.tp, b.tp);
     row.required ("monoBass", x.monoBass, b.monoBass);

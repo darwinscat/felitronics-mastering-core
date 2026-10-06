@@ -67,11 +67,14 @@ int main()
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
         view.pendingMasterBytes = 0.0; // byte counts are finite and nonnegative, even in hostile scalar fixtures
         fill.value (pass[0]);
+        if (pass[0].limiterP95Db && ! std::isfinite (*pass[0].limiterP95Db)) pass[0].limiterP95Db.reset();
         if (kept[0].landing)
         {
             kept[0].landing->passes = 1;
             kept[0].landing->log = pass;
             kept[0].landing->deliverable = false; kept[0].landing->peaksAboveCeiling = false;
+            kept[0].landing->limiterWall = false;
+            kept[0].landing->limiterSlope.reset(); kept[0].landing->limiterWallP95Db.reset();
             LandingTrace trace;
             trace.toFrame = 1; trace.sampleRateHz = 48000; trace.columns = 1;
             trace.samples = 4; trace.complete = trace.valid = true; trace.rows = { &traceRow, 1 };
@@ -82,6 +85,7 @@ int main()
         {
             auto& report = *kept[0].report;
             report.status = MeasurementStatus::Ready; report.reason = MeasurementReason::None;
+            report.deliveryMode = DeliveryMode::Mastered; report.deliveryGainDb = 0.0;
             report.targetLufs = -14.0; report.ceilingDbTp = -1.0;
             report.achievedLufs = -14.0; report.truePeakDbTp = -2.0;
             report.lraLu = 2.0; report.lraReason = MeasurementReason::None;

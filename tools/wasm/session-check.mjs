@@ -110,6 +110,8 @@ SURFACE[11] = SURFACE[10];
 // Version 12 (v0.17.0) appends the glue's mix — a field of the glue device, the plan's share, its term — and no entry
 // point.
 SURFACE[12] = SURFACE[11];
+SURFACE[13] = [...SURFACE[12], '_fc_session_worked_report_size', '_fc_session_worked_report_copy',
+    '_fc_session_source_snapshot_size', '_fc_session_source_snapshot_copy'];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -643,6 +645,43 @@ ok(M._fc_session_master_audio_view(masterSession, masterToken, pcmAddress, sampl
        'the retained PCM stays a valid waveform chunk input');
     for (const ptr of [fenceRequest, fenceSizes, fenceWritten, fenceTable, fenceJson, fenceRows]) M._free(ptr);
 }
+{
+    // EVERY ENTRY THAT WRITES A CALLER BUFFER: the source snapshot's JSON, the summary's and a kit answer aimed at the
+    // retained PCM are refused, and the audio and the revision stay.
+    const revisionBefore = masterSnapshot().revision;
+    const sizes = M._malloc(12);
+    M.HEAPU32[sizes >>> 2] = 12;
+    const sourceSized = M._fc_session_source_snapshot_size(masterSession, sizes) === STATUS.OK;
+    const sourceJson = M.HEAPU32[(sizes >>> 2) + 1], sourceRows = M.HEAPU32[(sizes >>> 2) + 2];
+    const sourceRowsAt = M._malloc(Math.max(8, sourceRows));
+    ok(sourceSized && sourceJson <= sampleCount * 4
+        && M._fc_session_source_snapshot_copy(masterSession, pcmAddress, sourceJson, sourceRowsAt, sourceRows) === STATUS.ERR_OVERLAP
+        && retainedSame() && masterSnapshot().revision === revisionBefore,
+       'the source snapshot refuses JSON inside the retained PCM');
+    M.HEAPU32[sizes >>> 2] = 12;
+    const summarySized = M._fc_session_summary_size(masterSession, sizes) === STATUS.OK;
+    const summaryJson = M.HEAPU32[(sizes >>> 2) + 1], summaryRows = M.HEAPU32[(sizes >>> 2) + 2];
+    const summaryRowsAt = M._malloc(Math.max(8, summaryRows));
+    const summaryStatus = M._fc_session_summary_copy(masterSession, pcmAddress, Math.min(summaryJson, sampleCount * 4),
+        summaryRowsAt, summaryRows);
+    const kitStatus = M._fc_kit_mono_zones_at(80, pcmAddress + 4);
+    ok(summarySized && summaryStatus === STATUS.ERR_OVERLAP && kitStatus === STATUS.ERR_OVERLAP
+        && retainedSame() && masterSnapshot().revision === revisionBefore,
+       `the summary and the kit refuse outputs inside the retained PCM (${summaryStatus}, ${kitStatus})`);
+    // NOR AN INPUT OF A CALL THAT MAY FREE IT: a load handed the retained PCM as its audio (it ends the masters before it
+    // copies) and a command whose JSON lies there are refused, nothing freed.
+    const planes = M._malloc(8), loadAnswer = M._malloc(macro('FC_SESSION_ANSWER_BYTES')), loadWritten = M._malloc(4);
+    M.HEAPU32[planes >>> 2] = pcmAddress; M.HEAPU32[(planes >>> 2) + 1] = pcmAddress + masterFrames * 4;
+    M.HEAPU32[loadWritten >>> 2] = 77;
+    const loadStatus = M._fc_session_load(masterSession, 93, 0, planes, 2, masterFrames, 48000, 0, 0, loadAnswer,
+        macro('FC_SESSION_ANSWER_BYTES'), loadWritten);
+    const commandStatus = M._fc_session_command(masterSession, pcmAddress, 64, loadAnswer, macro('FC_SESSION_ANSWER_BYTES'),
+        loadWritten);
+    ok(loadStatus === STATUS.ERR_OVERLAP && commandStatus === STATUS.ERR_OVERLAP && M.HEAPU32[loadWritten >>> 2] === 77
+        && retainedSame() && masterSnapshot().revision === revisionBefore,
+       `a load and a command refuse inputs inside the retained PCM they may free (${loadStatus}, ${commandStatus})`);
+    for (const ptr of [sizes, sourceRowsAt, summaryRowsAt, planes, loadAnswer, loadWritten]) M._free(ptr);
+}
 const releaseStatus = M._fc_session_master_audio_release(masterSession, masterToken);
 const repeatReleaseStatus = M._fc_session_master_audio_release(masterSession, masterToken);
 ok(releaseStatus === STATUS.OK && repeatReleaseStatus === STATUS.ERR_STALE,
@@ -926,9 +965,11 @@ for (let i = 0; i < 40000; ++i) {
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
 const missLanding = missSnapshot?.masters?.at(-1)?.landing;
-ok(missLanding?.status === 2 && missLanding.deliverable && missLanding.passes === 12
+ok(missLanding?.status === 1 && missLanding.deliverable && missLanding.passes === 2
+    && missLanding.limiterWall && missLanding.binding === 0
+    && missLanding.limiterSlope < 0.2 && missLanding.limiterWallP95Db < 7.5
     && Number.isFinite(missLanding.missLu) && missLanding.truePeakDbTp <= -6,
-   'safe miss records its actual loudness miss and true-peak measurement');
+   'safe miss at the limiter wall records its slope, loudness miss and true-peak measurement');
 const missWire = masterWire('snapshot'), missEvents = masterWire('events');
 let missExport = null;
 if (missSnapshot?.pendingMaster?.master) {
@@ -1140,8 +1181,8 @@ for (let i = 0; i < 12 && M.HEAPU32.buffer === lateHeapBefore; ++i)
     lateGrowth.push(M._malloc(16 * 1024 * 1024));
 const lateGrew = M.HEAPU32.buffer !== lateHeapBefore;
 let lateSourceEvent = null, lateJoinEvent = null;
-for (let i = 0; i < 20000 && !lateJoinEvent; ++i) {
-    if (M._fc_session_step(lateSession, 1, resultSize) !== STATUS.OK) break;
+for (let i = 0; i < 400000 && (!lateSourceEvent || !lateJoinEvent); ++i) {
+    if (M._fc_session_step(lateSession, 16, resultSize) !== STATUS.OK) break;
     const eventWire = masterWire('events', lateSession);
     if (!eventWire) break;
     const events = wireValue(eventWire);
@@ -1296,6 +1337,7 @@ for (const p of growth) M._free(p);
         if (masterCompleted(leanSession)) break;
     }
     const whole = transfer('snapshot', leanSession), light = transfer('summary', leanSession);
+    const sourceSnapshot = transfer('source_snapshot', leanSession);
     const kept = whole.value?.masters?.at(-1), lightKept = light.value?.masters?.at(-1);
     ok(kept?.landing?.limiterTrace?.rows?.length > 0 && kept.report.cost.waveform.length > 0 && whole.value.masterRowsIncluded === true
         && accepts(whole.value, 'SessionSnapshot'), 'its snapshot carries the master whole');
@@ -1307,6 +1349,10 @@ for (const p of growth) M._free(p);
         && lightKept.report.achievedLufs === kept.report.achievedLufs && lightKept.landing.status === kept.landing.status
         && light.jsonBytes * 10 < whole.jsonBytes,
        `its summary keeps the master's scalars, pass log and sections, and no heavy row: ${light.jsonBytes} B of JSON against the snapshot's ${whole.jsonBytes}`);
+    ok(sourceSnapshot.value?.masterRowsIncluded === false && sourceSnapshot.value?.measurementRowsIncluded === true
+        && accepts(sourceSnapshot.value, 'SessionSnapshot') && sourceSnapshot.rowBytes > light.rowBytes
+        && sourceSnapshot.jsonBytes < whole.jsonBytes,
+       'the appended source snapshot carries source rows and omits the master rows');
     const base = {audioId:whole.value.source.hash, requestId:'41', masterId:kept.id};
     const report = ask(leanSession, {...base, kind:11, fromFrame:'0', toFrame:'0', columns:0});
     ok(report && accepts(report.response, 'QueryResponse') && report.response.status === 0 && report.wroteJson <= report.boundJson

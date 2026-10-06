@@ -78,6 +78,7 @@ struct SnapshotView
     // points, summed as eqCurve is; so a shell draws the tone apart from the filter without subtracting one. Empty until
     // placement, as eqCurve.
     std::span<const EqPoint> eqOnlyCurve;
+    std::optional<SourceReport> sourceReport;
 };
 // THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
 // targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change

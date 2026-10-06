@@ -229,6 +229,9 @@ CodecStatus Wire::summary (const Session& s, std::span<char> j, std::span<double
 {
     MeasurementResult results[kAnalyzers]; return snapshot (s.buildSummary (results), j, r);
 }
+TransferNeed Wire::sourceSnapshotBytes (const Session& s) noexcept { return snapshotBytes (s.buildSourceSnapshot()); }
+CodecStatus Wire::sourceSnapshot (const Session& s, std::span<char> j, std::span<double> r) noexcept
+{ return snapshot (s.buildSourceSnapshot(), j, r); }
 CodecStatus Wire::queryRequest (std::string_view json, MeasurementQuery& out) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
@@ -396,7 +399,35 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
         }
         fields.finish();
     }
-    else if (kind != "master") p.set ("invalid", "kind");
+    else if (kind == "master")
+    {
+        command::Master r { id };
+        if (const auto flag = root.take ("allowClippedGain", false); ! flag.empty())
+        {
+            Reader reader { flag, root.storage, 0, true, {}, 0, 0, false };
+            reader.value (r.allowClippedGain);
+            reader.space();
+            if (! reader.good || reader.pos != flag.size()) p.set ("invalid", "allowClippedGain");
+        }
+        if (const auto flag = root.take ("masterAnyway", false); ! flag.empty())
+        {
+            Reader reader { flag, root.storage, 0, true, {}, 0, 0, false };
+            reader.value (r.masterAnyway);
+            reader.space();
+            if (! reader.good || reader.pos != flag.size()) p.set ("invalid", "masterAnyway");
+        }
+        if (const auto value = root.take ("budgetResolutionDb", false); ! value.empty())
+        {
+            double resolution = 0.0;
+            Reader reader { value, root.storage, 0, true, {}, 0, 0, false };
+            reader.value (resolution);
+            reader.space();
+            if (! reader.good || reader.pos != value.size()) p.set ("invalid", "budgetResolutionDb");
+            else r.budgetResolutionDb = resolution;
+        }
+        request = r;
+    }
+    else p.set ("invalid", "kind");
     root.finish(); return finish (id, request, p);
 }
 template <class F> auto parseLoad (CommandId id, const Pcm& pcm, std::string_view meta, F&& finish) noexcept

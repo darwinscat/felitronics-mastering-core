@@ -265,7 +265,15 @@ void guards()
         && fc_session_export_project_copy (0, nullptr, 1, nullptr) == FC_SESSION_ERR_NULL
         && fc_session_export_project_copy (0, bytes, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
         && fc_session_export_project_copy (0, bytes, 1, &out) == FC_SESSION_ERR_HANDLE
-        && fc_session_export_project_copy (h, bytes, 1, &out) == FC_SESSION_ERR_NO_SOURCE;
+        && fc_session_export_project_copy (h, bytes, 1, &out) == FC_SESSION_ERR_NO_SOURCE
+        && fc_session_worked_report_size (0, 1, nullptr) == FC_SESSION_ERR_NULL
+        && fc_session_worked_report_size (0, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
+        && fc_session_worked_report_size (0, 1, &out) == FC_SESSION_ERR_HANDLE
+        && fc_session_worked_report_size (h, 1, &out) == FC_SESSION_ERR_UNKNOWN_MASTER
+        && fc_session_worked_report_copy (0, 1, nullptr, 1, nullptr) == FC_SESSION_ERR_NULL
+        && fc_session_worked_report_copy (0, 1, bytes, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
+        && fc_session_worked_report_copy (0, 1, bytes, 1, &out) == FC_SESSION_ERR_HANDLE
+        && fc_session_worked_report_copy (h, 1, bytes, 1, &out) == FC_SESSION_ERR_UNKNOWN_MASTER;
     for (int mode = 0; mode < 3; ++mode)
     {
         const auto call = [&] (fc_session handle, const char* input, char* output, std::uint32_t capacity, std::uint32_t* n)
@@ -427,7 +435,10 @@ void scenario()
         ok (contains (contract, "\"code\":\"contract\"") && contains (contract, "\"fact\":{\"FactId\":131,\"args\":[]}"),
             "a malformed command: the contract's fact — " + contract);
     }
-    ok (contains (command (h, R"({"kind":"master","commandId":"4"})"), "accepted"), "usable LUFS and true peak permit Master");
+    const auto wideResolution = command (h, R"({"kind":"master","commandId":"41","budgetResolutionDb":1.01})");
+    ok (contains (wideResolution, "\"code\":14"), "a master proof resolution outside 0.05…1 dB is refused");
+    ok (contains (command (h, R"({"kind":"master","commandId":"4","budgetResolutionDb":0.5})"), "accepted"),
+        "the wire accepts a 0.5 dB master proof resolution");
     bool done = false;
     do { (void) fc_session_step (h, 1, &more); done = done || contains (events (h), "\"kind\":\"done\""); } while (more == FC_SESSION_MORE);
     ok (done, "master completion crosses the event transport");
@@ -632,7 +643,8 @@ void freezeRegressions()
         "the measurement demand record carries no retired slots: 88 bytes, workspaceBytes right after resultBytes");
     ok (fc_session_export_project_size (h, &written) == FC_SESSION_ERR_NOT_PLACED
         && fc_session_export_project_copy (h, json, sizeof (json), &written) == FC_SESSION_ERR_NOT_PLACED, "export retains NotPlaced");
-    for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})" })
+    for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})",
+                                  R"({"kind":"master","commandId":"5","budgetResolutionDb":"wide"})" })
     {
         ok (fc_session_step (h, 1, &written) == FC_SESSION_OK, "step before malformed command");
         const auto phase = events (h); const auto seqAt = phase.rfind ("\"seq\":\"");
@@ -685,6 +697,8 @@ void poison()
         && fc_session_import_project (0, 0, 0, nullptr, 0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_export_project_size (0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_export_project_copy (0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_worked_report_size (0, 1, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_worked_report_copy (0, 1, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_step (0, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_events_size (0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_snapshot_size (0, nullptr) == FC_SESSION_ERR_POISONED

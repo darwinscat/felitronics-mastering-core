@@ -66,12 +66,14 @@ struct Capacity
 // earlier grade runs) or a new master parked it; Running — its walks are being made. A grade ends with its result, or by
 // cancel of its job id, forget of its master or a new source; never by a new master.
 enum class DamageJobState : std::uint8_t { Waiting, Running };
+enum class DamageWaitReason : std::uint8_t { Queue, SourceMeasurement };
 struct DamageJobEntry
 {
     JobId job = 0;
     MasterId masterId = 0;
     DamageJobState state = DamageJobState::Waiting;
     Phase progress {};
+    std::optional<DamageWaitReason> waitReason = std::nullopt;
 };
 // THE QUEUE'S ROOM: a grade asked past it is refused (Rejection::DamageQueueFull). Bounded so a new source can say every
 // grade's last word in its own batch — beside the load's own events (a measured load's one per analyzer, and a few) —
@@ -80,6 +82,15 @@ inline constexpr std::size_t kMaxDamageGrades = 32;
 static_assert (kMaxDamageGrades + kAnalyzers + 8 <= kEventBatch, "a new source's last words of every grade fit its batch");
 
 struct ProjectText
+{
+    Rejection rejection = Rejection::None;
+    std::unique_ptr<char[]> data;
+    std::size_t size = 0;
+    [[nodiscard]] std::string_view view() const noexcept;
+};
+// A canonical, read-only TOML account of one completed master. Unlike the project file, it is flattened to the values
+// that sounded and belongs to the master's captured recipe, so later project edits cannot change it.
+struct WorkedText
 {
     Rejection rejection = Rejection::None;
     std::unique_ptr<char[]> data;
@@ -462,6 +473,22 @@ struct Observations
     Observation spectralWall, loudestLowNote, lowestLowBand, infraLow, wideBass, polarity, sibilance;
     Observation hum, humWandered;
 };
+// The source report opens with the clipping detector's verdict. A true peak over zero with samples below full scale
+// is an inter-sample over, not evidence of a flattened waveform. Unknown remains unknown when a reading is absent.
+enum class SourceClipStatus : std::uint8_t { NotMeasured, Clean, Clipped, InterSampleOvers, SampleOvers };
+struct SourceReport
+{
+    SourceClipStatus clipping = SourceClipStatus::NotMeasured;
+    MeasurementReason clippingReason = MeasurementReason::Pending;
+    std::optional<bool> alreadyMastered;
+    std::optional<double> loudnessLufs, truePeakDbTp, plrDb;
+    // The mode a default version-0 master would take for the selected target. Mastered while recognition is absent,
+    // the target is a specification, or the target asks for more loudness.
+    DeliveryMode deliveryMode = DeliveryMode::Mastered;
+    std::optional<double> deliveryCeilingDbTp, deliveryGainDb;
+    BoundedList<text::Fact, 2> facts {};
+    BoundedList<text::Fact, 2> advice {};      // later lines, past the frozen v13 room of `facts`
+};
 // ONE OBSERVATION'S LINE: the fact ObservationText states, and the kind it is said of.
 struct ObservationFact
 {
@@ -661,6 +688,9 @@ public:
     [[nodiscard]] ProjectText exportProject() const noexcept;
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
+    [[nodiscard]] Checked exportWorkedBytes (MasterId master) const noexcept;
+    [[nodiscard]] WorkedText exportWorked (MasterId master) const noexcept;
+    [[nodiscard]] Rejection exportWorked (MasterId master, std::span<char> output) const noexcept;
 
     // Each live measurement unit prepares one analyzer, reads at most 1024 source frames, drains new rows,
     // or advances finalization. A call takes at most kStepUnits units;
@@ -678,6 +708,10 @@ public:
     [[nodiscard]] Snapshot snapshot() const noexcept;
     [[nodiscard]] std::uint64_t summaryBytes() const noexcept;
     [[nodiscard]] Snapshot summary() const noexcept;
+    // A page transfer with every source measurement row and no master's heavy rows or traces. The ordinary full
+    // snapshot and the frequent rowless-source summary keep their existing shapes.
+    [[nodiscard]] std::uint64_t sourceSnapshotBytes() const noexcept;
+    [[nodiscard]] Snapshot sourceSnapshot() const noexcept;
 
     //==========================================================================
     // WHAT THE SESSION HOLDS — read between calls; a reference stays valid until the next call that changes the session.
@@ -733,6 +767,8 @@ private:
     void needlesAfterDroppedMaster() noexcept;
     void startMaster (const detail::MasterPlan& plan) noexcept;
     void clearMasters() noexcept;
+    void cancelLateMasterCrest (MeasurementReason reason, bool publish) noexcept;
+    void stepLateMasterCrest() noexcept;
     void settleMasterCrest (MeasurementReason reason) noexcept;
     void stepMasterCrestJoin() noexcept;
     // THE DAMAGE'S JOBS (src/Damage.h): asked by the shell (command::GradeDamage) for a master kept — a job id each,
@@ -753,6 +789,8 @@ private:
     [[nodiscard]] Phase damageWaitingProgress() const noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
+    [[nodiscard]] SnapshotView buildSourceSnapshot() const noexcept;
+    void stripMasterRows (SnapshotView& view) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
     void requestNeedles() noexcept;
     void stepNeedles() noexcept;
@@ -818,6 +856,8 @@ private:
     // ended by a load or loadMeasured, which clear it with every other master state. When the wait ends the master's
     // chain is taken from that project's devices (src/Chain.h) and its job starts.
     bool jobWaiting_ = false;
+    bool jobMasterAnyway_ = false;
+    std::optional<double> jobBudgetResolutionDb_;
     bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
@@ -848,12 +888,16 @@ private:
     JobId lastJob_ = 0;
     Recipe jobRecipe_ {};
     std::unique_ptr<Kept[]> masters_;
-    // Room for the lean summary's masters (Capabilities::leanSummary): as many as masters_ has, written whole by every
-    // summary — a view's scratch, never state; absent without the capability.
+    // Scratch for any master-rowless transfer: as many as masters_ has, written afresh by each view, never state.
     std::unique_ptr<Kept[]> leanMasters_;
     std::unique_ptr<detail::MasterRows[]> masterRows_;
     std::unique_ptr<detail::MasterJob> masterJob_;
     std::uint64_t masterJobBytes_ = 0;
+    // Delivery has ended, but its impact is a low-priority late join. It re-renders from the retained source, so the
+    // transferable PCM may be copied, taken or released as soon as MasterReady is published.
+    std::unique_ptr<detail::MasterJob> lateMasterJob_;
+    JobId lateMasterId_ = 0;
+    std::uint64_t lateMasterJobBytes_ = 0;
     MasterToken pendingMaster_ {};
     MasterAudio masterAudio_ {};
     std::uint32_t masterAudioBits_ = 0;

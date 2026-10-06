@@ -8,7 +8,9 @@
 #include "MeasurementPlan.h"
 #include "Cost.h"
 #include "Limiter.h"
+#include "Observations.h"
 #include <felitronics/analysis/BandCrestResult.h>
+#include <felitronics/mastering/PcmQuantizer.h>
 #include "Rules.h"
 #include <felitronics/session/Session.h>
 #include <felitronics/core/DetMath.h>
@@ -168,6 +170,14 @@ MaxStop maxStopOf (const MaxStopInputs& in) noexcept
     return MaxStop::Passes;
 }
 
+std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept
+{
+    const auto master = engine.find ("progress").find ("master");
+    const auto key = mode == LoudnessMode::MaxClean ? "expectedPassesMaxClean"
+                   : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense" : "expectedPasses";
+    return std::uint32_t (*master.find (key).integer());
+}
+
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
@@ -177,6 +187,10 @@ double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
+    if (input.budgetResolutionDb && ! std::isfinite (*input.budgetResolutionDb))
+    { result.rejection = Rejection::NotFinite; return result; }
+    if (input.budgetResolutionDb && (*input.budgetResolutionDb < 0.05 || *input.budgetResolutionDb > 1.0))
+    { result.rejection = Rejection::OutOfDomain; return result; }
     if (input.source != 0 && input.source != s.source_.hash) return result;
     if (input.revision != 0 && input.revision != s.revision_) return result;
     if (input.ready.version > 1u) return result;
@@ -191,8 +205,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     // THE DELIVERY FORMAT IS THE TARGET'S (PLAN: rate, bit depth and dither come from the target). Its rate — the
     // source's when the target keeps it (sampleRate 0) — and its depth: 0 names each, the same value restates it,
     // and any other value is refused before anything is priced or allocated.
-    const auto deliveryRate = target.sampleRate == 0 ? s.source_.sampleRate : std::uint32_t (target.sampleRate);
-    const auto deliveryBits = std::uint8_t (target.bitDepth);   // 16 or 24: the config's build gate
+    auto deliveryRate = target.sampleRate == 0 ? s.source_.sampleRate : std::uint32_t (target.sampleRate);
+    auto deliveryBits = std::uint8_t (target.bitDepth);   // 16 or 24: the config's build gate
     if ((input.ready.deliveryBits != 0 && input.ready.deliveryBits != deliveryBits)
         || (input.ready.deliveryRateHz != 0 && input.ready.deliveryRateHz != deliveryRate))
     { result.rejection = Rejection::DeliveryFormat; return result; }
@@ -249,6 +263,38 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         medium.inputLufs = sourceLufs;
         result.medium = medium;
     }
+    // DELIVERY INSTEAD OF REMASTERING: recognition is read once, but the choice is independent of how recognition is
+    // configured. A specification and a louder request use the normal path. An explicit masterAnyway does too.
+    if (input.ready.version == 0 && ! input.masterAnyway)
+    {
+        const auto source = sourceReport ({ ruleset, s.measurementResults_, s.source_.channels, s.source_.sampleRate,
+                                            s.source_.frames, s.source_.bitDepth }, &project);
+        result.deliveryMode = source.deliveryMode;
+        result.deliveryGainDb = source.deliveryGainDb.value_or (0.0);
+        result.deliveryCeilingDbTp = source.deliveryCeilingDbTp.value_or (targetTp);
+        if (result.deliveryMode == DeliveryMode::AsIs)
+        {
+            deliveryRate = s.source_.sampleRate;
+            deliveryBits = s.source_.bitDepth;
+            result.medium.reset();
+        }
+        if (result.deliveryMode != DeliveryMode::Mastered)
+        {
+            const bool dither = result.deliveryMode == DeliveryMode::PeaksOnly && deliveryBits <= ruleset.ditherUpToBits;
+            result.deliveryDithered = dither;
+            result.ready.topology.eq = false;
+            result.ready.topology.monoBass = false;
+            result.ready.topology.stereoAir = false;
+            result.ready.topology.compressor = false;
+            result.ready.topology.clipper = false;
+            result.ready.topology.limiter = false;
+            result.ready.topology.dither = dither;
+            result.ready.params.inputGainDb = result.deliveryGainDb;
+            result.ready.params.preLimiterGainDb = 0.0;
+            result.ready.params.bypassDither = false;
+            result.medium.reset();
+        }
+    }
     if (! validParams (result.ready.params))
     { result.rejection = Rejection::NotFinite; return result; }
     result.deliveryRate = deliveryRate;
@@ -256,7 +302,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     const double rate = double (result.deliveryRate);
     if (result.deliveryRate < kMinSampleRate || result.deliveryRate > s.capabilities_.maxRateHz
         || s.source_.frames > std::uint64_t (std::numeric_limits<int>::max())
-        || ! mastering::MasteringChain::admits (rate, int (s.source_.channels), result.ready.topology))
+        || (result.deliveryMode != DeliveryMode::AsIs
+            && ! mastering::MasteringChain::admits (rate, int (s.source_.channels), result.ready.topology)))
     { result.rejection = Rejection::OutOfDomain; return result; }
     const bool convert = result.deliveryRate != s.source_.sampleRate;
     const long long delivered = convert ? mastering::DeliveryConverter::deliveredFrames (
@@ -264,6 +311,45 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     if (delivered <= 0 || delivered > std::numeric_limits<int>::max())
     { result.rejection = Rejection::TooLong; return result; }
     result.frames = int (delivered);
+    result.request.targetLufs = targetLufs;
+    result.sourceLufs = sourceLufs;
+    result.request.maxTruePeakDbTp = result.deliveryMode == DeliveryMode::Mastered ? targetTp : result.deliveryCeilingDbTp;
+    result.ready.deliveryBits = deliveryBits;
+    result.ready.params.dither.bits = deliveryBits;
+    if (result.deliveryMode != DeliveryMode::Mastered)
+    {
+        constexpr int block = 1024;
+        const auto outputBytes = std::uint64_t (result.frames) * s.source_.channels * sizeof (float);
+        std::uint64_t total = sizeof (MasterJob);
+        if (! add (total, outputBytes)
+            || ! add (total, mastering::MasteringChain::constructBytes())
+            || ! add (total, mastering::TargetLoudnessSolver::constructBytes())
+            || ! add (total, mastering::DeliveryConverter::constructBytes())
+            || ! add (total, 8u * 4096u))
+        { result.rejection = Rejection::TooLong; return result; }
+        result.largestBlock = std::max<std::uint64_t> (sizeof (MasterJob), outputBytes);
+        if (result.deliveryMode == DeliveryMode::PeaksOnly)
+        {
+            mastering::OfflineRenderer::Storage renderStorage;
+            if (! mastering::OfflineRenderer::storageFor (int (s.source_.channels), block, renderStorage)) return result;
+            const auto peakStorage = analysis::ReferenceTruePeakMeter::storageFor (
+                rate, block, int (s.source_.channels));
+            const auto chainBytes = mastering::MasteringChain::prepareBytes (rate, int (s.source_.channels), result.ready.topology);
+            const auto converterBytes = convert ? mastering::DeliveryConverter::prepareBytes (
+                double (s.source_.sampleRate), rate, int (s.source_.channels), block) : 0u;
+            if (chainBytes == 0 || ! peakStorage.ok || (convert && converterBytes == 0))
+            { result.rejection = Rejection::OutOfDomain; return result; }
+            if (! add (total, chainBytes) || ! add (total, converterBytes) || ! add (total, renderStorage.bytes())
+                || ! add (total, peakStorage.bytes()))
+            { result.rejection = Rejection::TooLong; return result; }
+            result.largestBlock = std::max ({ result.largestBlock, chainBytes, converterBytes,
+                renderStorage.bytes(), peakStorage.bytes() });
+        }
+        result.bytes = total;
+        result.largestBlock += 4096u;
+        result.rejection = Rejection::None;
+        return result;
+    }
     const auto costRules = engine.find ("cost");
     const double grWindow = number (costRules.find ("grWindowSeconds"));
     const auto grMin = costRules.find ("grTraceBucketsMin").integer();
@@ -282,8 +368,6 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         std::size_t (s.source_.frames / sourceHop + 1u), result.crestCapacity });
     result.waveformCapacity = std::size_t (std::min (result.frames, 2048)) * s.source_.channels;
     result.axesCapacity = std::size_t (std::min (result.frames, 2048));
-    result.request.targetLufs = targetLufs;
-    result.sourceLufs = sourceLufs;
     result.request.maxTruePeakDbTp = targetTp;
     result.request.toleranceLu = tolerance;
     result.request.truePeakAimDb = peakAim;
@@ -299,8 +383,12 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     result.request.limiterGr.limitDb = limiterBudgetDb (engine, targetLufs);
     result.request.limiterGr.statistic = mastering::GrStatistic::P95;
     result.request.limiterActiveInputDb = number (engine.find ("cost").find ("limiterActiveInputDb"));
+    result.request.clipperLoudShare = number (engine.find ("saturation").find ("cut").find ("loudShare"));
     const auto onGate = engine.find ("landing").find ("onSourceGate").boolean();
-    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb) || ! std::isfinite (result.request.limiterActiveInputDb))
+    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb)
+        || ! std::isfinite (result.request.limiterActiveInputDb)
+        || ! std::isfinite (result.request.clipperLoudShare)
+        || result.request.clipperLoudShare <= 0.0 || result.request.clipperLoudShare > 1.0)
     { result.rejection = Rejection::MandatoryUnavailable; return result; }
     const auto* momentary = findArray (s.measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
     if (*onGate && momentary && momentary->complete && momentary->stored != 0)
@@ -314,9 +402,18 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     // rule by the target's loudness, starting from the target's own number — a landing and a delivery, as a manual
     // master's; its damage is graded as any master's, when the shell asks (owner, 04.10: no guard in the loop).
     result.loudnessMode = loudnessModeOf (ruleset, project);
+    const auto max = engine.find ("landing").find ("max");
+    const double configuredResolution = number (max.find ("budgetResolutionDb"));
+    result.request.budgetResolutionDb = input.budgetResolutionDb.value_or (configuredResolution);
+    if (! std::isfinite (result.request.budgetResolutionDb))
+    { result.rejection = Rejection::MandatoryUnavailable; return result; }
+    if (result.loudnessMode == LoudnessMode::Manual)
+    {
+        result.request.limiterSlopeBelow = number (engine.find ("landing").find ("limiterSlopeBelow"));
+        result.request.limiterSlopeSpacingDb = number (engine.find ("landing").find ("limiterSlopeSpacingDb"));
+    }
     if (result.loudnessMode != LoudnessMode::Manual)
     {
-        const auto max = engine.find ("landing").find ("max");
         result.floorLufs = number (max.find ("floorLufs"));
         result.request.targetLufs = number (max.find ("ceilingLufs"));
         result.request.limiterGr.limitDb = maxBudgetDb (engine, result.loudnessMode);
@@ -367,16 +464,18 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     result.glueTrace = result.ready.topology.compressor && ! result.ready.params.bypassCompressor;
     // And the saturation's shave where the soft clipper shapes (the report's own test for its cut).
     result.saturationTrace = result.ready.topology.clipper && ! result.ready.params.bypassClipper;
-    result.retainedRowBytes = 12u * sizeof (LandingPass)
+    result.retainedRowBytes = std::uint64_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) * sizeof (LandingPass)
         + (2u + (result.glueTrace ? 1u : 0u) + (result.saturationTrace ? 1u : 0u)) * std::uint64_t (result.traceBuckets)
             * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
         double (s.source_.sampleRate), int (s.source_.channels), result.ready.topology) : 0u;
-    const auto impactScratchBytes = convert ? std::uint64_t (s.source_.channels) * 1024u * sizeof (float) : 0u;
+    // The impact joins after delivery and therefore cannot borrow the transferable master buffer. It re-renders in
+    // bounded blocks from the retained source, at the source rate used by the impact contract.
+    const auto impactScratchBytes = std::uint64_t (s.source_.channels) * 1024u * sizeof (float);
     if (chainBytes == 0 || solverBytes == 0 || (convert && converterBytes == 0) || ! search.ok)
     { result.rejection = Rejection::OutOfDomain; return result; }
     const auto outputBytes = search.outputBytes;
-    result.largestBlock = std::max ({ outputBytes, chainBytes, solverBytes, converterBytes,
+    result.largestBlock = std::max ({ outputBytes, search.candidateBytes, chainBytes, solverBytes, converterBytes,
         renderStorage.bytes(), search.workspaceBytes, std::uint64_t (sizeof (MasterJob)),
         crestRows, costMeterBytes, std::uint64_t (result.costCapacity) * sizeof (MasterSection),
         std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket), axesRows,
@@ -385,7 +484,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     std::uint64_t total = 0;
     // Include constructors, all retained search work, two compact traces, and an allocator margin
     // for every tier's vector growth and Debug proxies.
-    if (! add (total, sizeof (MasterJob)) || ! add (total, outputBytes)
+    if (! add (total, sizeof (MasterJob)) || ! add (total, outputBytes) || ! add (total, search.candidateBytes)
         || ! add (total, chainBytes) || ! add (total, solverBytes)
         || ! add (total, converterBytes) || ! add (total, renderStorage.bytes())
         || ! add (total, search.workspaceBytes)
@@ -416,17 +515,22 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
 bool MasterJob::begin (const Session& s, const MasterPlan& plan)
 {
     session = &s;
+    rowIndex = s.masterCount_;
     crestParams = plan.crestParams;
     ready = plan.ready;
     medium = plan.medium;
     damagePlan = plan.damage;
+    deliveryMode = plan.deliveryMode;
+    deliveryGainDb = plan.deliveryGainDb;
+    deliveryCeilingDbTp = plan.deliveryCeilingDbTp;
+    deliveryDithered = plan.deliveryDithered;
     mode = plan.loudnessMode;
     floorLufs = plan.floorLufs;
     floorRequest = plan.request;
     floorRequest.targetLufs = plan.floorLufs;
     floorRequest.limiterGr = {};
     floorRequest.landingOnSourceGate = false;
-    floorPass = false;
+    floorPass = false; floorFirstPasses = 0; floorFirstWork = 0;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -437,6 +541,26 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     sourceFrames = s.source_.frames;
     costHop = plan.costHop;
     constexpr int block = 1024;
+    if (deliveryMode != DeliveryMode::Mastered)
+    {
+        report.crest.status = MeasurementStatus::Unavailable;
+        report.crest.reason = MeasurementReason::Unsupported;
+        report.lraReason = MeasurementReason::Unsupported;
+        report.plrReason = MeasurementReason::Unsupported;
+        output.reset (new float[std::size_t (frames) * std::size_t (channels)]);
+        for (int c = 0; c < channels; ++c)
+        {
+            sourcePlanes[c] = s.samples_.get() + std::size_t (c) * std::size_t (s.source_.frames);
+            outputPlanes[c] = output.get() + std::size_t (c) * std::size_t (frames);
+        }
+        if (deliveryMode == DeliveryMode::AsIs) { stage = Stage::DeliveryCopy; return true; }
+        if (! chain.prepare (double (deliveryRate), channels, plan.ready.topology)
+            || ! renderer.prepare (channels, block)
+            || ! deliveryPeakMeter.prepare (double (deliveryRate), block, channels)) return false;
+        if (deliveryRate != s.source_.sampleRate
+            && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
+        return beginDeliveryRender();
+    }
     if (! chain.prepare (double (deliveryRate), channels, plan.ready.topology)
         || ! renderer.prepare (channels, block)
         || ! solver.prepare (double (deliveryRate), channels, block,
@@ -446,7 +570,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     costAxesReady = costAxes.prepare (deliveryRate, unsigned (channels));
     const bool convert = deliveryRate != s.source_.sampleRate;
     if (convert && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
-    if (convert) impactScratch.reset (new float[std::size_t (channels) * block]);
+    impactScratch.reset (new float[std::size_t (channels) * block]);
     output.reset (new float[std::size_t (frames) * std::size_t (channels)]);
     for (int c = 0; c < channels; ++c)
     {
@@ -459,12 +583,112 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
         channels, frames, plan.request, {}, convert ? &converter : nullptr);
 }
 
+bool MasterJob::beginDeliveryRender() noexcept
+{
+    chain.setParams (ready.params);
+    deliveryMeasureCursor = 0;
+    deliveryPeakMeter.reset();
+    if (deliveryRate != sourceRate)
+    {
+        if (! converter.begin (sourcePlanes, channels, (long long) sourceFrames, outputPlanes, frames)) return false;
+        stage = Stage::DeliveryConvert;
+        return true;
+    }
+    if (! renderer.begin (chain, sourcePlanes, outputPlanes, channels, frames, deliveryTaps)) return false;
+    stage = Stage::DeliveryRender;
+    return true;
+}
+
 mastering::StepResult MasterJob::step (long long budget) noexcept
 {
     using mastering::StepResult;
     if (budget < 0 || stage == Stage::Failed) return StepResult::Failed;
     if (stage == Stage::Done) return StepResult::Done;
+    if (stage == Stage::Ready) return StepResult::Done;
     if (budget == 0) return StepResult::More;
+    if (stage == Stage::DeliveryCopy)
+    {
+        const auto count = std::min (budget, (long long) sourceFrames - deliveryCursor);
+        for (int c = 0; c < channels; ++c)
+            std::copy_n (sourcePlanes[c] + deliveryCursor, count, outputPlanes[c] + deliveryCursor);
+        deliveryCursor += count;
+        if (deliveryCursor != (long long) sourceFrames) return StepResult::More;
+        report.status = MeasurementStatus::Ready; report.reason = MeasurementReason::None;
+        report.targetLufs = targetLufs; report.ceilingDbTp = deliveryCeilingDbTp;
+        report.achievedLufs = sourceLufs; report.gainFromSourceDb = 0.0;
+        report.deliveryMode = deliveryMode; report.deliveryGainDb = 0.0; report.deliveryDithered = false;
+        report.deliverable = report.peakSafe = true;
+        for (const auto& value : session->measurementResults_[std::size_t (Analyzer::Loudness)].numbers)
+        {
+            if (value.name == "truePeakDb" && value.value) report.truePeakDbTp = value.value;
+            if (value.name == "lraLu" && value.value) { report.lraLu = value.value; report.lraReason = MeasurementReason::None; }
+        }
+        if (report.truePeakDbTp) { report.plrDb = *report.truePeakDbTp - sourceLufs; report.plrReason = MeasurementReason::None; }
+        stage = Stage::Done; return StepResult::Done;
+    }
+    if (stage == Stage::DeliveryConvert)
+    {
+        const auto converted = converter.step (budget);
+        if (converted == StepResult::Failed) { stage = Stage::Failed; return converted; }
+        if (converted == StepResult::More) return converted;
+        for (int c = 0; c < channels; ++c) deliveryPlanes[c] = outputPlanes[c];
+        if (! converter.finish () || ! renderer.begin (chain, deliveryPlanes,
+                                                        outputPlanes, channels, frames, deliveryTaps))
+        { stage = Stage::Failed; return StepResult::Failed; }
+        stage = Stage::DeliveryRender; return StepResult::More;
+    }
+    if (stage == Stage::DeliveryRender)
+    {
+        const auto rendered = renderer.step (chain, deliveryTaps, mastering::NullTapSink {}, budget, frames);
+        if (rendered == StepResult::Failed) { stage = Stage::Failed; return rendered; }
+        if (rendered == StepResult::More) return rendered;
+        if (! renderer.finish()) { stage = Stage::Failed; return StepResult::Failed; }
+        deliveryMeasureCursor = 0;
+        deliveryPeakMeter.reset();
+        stage = Stage::DeliveryMeasure;
+        return StepResult::More;
+    }
+    if (stage == Stage::DeliveryMeasure)
+    {
+        constexpr int block = 1024;
+        const int count = int (std::min<long long> ({ budget, block, frames - deliveryMeasureCursor }));
+        for (int c = 0; c < channels; ++c)
+            for (int i = 0; i < count; ++i)
+                outputPlanes[c][deliveryMeasureCursor + i] = mastering::pcmSample (
+                    outputPlanes[c][deliveryMeasureCursor + i], ready.deliveryBits);
+        const float* planes[2] { outputPlanes[0] + deliveryMeasureCursor,
+            channels == 2 ? outputPlanes[1] + deliveryMeasureCursor : nullptr };
+        if (! deliveryPeakMeter.process (planes, channels, count))
+        { stage = Stage::Failed; return StepResult::Failed; }
+        deliveryMeasureCursor += count;
+        if (deliveryMeasureCursor != frames) return StepResult::More;
+        deliveryPeakMeter.drain();
+        const double truePeak = deliveryPeakMeter.truePeakDb();
+        if (std::isnan (truePeak)) { stage = Stage::Failed; return StepResult::Failed; }
+        constexpr double correctionGuardDb = 0.01;
+        if (truePeak > deliveryCeilingDbTp - correctionGuardDb && ! deliveryCorrected)
+        {
+            // One bounded correction render. The small guard covers integer-format dither and rounding while remaining
+            // far below an audible gain step; it also makes a reading on the ceiling take the same branch on every
+            // floating-point tier. The second measured render is the certificate, whatever it reads.
+            deliveryGainDb -= std::fmax (correctionGuardDb,
+                                         truePeak - deliveryCeilingDbTp + correctionGuardDb);
+            ready.params.inputGainDb = deliveryGainDb;
+            deliveryCorrected = true;
+            if (! beginDeliveryRender()) { stage = Stage::Failed; return StepResult::Failed; }
+            return StepResult::More;
+        }
+        report.status = MeasurementStatus::Ready; report.reason = MeasurementReason::None;
+        report.targetLufs = targetLufs; report.ceilingDbTp = deliveryCeilingDbTp;
+        report.achievedLufs = sourceLufs + deliveryGainDb; report.gainFromSourceDb = deliveryGainDb;
+        report.deliveryMode = deliveryMode; report.deliveryGainDb = deliveryGainDb;
+        report.deliveryDithered = deliveryDithered;
+        report.truePeakDbTp = truePeak;
+        report.peakSafe = truePeak <= deliveryCeilingDbTp;
+        report.deliverable = report.peakSafe;
+        report.plrDb = truePeak - *report.achievedLufs; report.plrReason = MeasurementReason::None;
+        stage = Stage::Done; return StepResult::Done;
+    }
     if (stage == Stage::Search)
     {
         const auto result = search.step (budget);
@@ -482,7 +706,12 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             {
                 floorPass = true;
                 floorFirstLufs = file;
-                if (! beginFloor()) { stage = Stage::Failed; return StepResult::Failed; }
+                floorFirstPasses = std::uint32_t (search.result().logCount);
+                floorFirstWork = search.result().workUnits;
+                auto& rows = session->masterRows_[rowIndex];
+                if (! LandingOps::passRows (search.result(),
+                        { rows.passes.get(), rows.passes ? std::size_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) : 0u })
+                    || ! beginFloor()) { stage = Stage::Failed; return StepResult::Failed; }
                 return StepResult::More;
             }
         }
@@ -491,25 +720,21 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::Prepare)
     {
         auto& c = report.crest;
-        const bool impact = sourceRate != deliveryRate;
-        const auto rate = impact ? sourceRate : deliveryRate;
-        c.sampleRateHz = rate; c.frames = impact ? sourceFrames : std::uint64_t (frames);
+        const auto rate = sourceRate;
+        c.sampleRateHz = rate; c.frames = sourceFrames;
         c.blockHops = std::uint32_t (crestParams.blockHops);
         c.edgeLowHz = crestParams.bandEdgeHz[0]; c.edgeMidHz = crestParams.bandEdgeHz[1];
-        c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = impact;
-        if (session->masterRows_[session->masterCount_].crestCapacity == 0)
-        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::TooShort; stage = Stage::CostRead; return StepResult::More; }
-        if (impact)
-        {
-            if (! chain.prepare (double (sourceRate), channels, ready.topology))
-            { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
-            chain.setParams (winningParams());
-            chain.reset();
-            impactDelay = chain.latencySamples();
-        }
+        c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = sourceRate != deliveryRate;
+        if (session->masterRows_[rowIndex].crestCapacity == 0)
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::TooShort; stage = Stage::Done; return StepResult::More; }
+        if (! chain.prepare (double (sourceRate), channels, ready.topology))
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::More; }
+        chain.setParams (winningParams());
+        chain.reset();
+        impactDelay = chain.latencySamples();
         crest.setParams (crestParams);
         if (! crest.prepare (double (rate), channels, (long long) c.frames))
-        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::More; }
         c.hopFrames = std::uint32_t (crest.hopSamples());
         stage = Stage::Read;
         return StepResult::More;
@@ -517,40 +742,37 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::Read)
     {
         constexpr int block = 1024;
-        const bool impact = sourceRate != deliveryRate;
-        if (impact)
+        const long long total = (long long) sourceFrames + impactDelay;
+        const int n = int (std::min<long long> ({ budget, block, total - crestCursor }));
+        float* planes[2] { impactScratch.get(), channels == 2 ? impactScratch.get() + block : nullptr };
+        for (int ch = 0; ch < channels; ++ch)
+            for (int i = 0; i < n; ++i)
+            {
+                const auto frame = crestCursor + i;
+                planes[ch][i] = frame < (long long) sourceFrames ? sourcePlanes[ch][frame] : 0.0f;
+            }
+        if (! chain.process (planes, channels, n))
         {
-            const long long total = (long long) sourceFrames + impactDelay;
-            const int n = int (std::min<long long> ({ budget, block, total - crestCursor }));
-            float* planes[2] { impactScratch.get(), channels == 2 ? impactScratch.get() + block : nullptr };
-            for (int ch = 0; ch < channels; ++ch)
-                for (int i = 0; i < n; ++i)
-                {
-                    const auto frame = crestCursor + i;
-                    planes[ch][i] = frame < (long long) sourceFrames ? sourcePlanes[ch][frame] : 0.0f;
-                }
-            if (! chain.process (planes, channels, n))
-            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
-              stage = Stage::CostRead; return StepResult::More; }
-            const int skip = int (std::min<long long> (n, std::max (0LL, impactDelay - crestCursor)));
-            const int kept = int (std::max (0LL, std::min<long long> (n, total - crestCursor) - skip));
-            const float* produced[2] { planes[0] + skip, channels == 2 ? planes[1] + skip : nullptr };
-            if (kept != 0 && ! crest.process (produced, channels, kept))
-            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
-              stage = Stage::CostRead; return StepResult::More; }
-            crestCursor += n;
-            if (crestCursor == total) { report.checkPasses = 1; stage = Stage::Finish; }
+            report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+            stage = Stage::Done; return StepResult::More;
         }
-        else
+        const int skip = int (std::min<long long> (n, std::max (0LL, impactDelay - crestCursor)));
+        const int kept = int (std::max (0LL, std::min<long long> (n, total - crestCursor) - skip));
+        float* produced[2] { planes[0] + skip, channels == 2 ? planes[1] + skip : nullptr };
+        // At the delivery rate the former foreground walk read the already quantized transferable PCM. Reproduce
+        // exactly that input to the crest without retaining or borrowing the transferable owner.
+        if (sourceRate == deliveryRate && (ready.deliveryBits == 16 || ready.deliveryBits == 20 || ready.deliveryBits == 24))
+            for (int ch = 0; ch < channels; ++ch)
+                for (int i = 0; i < kept; ++i) produced[ch][i] = mastering::pcmSample (produced[ch][i], ready.deliveryBits);
+        const float* measured[2] { produced[0], produced[1] };
+        if (kept != 0 && ! crest.process (measured, channels, kept))
+        { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+          stage = Stage::Done; return StepResult::More; }
+        crestCursor += n;
+        if (crestCursor == total)
         {
-            const int n = int (std::min<long long> ({ budget, block, frames - crestCursor }));
-            const float* planes[2] { outputPlanes[0] + crestCursor,
-                channels == 2 ? outputPlanes[1] + crestCursor : nullptr };
-            if (! crest.process (planes, channels, n))
-            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
-              stage = Stage::CostRead; return StepResult::More; }
-            crestCursor += n;
-            if (crestCursor == frames) stage = Stage::Finish;
+            report.checkPasses = sourceRate != deliveryRate ? 1u : 0u;
+            stage = Stage::Finish;
         }
         return StepResult::More;
     }
@@ -560,12 +782,12 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         auto& c = report.crest;
         c.blocks = std::uint64_t (crest.blockCount());
         c.complete = crest.droppedHops() == 0 && crest.samplesProcessed() == (long long) c.frames;
-        if (! crest.valid() || ! c.complete || c.blocks > session->masterRows_[session->masterCount_].crestCapacity)
+        if (! crest.valid() || ! c.complete || c.blocks > session->masterRows_[rowIndex].crestCapacity)
         {
             c.status = MeasurementStatus::Unavailable;
             c.reason = crest.invalidReason() == analysis::BandCrestInvalid::NoBlock
                 ? MeasurementReason::TooShort : MeasurementReason::NonFinite;
-            stage = Stage::CostRead; return StepResult::More;
+            stage = Stage::Done; return StepResult::More;
         }
         const auto& source = session->measurementResults_[std::size_t (Analyzer::Crest)];
         if (source.status == MeasurementStatus::Pending)
@@ -586,7 +808,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::Copy)
     {
         const auto limit = std::min<std::size_t> (std::size_t (report.crest.blocks), crestCopied + 128u);
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         auto* data = rows.crest.get();
         auto* mask = data + rows.crestCapacity * 10u;
         for (; crestCopied < limit; ++crestCopied)
@@ -602,7 +824,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             report.crest.rows = { data, crestCopied * 10u };
             if (! sourceMask.empty()) report.crest.sourceMask = { mask, crestCopied * 5u };
-            stage = Stage::CostRead;
+            stage = Stage::Done;
             return StepResult::More;
         }
         return StepResult::More;
@@ -617,7 +839,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const float* planes[2] { outputPlanes[0] + costCursor,
             channels == 2 ? outputPlanes[1] + costCursor : nullptr };
         if (costMeterReady && ! costMeter.process (planes, channels, int (n))) costMeterReady = false;
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const std::uint64_t bucketCount = rows.waveformCapacity / std::size_t (channels);
         for (std::uint64_t i = 0; i < n; ++i)
         {
@@ -667,7 +889,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostFinish)
     {
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         costResult = {};
         costRules = configuredCost();
         costResult.sourceRateHz = sourceRate; costResult.masterRateHz = deliveryRate;
@@ -714,7 +936,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostWave)
     {
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const auto limit = std::min<std::uint64_t> (rows.waveformCapacity,
             costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
         while (costFinishCursor < limit)
@@ -767,7 +989,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostShape)
     {
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const auto* sourceShort = findArray (
             session->measurementResults_[std::size_t (Analyzer::Loudness)], "shortTerm");
         if (! costMeterReady || ! sourceShort || sourceShort->grid.stepFrames == 0 || ! rows.costSeries)
@@ -793,7 +1015,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostWorst)
     {
-        const auto& rows = session->masterRows_[session->masterCount_];
+        const auto& rows = session->masterRows_[rowIndex];
         const auto limit = std::min<std::uint64_t> (costShapeScan.sectionCount,
             costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
         while (costFinishCursor < limit)
@@ -830,7 +1052,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             for (auto* band : bands) band->reason = report.crest.reason;
             stage = Stage::CostPublish; return StepResult::More;
         }
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const auto view = MeasurementCrest::view (session->measurementResults_[std::size_t (Analyzer::Crest)]);
         const std::span<double> scratch { rows.costScratch.get(), rows.costScratchCapacity };
         if (! costCrestStarted)
@@ -856,7 +1078,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             report.damage.reason = MeasurementReason::Pending;
             damageFollows = true;
         }
-        stage = Stage::Done;
+        stage = Stage::Ready;
         return StepResult::Done;
     }
     return StepResult::Failed;
@@ -868,9 +1090,11 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
     using mastering::StepResult;
     const auto& solved = search.result();
     clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
-        && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
+        && search.clipperPeaks (clipPeaks);
     report.targetLufs = targetLufs;
     report.ceilingDbTp = targetTp;
+    report.deliveryMode = DeliveryMode::Mastered;
+    report.deliveryDithered = ready.topology.dither && ! ready.params.bypassDither;
     report.medium = medium;
     report.targetMet = solved.status == mastering::MasteringSolveStatus::Solved;
     if (solved.measured.loudnessValid && std::isfinite (solved.measured.integratedLufs)
@@ -918,10 +1142,11 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         }
         return std::isfinite (h.evidence) ? std::optional<MasterHint> (h) : std::nullopt;
     };
-    // Held short by the limiter's budget: the verdict says so, and nothing in the mix is blamed for it.
+    // Held short by the limiter's budget or wall: the verdict says so, and nothing in the mix is blamed for it.
     const bool budgetHeld = solved.status == mastering::MasteringSolveStatus::TargetUnreachable
                          && solved.binding == mastering::MasteringConstraint::LimiterGainReduction;
-    if (mode == LoudnessMode::Manual && ! report.targetMet && ! budgetHeld && report.missLu && std::fabs (*report.missLu) > 0.0)
+    if (mode == LoudnessMode::Manual && ! report.targetMet && ! budgetHeld && ! solved.limiterWall
+        && report.missLu && std::fabs (*report.missLu) > 0.0)
     {
         report.firstHint = hint (solved.mainReason);
         report.secondHint = hint (solved.secondReason);
@@ -943,8 +1168,23 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         stage = Stage::Done;
         return result;
     }
-    stage = Stage::Prepare;
+    auto& c = report.crest;
+    c.status = MeasurementStatus::Pending; c.reason = MeasurementReason::Pending;
+    c.sampleRateHz = sourceRate; c.frames = sourceFrames;
+    c.blockHops = std::uint32_t (crestParams.blockHops);
+    c.edgeLowHz = crestParams.bandEdgeHz[0]; c.edgeMidHz = crestParams.bandEdgeHz[1];
+    c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = sourceRate != deliveryRate;
+    report.checkPasses = c.sourceRateCheck ? 1u : 0u;
+    stage = Stage::CostRead;
     return StepResult::More;
+}
+
+bool MasterJob::beginLateCrest() noexcept
+{
+    if (stage != Stage::Ready) return false;
+    crestCursor = 0; crestCopied = 0; impactDelay = 0; sourceMask = {};
+    stage = Stage::Prepare;
+    return true;
 }
 
 // THE LANDING AGAIN, ON THE FLOOR: the ready parameters, the request on the target's own loudness with no budget, from
@@ -963,6 +1203,7 @@ bool MasterJob::beginFloor() noexcept
 // the peak its first pass measured for the needles.
 mastering::MasteringChainParams MasterJob::winningParams() const noexcept
 {
+    if (deliveryMode != DeliveryMode::Mastered) return ready.params;
     auto winning = ready.params;
     winning.inputGainDb += search.result().normalizationGainDb;
     winning.preLimiterGainDb = search.result().preLimiterGainDb;
@@ -1017,5 +1258,25 @@ std::optional<double> MasterJob::stepFraction() const noexcept
     }
     if (stage == Stage::CostRead) return frames > 0 ? std::optional<double> (double (costCursor) / double (frames)) : std::nullopt;
     return std::nullopt;
+}
+
+// A DELIVERY'S BAR, from its own walks. As-is copies the file once: the copy is the bar. Peaks-only walks each render — the
+// rate conversion where the rates differ, the gain, the check — and whether the one correction render follows is known
+// only at the check: as the mastered landing counts a pass nobody expected, the first render fills 80% of the bar and the
+// correction the next 10, so the bar never falls and stays below one until the job ends.
+double MasterJob::deliveryFraction() const noexcept
+{
+    const auto share = [] (long long done, long long total)
+    { return total > 0 ? std::clamp (double (done) / double (total), 0.0, 1.0) : 0.0; };
+    if (deliveryMode == DeliveryMode::AsIs)
+        return stage == Stage::DeliveryCopy ? share (deliveryCursor, (long long) sourceFrames) : 0.0;
+    const double walks = deliveryRate != sourceRate ? 3.0 : 2.0;
+    double walked = 0.0;
+    if (stage == Stage::DeliveryConvert) walked = share (converter.readFrames(), (long long) sourceFrames);
+    else if (stage == Stage::DeliveryRender) walked = walks - 2.0 + share (renderer.processedFrames(), frames);
+    else if (stage == Stage::DeliveryMeasure) walked = walks - 1.0 + share (deliveryMeasureCursor, frames);
+    else return 0.0;
+    const double rendered = (deliveryCorrected ? 1.0 : 0.0) + walked / walks;
+    return rendered <= 1.0 ? 0.8 * rendered : 1.0 - 0.2 / rendered;
 }
 } // namespace felitronics::session::detail

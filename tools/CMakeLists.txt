@@ -243,6 +243,7 @@ add_custom_command(OUTPUT ${FELITRONICS_ABI_PROBE}
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Commands.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Project.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Events.h
+        ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/LandingResult.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Session.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Snapshot.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Text.h

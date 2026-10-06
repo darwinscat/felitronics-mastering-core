@@ -875,6 +875,15 @@ struct LoudnessRequest
     // 20 dB down. Off, the search steps back as it did before v0.17.0, to the bit: a manual landing's budget moves
     // nothing. Last, so a positional initialiser written against the older layout still means what it meant.
     bool budgetAimsAtCrossing = false;
+    // The manual landing's wall: LU bought per dB of active P95 cut, measured between existing passes. Zero disables it.
+    double limiterSlopeBelow = 0.0;
+    double limiterSlopeSpacingDb = 0.5;
+    // The full-file budget proof's drive resolution, independently chosen by the caller.
+    double budgetResolutionDb = 0.25;
+    // Optional product-report snapshot of the clipper's loudest input quanta. LandingSearch takes it whenever the
+    // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
+    // Appended so positional initialisers written against the older public aggregate retain their meaning.
+    double clipperLoudShare = std::numeric_limits<double>::quiet_NaN();
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to
@@ -885,7 +894,14 @@ struct SolvePassRecord
     double gainDb = 0.0, ceilingDb = 0.0;
     double integratedLufs = 0.0, truePeakDbTp = 0.0, plrDb = 0.0;
     double limiterMaxGrDb = 0.0, loudnessRangeLu = 0.0;
+    // Why this render exists. Appended so old aggregate initialisers retain their meaning.
+    enum class Reason : std::uint8_t
+    {
+        AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, DeliverWinner
+    };
     std::uint32_t violated = 0;
+    double limiterP95Db = std::numeric_limits<double>::quiet_NaN(); // active windows, product landing only
+    Reason reason = Reason::AimAtTarget;
 };
 
 struct LoudnessSolution
@@ -923,10 +939,8 @@ struct LoudnessSolution
         return nullptr;
     }
 
-    // RENDERS SPENT, all of them. `maxPasses` bounds the SEARCH; delivering the chosen candidate can
-    // cost one more when the search did not end on it, and the bracket rescue (see solve()) costs one
-    // more again, so `passes` can be `maxPasses + 2` — and saying so here is cheaper than a caller
-    // discovering it from a progress bar.
+    // FULL-PROGRAMME RENDERS SPENT. `maxPasses` bounds the SEARCH; an ordinary solve's delivery and rescue can add
+    // renders as documented by solve().
     int    passes = 0;
     double activityThresholdDb = 0.1;           // echoed, because a fraction without its threshold is not a number
 
@@ -934,15 +948,13 @@ struct LoudnessSolution
     double achievedBelowLufs = 0.0, achievedAboveLufs = 0.0;
     double gainBelowDb = 0.0, gainAboveDb = 0.0;
 
-    // Every render, in order, the delivery re-render of the winner included: `passes == logCount` while the log has room.
-    // A re-render is the LAST record, repeating an earlier candidate's gain and ceiling.
+    // Every render in order. A fallback delivery re-render is last and repeats an earlier candidate's gain and ceiling.
     SolvePassRecord log[TargetLoudnessSolverLimits::kMaxPasses] {};
     int logCount = 0;
 
-    // WHERE each stage worked, over the audio handed back in `out` — see GainReductionTrace. Written by every
-    // render and reset at the start of each, so it always describes the LAST render, and the last render is the one
-    // in `out`: the search re-renders the winner when it did not end on it. It lives here, with the solution, and
-    // not in the solver, because a solution outlives the next solve.
+    // WHERE each stage worked, over the audio handed back in `out` — see GainReductionTrace. The selected solution is
+    // kept with its render: LandingSearch swaps these fields when a candidate wins and restores its retained PCM (or
+    // re-renders it after an optional-buffer failure). It lives here because a solution outlives the next solve.
     GainReductionTrace compressorTrace {};
     GainReductionTrace limiterTrace {};
     GainReductionTrace peakClipTrace {}; // K13, on the limiter trace's delivered-frame grid
@@ -950,19 +962,20 @@ struct LoudnessSolution
     // max is the largest quantum's shave in it, its mean the frames' mean. Zero throughout without the stage.
     GainReductionTrace saturationTrace {};
 
-    // THE DISTRIBUTION EVERY QUANTILE OF THIS SOLUTION IS READ FROM, one per stage — the histogram the search
-    // judged this render's gain-reduction limits on, of the LAST render, which is the one in `out`. Written by
-    // every render and reset at the start of each, like the traces above, and owned HERE: a later solve on the
-    // same solver, or destroying it, does not touch them.
+    // THE DISTRIBUTION EVERY QUANTILE OF THIS SOLUTION IS READ FROM, one per stage — those of the selected delivered
+    // render, kept like the traces above and owned HERE: a later solve or destroying the solver does not touch them.
     dynamics::offline::QuantileHistogram compressorGrWindows {}, limiterGrWindows {};
 
     // The limiter's SECOND distribution and its summary: the same windows, minus the ones whose input
-    // never reached `LoudnessRequest::limiterActiveInputDb`. Written by every render and reset with the others,
-    // so it describes the LAST render like everything around it. The compressor has no counterpart: its input
+    // never reached `LoudnessRequest::limiterActiveInputDb`. It describes the selected delivered render like everything
+    // around it. The compressor has no counterpart: its input
     // is not tapped (`MasteringChainTaps` carries `preLimiter`, which is the LIMITER's node), and a gate on a
     // level nobody measured would be a guess wearing a number's clothes.
     dynamics::offline::QuantileHistogram limiterActiveGrWindows {};
     ActiveGainReductionStats             limiterActive {};
+    bool limiterWall = false;
+    double limiterSlope = std::numeric_limits<double>::quiet_NaN();
+    double limiterWallP95Db = std::numeric_limits<double>::quiet_NaN();
 
     // The q-quantile of a stage's |GR|, by the one definition (GainReductionSummariser): a reading here and a
     // `GrStatistic::Percentile` limit at the same `q` are the same number. False, and `outDb` untouched, for a
@@ -1089,6 +1102,8 @@ public:
         if (! chain.isPrepared() || numChannels != chain.numChannels() || numChannels > nch_ || frames <= 0) return false;
         if (! std::isfinite (req.targetLufs) || ! std::isfinite (req.maxTruePeakDbTp)
             || ! std::isfinite (req.toleranceLu) || req.toleranceLu < 0.0
+            || ! std::isfinite (req.limiterSlopeBelow) || req.limiterSlopeBelow < 0.0
+            || ! std::isfinite (req.limiterSlopeSpacingDb) || req.limiterSlopeSpacingDb <= 0.0
             || ! std::isfinite (req.activityThresholdDb) || req.activityThresholdDb < 0.0
             || req.maxPasses < 1 || req.maxPasses > kMaxPasses
             || req.limiterGr.malformed() || req.compressorGr.malformed()
@@ -1162,8 +1177,8 @@ public:
              + meterConstructBytes() + solveProxyBytes();
     }
 
-    // The landing search retains two solution workspaces and one pass meter set.
-    // Its largest allocation is a meter or trace, never another PCM programme.
+    // The landing search retains two solution workspaces, one pass meter set, and one optional full-programme PCM
+    // buffer for the best render. The allocation is declared even though failure is recoverable by re-rendering.
     static std::uint64_t productSearchCallBytes (double sampleRate, int numChannels, int frames,
                                                   int grTraceBuckets, int armedPairs = kBandGrStride,
                                                   double binDb = 0.01) noexcept
@@ -1175,9 +1190,11 @@ public:
         const std::uint64_t bandHist = dynamics::offline::QuantileHistogram::storageBytes (
             0.0, kBandGrRangeDb, 0.01);
         const std::uint64_t bandTrace = GainReductionTrace::bytesFor (grTraceBuckets, frames);
-        return 2u * oneResult + (std::uint64_t) armedPairs *
+        const std::uint64_t workspace = 2u * oneResult + (std::uint64_t) armedPairs *
             (4u * bandHist + 3u * bandTrace + 3u * sizeof (BandGrResult)
              + 16u * storage::kVectorProxyBytes + 1024u);
+        const std::uint64_t candidate = (std::uint64_t) frames * (std::uint64_t) numChannels * sizeof (float);
+        return workspace > std::numeric_limits<std::uint64_t>::max() - candidate ? 0u : workspace + candidate;
     }
 
     static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,

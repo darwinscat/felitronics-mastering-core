@@ -243,6 +243,7 @@ enum class FactId : std::uint16_t
     RejectedDamageSettled = 136,
     RejectedDamageQueued = 137,
     RejectedDamageQueueFull = 138,
+    RejectedClippedGain = 139,
     // A field's rejection with its numbers, where the answer carries them (Answer::value, low, high): the refused value
     // against the domain the check read, and a value a knob does not take.
     RejectedOutOfDomainValue = 180, // {field} {value} {low} {high}
@@ -314,6 +315,16 @@ enum class FactId : std::uint16_t
     // A DC offset of a stereo source, each channel's as the readings print it (a mono source keeps SourceDcNote/SourceDc).
     SourceDcNoteStereo = 446,  // L {left}, R {right} as a note: the master's high-pass removes it, check the mix chain
     SourceDcStereo = 447,      // L {left}, R {right} as a warning or an error
+    SourceNoClipping = 448,
+    SourceClippingUnmeasured = 449,
+    SourceRealClipping = 450,
+    SourceInterSampleOvers = 451,
+    SourceSampleOvers = 452,
+    SourceAlreadyMastered = 453,
+    SourceFormerLossy = 454,
+    SourceMasterLouder = 455,
+    SourceDeliveryAsIs = 456,
+    SourceDeliveryPeaksOnly = 457, // {gain}, {ceiling}
     // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
     HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
     HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}
@@ -356,6 +367,9 @@ enum class FactId : std::uint16_t
     MasterMaxOverBudget = 615, // {mode}: {achieved} — the limiter takes {over} (P95), more than the mode's {budget}
     MasterMaxFloor = 616,      // {mode}: {achieved} — pulled up to the floor; the mode and the level, nothing more
     MasterMaxFloorDetail = 617, // for the log: the first landing at {first} under {floor}; brought up, the limiter takes {taken}
+    MasterLandingWall = 618,   // the achieved level; louder would cost a lot of limiting for little gain
+    MasterLandingWallDetail = 619, // log only: slope in LU per dB and active-window P95 cut
+
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the

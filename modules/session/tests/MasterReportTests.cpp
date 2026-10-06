@@ -7,6 +7,7 @@
 #include <felitronics/analysis/BandCrestResult.h>
 #include <felitronics/analysis/ProgrammeReport.h>
 #include <felitronics/mastering/OfflineRenderer.h>
+#include <felitronics/toml/Toml.h>
 #include <felitronics_test.h>
 #include <algorithm>
 #include <bit>
@@ -120,6 +121,18 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
         if (events) for (const auto& e : s.events()) events->push_back (e);
     }
     if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report || ! s.masters()[0].landing) return false;
+    // Most report fixtures ask for the settled report. The master is deliberately transferable before its crest now;
+    // finish that low-priority join here only when the fixture also waited for the source crest. The late-source cases
+    // below leave it pending and exercise transfer, cancellation and joining explicitly.
+    if (waitForCrest)
+        for (unsigned i = 0; i < 400000; ++i)
+        {
+            session::Stepped stepped;
+            const auto stepSpent = declared::spend ([&] { stepped = s.step (fine ? 1u : 73u); });
+            largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
+            if (events) for (const auto& e : s.events()) events->push_back (e);
+            if (stepped.state == session::StepState::Done) break;
+        }
     // The damage's own job, asked as a shell asks it once the master is delivered (command::GradeDamage) and behind the
     // source's measurement: graded here where that has ended (a case that leaves the measurement running keeps its
     // state, and `grade` false leaves it to the case), inside the master's admitted demand too.
@@ -135,13 +148,54 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
         largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
         if (events) for (const auto& e : s.events()) events->push_back (e);
     }
-    if ((grade && ! s.damageJobs().empty() && s.measurementJob() == 0) || largestStep > checked.bytes) return false;
+    if ((grade && ! s.damageJobs().empty() && s.measurementJob() == 0) || largestStep > checked.bytes
+        || (waitForCrest && s.masters()[0].report->crest.status == session::MeasurementStatus::Pending)) return false;
     c.token = s.pendingMaster();
     const auto shape = s.masterAudioShape (c.token);
     if (c.token.master == 0 || (deliveryRate != 0 && shape.sampleRate != deliveryRate)) return false;
     c.delivery = shape.sampleRate;   // a request of 0 takes the target's rate
     c.delivered.resize (std::size_t (shape.frames * shape.channels));
     return s.copyMaster (c.token, c.delivered) == session::MasterTransferStatus::Ok;
+}
+void asWorkedReport()
+{
+    Case c;
+    const bool ran = run (c, 48000, 48000, false);
+    if (! ran) { ok (false, "as-worked fixture completes"); return; }
+    auto& s = *c.session;
+    const auto firstId = s.masters()[0].id;
+    const auto need = s.exportWorkedBytes (firstId);
+    const auto first = s.exportWorked (firstId);
+    const auto parsed = felitronics::toml::parse (first.view());
+    bool devices = true;
+    for (const std::string_view name : { "hpf", "monoBass", "glue", "saturation", "tilt", "limiter", "dither", "low", "bands" })
+        devices = devices && first.view().find ("\n[" + std::string (name) + "]\n") != std::string_view::npos;
+    ok (need.rejection == session::Rejection::None && need.bytes == first.size
+        && std::holds_alternative<felitronics::toml::Table> (parsed) && devices
+        && first.view().find ("# default") != std::string_view::npos
+        && first.view().find ("# machine") != std::string_view::npos
+        && first.view().find ("# target") != std::string_view::npos
+        && first.view().find ("[limiter]\non = false # hand") != std::string_view::npos,
+        "as-worked TOML parses and names every device with default, machine and target origins");
+    const std::string frozen (first.view());
+    ok (s.exportWorkedBytes (firstId + 1000u).rejection == session::Rejection::UnknownMaster,
+        "an as-worked report names a completed master");
+    const bool released = s.releaseMaster (c.token) == session::MasterTransferStatus::Ok;
+    const auto edited = s.importProject (800,
+        "defaults = \"2026-10\"\nmanual = true\n[target]\nname = \"allStreaming\"\n"
+        "[hpf]\nfq.machine = 44\n[tilt]\ndb.hand = 1\n");
+    auto next = c.request; next.ready = {}; next.id = 801; next.source = s.source().hash; next.revision = s.revision();
+    const auto started = s.apply (next);
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (16);
+    const auto second = s.masters().size() == 2 ? s.exportWorked (s.masters()[1].id) : session::WorkedText {};
+    const auto firstAgain = s.exportWorked (firstId);
+    ok (released && edited.rejection == session::Rejection::None && started.rejection == session::Rejection::None
+        && s.masters().size() == 2 && second.rejection == session::Rejection::None
+        && second.view().find ("db = 1 # hand") != std::string_view::npos
+        && second.view().find ("fq = 44 # machine") != std::string_view::npos
+        && second.view().find ("slope = 24 # default") != std::string_view::npos
+        && firstAgain.view() == frozen,
+        "a hand field is attributed to hand, and later edits and masters do not change the earlier report");
 }
 bool referenceCrest (const Case& c)
 {
@@ -268,8 +322,15 @@ bool joinedOnce (std::string& why)
     if (s.apply (request).rejection != session::Rejection::None) { why = "master"; return false; }
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
     if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report
+        || s.masters()[0].report->crest.status != session::MeasurementStatus::Pending
+        || s.measurementJob() != measuring)
+    { why = "PRECONDITION: the master becomes ready with its crest deferred"; return false; }
+    for (unsigned i = 0; i < 400000 && (s.masters()[0].report->crest.status == session::MeasurementStatus::Pending
+         || ! s.masters()[0].report->cost || ! s.masters()[0].report->cost->crestFullDb.value); ++i)
+        (void) s.step (73);
+    if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report
         || s.masters()[0].report->crest.status != session::MeasurementStatus::Ready || s.measurementJob() != measuring)
-    { why = "PRECONDITION: the crest joined inside the job while the source measurement still runs"; return false; }
+    { why = "PRECONDITION: the deferred crest joined while the source measurement still runs"; return false; }
     const auto master = s.masters()[0].id;
     const auto k1 = s.masters()[0].report->cost ? s.masters()[0].report->cost->crestFullDb.value : std::nullopt;
     if (s.apply (session::command::Cancel { 3, measuring }).rejection != session::Rejection::None)
@@ -394,7 +455,8 @@ bool memoryLifecycle (Case& c)
         if (declared.rejection != session::Rejection::None || declared.bytes == 0
             || declared.largestBlockBytes == 0) return false;
         const auto initial = std::uint64_t (s.liveBytes());
-        const auto ceiling = initial + declared.bytes;
+        const auto netInitial = initial - std::min (initial, declared.releasedBytes);
+        const auto ceiling = netInitial + declared.bytes;
         if (testRefusal)
         {
             const auto before = s.revision();
@@ -410,7 +472,7 @@ bool memoryLifecycle (Case& c)
                 || s.revision() != before) return false;
             if (s.setCapacity ({}) != session::Status::Ok) return false;
         }
-        std::uint64_t peakLive = initial;
+        std::uint64_t peakLive = netInitial;
         declared::LifecycleBudget allocation { declared.bytes, declared.largestBlockBytes };
         bool covered = true;
         const auto charge = [&] (auto&& work)
@@ -419,7 +481,8 @@ bool memoryLifecycle (Case& c)
             const auto spent = declared::spend (work);
             const auto after = std::uint64_t (s.liveBytes());
             if (spent.bytes < 0) { covered = false; return; }
-            peakLive = std::max ({ peakLive, before, after });
+            (void) before; // apply may first release the previous deferred crest named by Checked::releasedBytes.
+            peakLive = std::max (peakLive, after);
             covered = covered && allocation.charge (spent) && peakLive <= ceiling;
         };
         session::Answer started;
@@ -710,6 +773,29 @@ void damageAfterMaster()
     using session::EventKind;
     using session::MeasurementReason;
     using session::MeasurementStatus;
+    // A master can finish while its source's optional analyzers still run. The grade then waits for those measurements,
+    // and changes to waiting for its turn when they end (or are cancelled), before its first walk starts.
+    {
+        Case c;
+        const bool made = run (c, 48000, 48000, false, false, false, 4, 0, nullptr, 4096.0f, nullptr, false, true, false, false);
+        ok (made, "a master is available before its source analyzers finish");
+        if (made)
+        {
+            auto& s = *c.session;
+            ok (! s.damageJobs().empty() && s.measurementJob() != 0
+                && s.damageJobs()[0].waitReason == session::DamageWaitReason::SourceMeasurement,
+                "a grade held by source measurement says why it waits");
+            (void) s.apply (session::command::Cancel { 81, s.measurementJob() });
+            ok (s.damageJobs()[0].waitReason == session::DamageWaitReason::Queue,
+                "after source measurement stops the grade waits only for its queue turn");
+            (void) s.apply (session::command::EditTarget { 82, { -5.0, -6.0 } });
+            ok (s.needlesJob() != 0 && s.damageJobs()[0].waitReason == session::DamageWaitReason::SourceMeasurement,
+                "a fresh peak-excursion measurement also explains a grade's wait");
+            if (s.needlesJob() != 0) (void) s.apply (session::command::Cancel { 83, s.needlesJob() });
+            for (unsigned i = 0; i < 400000 && s.damageJob() == 0; ++i) (void) s.step (1);
+            ok (s.damageJob() != 0 && ! s.damageJobs()[0].waitReason, "a running grade has no wait reason");
+        }
+    }
     // Delivered first: at the master's Done the report says Pending, the master's PCM is there, and no walk of the damage
     // has run; then its job announces itself, walks, and ends with the grade.
     {
@@ -905,12 +991,16 @@ void damageAfterMaster()
 
 int main()
 {
+    asWorkedReport();
     damage();
     damageAfterMaster();
     Case normalFirst, normalLate, fractionalFirst, fractionalLate;
-    ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f)
+    std::vector<session::Notification> normalEvents;
+    ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f, &normalEvents)
         && referenceCrest (normalFirst) && crestK1Ready (normalFirst),
         "normal-level source-first crest retains the configured floor and K1 comparison");
+    ok (! has (factsOf (normalEvents), session::text::FactId::MasterCostK2Deferred),
+        "a completed report no longer emits the empty tonal-change fact");
     if (normalFirst.session && ! normalFirst.session->masters().empty())
     {
         const auto snapshot = normalFirst.session->snapshot();
@@ -1120,13 +1210,13 @@ int main()
         const auto measuring = late.session->measurementJob();
         if (measuring != 0) (void) late.session->apply (session::command::Cancel { 3, measuring });
         bool unavailableEvent = false;
-        for (unsigned i = 0; i < 8 && ! unavailableEvent; ++i)
+        for (unsigned i = 0; i < 400000 && ! unavailableEvent; ++i)
         {
             for (const auto& event : late.session->events())
                 if (event.jobId == masterId && event.kind == session::EventKind::Fact
                     && event.payload.fact.view().id == session::text::FactId::MasterCrestUnavailable)
                     unavailableEvent = true;
-            if (! unavailableEvent) (void) late.session->step (1);
+            if (! unavailableEvent) (void) late.session->step (16);
         }
         ok (late.session->masters()[0].report->crest.status == session::MeasurementStatus::Unavailable
             && late.session->masters()[0].report->crest.reason == session::MeasurementReason::Cancelled
@@ -1219,9 +1309,10 @@ int main()
         for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
         ok (released == session::MasterTransferStatus::Ok
             && second.rejection == session::Rejection::None && s.masters().size() == 2
-            && s.masters()[0].report->crest.status == session::MeasurementStatus::Pending
+            && s.masters()[0].report->crest.status == session::MeasurementStatus::Cancelled
+            && s.masters()[0].report->crest.reason == session::MeasurementReason::Cancelled
             && s.masters()[1].report->crest.status == session::MeasurementStatus::Pending,
-            "both masters retain independent rows while the source crest is pending");
+            "a new master cancels the older deferred crest and leaves its own source comparison pending");
         bool published = false;
         for (unsigned i = 0; i < 200000 && ! published; ++i)
         {
@@ -1270,6 +1361,7 @@ int main()
         request.id = 81; request.source = s.source().hash; request.revision = s.revision();
         const auto next = s.apply (request);
         for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
+        for (unsigned i = 0; i < 400000 && s.step (73).state == session::StepState::More; ++i) {}
         ok (released == session::MasterTransferStatus::Ok && changed.rejection == session::Rejection::None
             && edited.rejection == session::Rejection::None
             && next.rejection == session::Rejection::None && s.masters().size() == 2
@@ -1320,19 +1412,32 @@ int main()
             up.session->masters()[0].report->crest.rows.size_bytes()) == 0,
         "a second session repeats the delivered PCM and source-rate crest exactly");
     Case missed;
-    ok (run (missed, 48000, 48000, false, true, true),
-        "a demanding target retains a checked ceiling-safe result after the pass budget");
+    std::vector<session::Notification> wallEvents;
+    ok (run (missed, 48000, 48000, false, true, true, 4, 0, nullptr, 4096.0f, &wallEvents),
+        "a demanding target retains a checked ceiling-safe result at the limiter wall");
     if (missed.session && ! missed.session->masters().empty())
     {
         const auto& kept = missed.session->masters()[0];
         const auto& report = *kept.report;
-        const auto missFact = session::MasterReportText::miss (report);
-        ok (kept.landing->status == session::LandingStatus::PassLimit && ! report.targetMet
-            && report.peakSafe && report.firstHint && missFact
-            && ! session::text::Text::text (*missFact, session::text::Lang::Ru).empty()
-            && ! session::text::Text::text (*missFact, session::text::Lang::En).empty()
-            && session::MasterReportText::hint (*report.firstHint),
-            "ordinary loudness miss carries a number and a measured mix hint in ru and en");
+        const auto verdict = session::MasterReportText::landing (report, *kept.landing, .1);
+        bool plain = false, detail = false, mixHint = false;
+        for (const auto& event : wallEvents) if (event.kind == session::EventKind::Fact)
+        {
+            const auto fact = event.payload.fact.view();
+            plain = plain || fact.id == session::text::FactId::MasterLandingWall;
+            detail = detail || fact.id == session::text::FactId::MasterLandingWallDetail;
+            mixHint = mixHint || fact.id == session::text::FactId::MasterLandingMiss;
+        }
+        std::printf ("    wall report: status %u, wall %d, target %d, safe %d, hints %d/%d, verdict %u, events %d/%d/%d\n",
+            unsigned (kept.landing->status), kept.landing->limiterWall, report.targetMet, report.peakSafe,
+            bool (report.firstHint), bool (report.secondHint), verdict ? unsigned (verdict->id) : 0, plain, detail, mixHint);
+        ok (kept.landing->status == session::LandingStatus::TargetUnreachable && kept.landing->limiterWall
+            && ! report.targetMet && report.peakSafe && ! report.firstHint && ! report.secondHint
+            && verdict && verdict->id == session::text::FactId::MasterLandingWall
+            && ! session::text::Text::text (*verdict, session::text::Lang::Ru).empty()
+            && ! session::text::Text::text (*verdict, session::text::Lang::En).empty()
+            && plain && detail && ! mixHint,
+            "the limiter wall says why in ru/en, logs its numbers and blames no mix problem");
     }
     std::vector<float> mono (48000u);
     for (std::size_t i = 0; i < mono.size(); ++i)

@@ -7,6 +7,7 @@
 #include "../../../tests/DeclaredBudget.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <climits>
 #include <cstdio>
@@ -200,8 +201,11 @@ struct LandingSetup
     double highPassHz = 0.0;                                              // > 0: a 96 dB/oct high-pass before the limiter
     double initialGainDb = std::numeric_limits<double>::quiet_NaN();
     int maxPasses = 12;
-    double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();    // finite: the limiter's peak clip on, cut 3 dB
+    double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();    // finite: the limiter's peak clip is on
+    double peakClipCutDb = 3.0;
     bool peakClipMeasured = false;
+    double slopeBelow = 0.0;
+    bool maxMode = false;
 };
 
 // Lands `p` through the limiter alone (and the high-pass when asked), delivered at `deliveryRate`.
@@ -223,7 +227,7 @@ Landed land (const Programme& p, const LandingSetup& w)
     params.limiter.ceilingDbTp = w.ceiling;
     if (std::isfinite (w.peakClipPeakDb))
     {
-        params.limiter.peakClip = true; params.peakClipCutDb = 3.0; params.peakClipPeakDb = w.peakClipPeakDb;
+        params.limiter.peakClip = true; params.peakClipCutDb = w.peakClipCutDb; params.peakClipPeakDb = w.peakClipPeakDb;
     }
     if (w.highPassHz > 0.0)
     {
@@ -241,6 +245,8 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.initialGainDb = w.initialGainDb;
     req.productLanding = true;
     req.peakClipMeasured = w.peakClipMeasured;
+    req.limiterSlopeBelow = w.slopeBelow;
+    req.budgetAimsAtCrossing = w.maxMode;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate)
     {
@@ -320,6 +326,97 @@ void scaleTo (std::vector<float>& x, int from, int frames, double lufs, int rate
 
 int main()
 {
+    {
+        constexpr std::uint32_t oldMask = 0x5a5a5a5au;
+        const SolvePassRecord oldStyle { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, oldMask };
+        test::ok (oldStyle.violated == oldMask && std::isnan (oldStyle.limiterP95Db),
+            "the pre-v0.18 positional pass record still initializes its violation mask");
+        test::ok (offsetof (LoudnessRequest, clipperLoudShare)
+                     > offsetof (LoudnessRequest, budgetResolutionDb),
+            "release-added request fields remain after the older aggregate layout");
+    }
+    {
+        std::vector<float> pcm (std::size_t (kRate * 4));
+        for (std::size_t i = 0; i < pcm.size(); ++i)
+            pcm[i] = float (.09 * core::det::sin (.1 * double (i)) + .07 * core::det::sin (.37 * double (i))
+                + .05 * core::det::sin (.72 * double (i)));
+        scaleTo (pcm, 0, int (pcm.size()), -18.0);
+        const Programme dense (pcm);
+        std::vector<float> transientPcm (std::size_t (4 * kRate));
+        for (std::size_t i = 0; i < transientPcm.size(); ++i)
+        {
+            transientPcm[i] = float (.16 * core::det::sin (6.283185307179586 * 117.0 * double (i) / kRate)
+                + .03 * core::det::sin (6.283185307179586 * 3061.0 * double (i) / kRate));
+            if (i % 4096u == 0) transientPcm[i] += .7f;
+        }
+        const Programme transient (transientPcm);
+        LandingSetup manualBudget; manualBudget.target = -10; manualBudget.limiterBudgetDb = 3.0;
+        const auto manualBudgetResult = land (transient, manualBudget);
+        bool sawRetreat = false, sawBracket = false;
+        for (int i = 1; i < manualBudgetResult.answer.logCount; ++i)
+        {
+            sawRetreat = sawRetreat
+                || manualBudgetResult.answer.log[i].reason == SolvePassRecord::Reason::StepBackBySlope;
+            sawBracket = sawBracket
+                || manualBudgetResult.answer.log[i].reason == SolvePassRecord::Reason::InsideBracket;
+        }
+        test::ok (manualBudgetResult.done && sawRetreat && sawBracket,
+            "manual budget passes name the slope retreat and the following bracket decision");
+        std::vector<float> clipPcm (std::size_t (30 * kRate));
+        for (std::size_t i = 0; i < clipPcm.size(); ++i)
+            clipPcm[i] = float (.09 * core::det::sin (.1 * double (i)) + .07 * core::det::sin (.37 * double (i))
+                + .05 * core::det::sin (.72 * double (i)));
+        clipPcm[500] = .95f;
+        const Programme clipProgramme (clipPcm);
+        LandingSetup clipProgrammeSetup; clipProgrammeSetup.target = -5; clipProgrammeSetup.limiterBudgetDb = .5;
+        clipProgrammeSetup.maxMode = true;
+        clipProgrammeSetup.peakClipPeakDb = 20.0 * std::log10 (.95); clipProgrammeSetup.peakClipCutDb = 1.0;
+        const auto clipProgrammeResult = land (clipProgramme, clipProgrammeSetup);
+        bool fullPeakProbe = false;
+        for (int i = 0; i < clipProgrammeResult.answer.logCount; ++i)
+            fullPeakProbe = fullPeakProbe
+                || clipProgrammeResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe;
+        std::printf ("  full-programme clip peak: %d renders, %.3f dB maximum reduction\n",
+            clipProgrammeResult.answer.passes, clipProgrammeResult.answer.measured.peakClipReductionMaxDb);
+        test::ok (clipProgrammeResult.done && fullPeakProbe
+                  && clipProgrammeResult.answer.measured.peakClipReductionMaxDb <= 1.001,
+            "clipper calibration measures the whole file and respects its one-decibel cut");
+        LandingSetup peakWall; peakWall.target = -5; peakWall.slopeBelow = .2;
+        peakWall.peakClipCutDb = 1.0;
+        peakWall.peakClipPeakDb = 20.0 * std::log10 (*std::max_element (pcm.begin(), pcm.end(),
+            [] (float a, float b) noexcept { return std::fabs (a) < std::fabs (b); }));
+        const auto peakWallResult = land (dense, peakWall);
+        test::ok (peakWallResult.done && peakWallResult.answer.logCount > 2
+                  && peakWallResult.answer.log[0].reason == SolvePassRecord::Reason::PeakProbe
+                  && (! peakWallResult.answer.limiterWall || peakWallResult.answer.limiterSlope > 0.0),
+            "the uncalibrated peak probe cannot establish the limiter wall");
+        LandingSetup loud; loud.target = -5; loud.limiterBudgetDb = 7.5; loud.slopeBelow = .2;
+        const auto wall = land (dense, loud);
+        auto before = loud; before.slopeBelow = 0;
+        const auto budget = land (dense, before);
+        std::printf ("wall proof: wall %d P95 %.4f LUFS %.4f passes %d; budget %.4f LUFS %.4f passes %d\n",
+            wall.answer.limiterWall, wall.answer.limiterActive.stats.p95Db, wall.answer.achievedLufs, wall.answer.passes,
+            budget.answer.limiterActive.stats.p95Db, budget.answer.achievedLufs, budget.answer.passes);
+        for (int i = 0; i < wall.answer.logCount; ++i)
+            std::printf ("  pass %d: %.5f LUFS, P95 %.5f\n", i, wall.answer.log[i].integratedLufs, wall.answer.log[i].limiterP95Db);
+        test::ok (wall.done && wall.answer.limiterWall && wall.answer.limiterSlope < .2
+            && wall.answer.limiterWallP95Db < 7.5, "a dense mix reaches the wall before the manual limiter budget");
+        loud.target = -14;
+        const auto normal = land (dense, loud);
+        before.target = -14;
+        const auto normalBefore = land (dense, before);
+        test::ok (normal.done && ! normal.answer.limiterWall && normal.out == normalBefore.out,
+            "a normal streaming landing does not reach the wall and keeps its PCM");
+        for (const double limit : { .5, 1.75 })
+        {
+            loud.target = -5; loud.limiterBudgetDb = limit;
+            loud.maxMode = true;
+            before = loud; before.slopeBelow = 0;
+            const auto max = land (dense, loud), maxBefore = land (dense, before);
+            test::ok (max.done && ! max.answer.limiterWall && max.out == maxBefore.out,
+                "max budgets are below the knee: their PCM stays unchanged");
+        }
+    }
     test::group ("landing search: one budget, saved output, and split invariant");
     Rig whole, sliced;
     if (! test::run (whole.prepare() && sliced.prepare())) return test::report();
@@ -364,20 +461,21 @@ int main()
         kRate, 1, kFrames, wrappedRequest.grTraceBuckets, 0);
     const std::uint64_t searchLong = LandingSearch::storageFor (
         kRate, 1, 2 * kFrames, wrappedRequest.grTraceBuckets, 0);
-    test::ok (searchLong - search == 2u * (plainLong - plain)
+    test::ok (searchLong - search == 2u * (plainLong - plain) + (std::uint64_t) kFrames * sizeof (float)
               && declared == TargetLoudnessSolver::solveCallBytes (
                   kRate, 1, kFrames, wrappedRequest)
               && declared == DeliveredMastering::solveCallBytes (
                   kRate, kRate, 1, kFrames, wrappedRequest),
-              "the landing declaration retains no third full programme");
+              "the landing workspace and its separately declared best-pass PCM cover the call");
     const auto fourMinutes = LandingSearch::storageForProgramme (
         4LL * 60 * kRate, 2, kRate, 4 * 60 * kRate, wrappedRequest.grTraceBuckets);
     const std::uint64_t pcmBytes = 4u * 60u * kRate * 2u * sizeof (float);
     test::ok (fourMinutes.ok && fourMinutes.sourceBytes == pcmBytes
               && fourMinutes.outputBytes == pcmBytes
-              && fourMinutes.maxLiveBytes == 2u * pcmBytes + fourMinutes.workspaceBytes
+              && fourMinutes.candidateBytes == pcmBytes
+              && fourMinutes.maxLiveBytes == 3u * pcmBytes + fourMinutes.workspaceBytes
               && fourMinutes.largestBlockBytes >= pcmBytes,
-              "a four-minute stereo quote names source and output PCM only, with a bounded largest block");
+              "a four-minute stereo quote names source, output and best-pass PCM, with a bounded largest block");
     LoudnessRequest invalid = wrappedRequest;
     invalid.normalizationGainDb = std::numeric_limits<double>::quiet_NaN();
     const long long refusalBytes = alloc::bytes.load();
@@ -493,7 +591,7 @@ int main()
         if (cycle == 3) lifecycleBudget = lifecycleBudget && quote.maxLiveBytes == repeatedQuote;
     }
     test::ok (lifecycleBudget,
-              "DeclaredBudget covers cancel, grow and shrink with retained two-buffer capacity"
+              "DeclaredBudget covers cancel, grow and shrink with retained best-pass capacity"
               + lifecycleDetail);
 
     Rig one;
@@ -519,34 +617,57 @@ int main()
             && (over.log[i].violated & constraintBit (MasteringConstraint::TruePeakCeiling)) != 0;
         gentlest = gentlest && over.measured.truePeakDbTp <= over.log[i].truePeakDbTp;
     }
-    // Here the gentlest is the first render, so the reserved last pass restores it (a real, logged render).
-    bool restored = false;
-    for (int i = 0; i + 1 < over.logCount; ++i)
-        restored = restored || core::exactlyEqual (over.log[i].truePeakDbTp, over.measured.truePeakDbTp);
-    restored = restored && over.logCount == 12
-        && core::exactlyEqual (over.log[over.logCount - 1].truePeakDbTp, over.measured.truePeakDbTp);
+    // Here the gentlest is the first render. Its saved PCM is delivered without a duplicate render in the log.
+    bool savedWinner = false, deliveryRender = false;
+    for (int i = 0; i < over.logCount; ++i)
+    {
+        savedWinner = savedWinner || core::exactlyEqual (over.log[i].truePeakDbTp, over.measured.truePeakDbTp);
+        deliveryRender = deliveryRender || over.log[i].reason == SolvePassRecord::Reason::DeliverWinner;
+    }
     test::ok (overEnded && over.deliverable && over.peaksAboveCeiling
               && over.status == MasteringSolveStatus::TargetUnreachable
               && over.binding == MasteringConstraint::TruePeakCeiling && over.measured.truePeakDbTp > -1.0
-              && everyAbove && gentlest && restored && std::isfinite (over.achievedLufs) && over.passes <= 12,
-              "no render under the ceiling: the gentlest measured render is delivered, marked above the ceiling");
+              && everyAbove && gentlest && savedWinner && ! deliveryRender
+              && std::isfinite (over.achievedLufs) && over.passes < 12,
+              "no render under the ceiling: the saved gentlest render is delivered without a duplicate pass and marked");
+    Rig allocationFallback;
+    if (! test::run (allocationFallback.prepare (false))) return test::report();
+    LoudnessRequest fallbackRequest;
+    fallbackRequest.ceilingMarginDb = 0.15; fallbackRequest.targetLufs = -3.0;
+    fallbackRequest.maxTruePeakDbTp = -1.0; fallbackRequest.maxPasses = 12;
+    LandingSearch fallbackSearch (allocationFallback.solver);
+    alloc::failNext.store (true);
+    StepResult fallbackState = fallbackSearch.begin (allocationFallback.chain, allocationFallback.renderer,
+        allocationFallback.params, allocationFallback.input, kFrames, kRate, allocationFallback.out, 1, kFrames,
+        fallbackRequest) ? StepResult::More : StepResult::Failed;
+    for (int guard = 0; fallbackState == StepResult::More && guard < 2000000; ++guard)
+        fallbackState = fallbackSearch.step (LLONG_MAX);
+    bool fallbackRender = false;
+    for (int i = 0; i < fallbackSearch.result().logCount; ++i)
+        fallbackRender = fallbackRender
+            || fallbackSearch.result().log[i].reason == SolvePassRecord::Reason::DeliverWinner;
+    test::ok (fallbackState == StepResult::Done && fallbackSearch.result().deliverable && fallbackRender
+              && fallbackSearch.result().passes == over.passes + 1
+              && allocationFallback.output == open.output,
+              "if the optional winner buffer allocation fails, the counted delivery render restores identical PCM");
 
     Rig miss;
     if (! test::run (miss.prepare())) return test::report();
     LoudnessSolution high;
     const bool highEnded = run (miss, 409, 10.0, 12, high);
-    test::ok (highEnded && high.deliverable && ! high.peaksAboveCeiling && high.passes == 12 && high.logCount == 12
+    test::ok (highEnded && high.deliverable && ! high.peaksAboveCeiling && high.passes < 12 && high.logCount == high.passes
               && high.status != MasteringSolveStatus::Solved && high.measured.truePeakDbTp <= -1.0,
-              "an over-loud target spends the full budget and keeps its best safe miss");
-    bool restoredInBudget = false;
-    for (int i = 0; i + 1 < high.logCount; ++i)
-        restoredInBudget = restoredInBudget
-            || (high.log[i].gainDb == high.log[high.logCount - 1].gainDb
-                && high.log[i].ceilingDb == high.log[high.logCount - 1].ceilingDb);
-    test::ok (restoredInBudget && high.preLimiterGainDb == high.log[11].gainDb
-              && high.ceilingDbTp == high.log[11].ceilingDb
-              && high.measured.integratedLufs == high.log[11].integratedLufs,
-              "the final pass restores the chosen safe miss and remains inside the twelve logged renders");
+              "an over-loud target keeps its best safe miss without spending a pass to render it again");
+    bool savedInBudget = false, duplicatedInBudget = false;
+    for (int i = 0; i < high.logCount; ++i)
+    {
+        savedInBudget = savedInBudget || (high.preLimiterGainDb == high.log[i].gainDb
+            && high.ceilingDbTp == high.log[i].ceilingDb
+            && high.measured.integratedLufs == high.log[i].integratedLufs);
+        duplicatedInBudget = duplicatedInBudget || high.log[i].reason == SolvePassRecord::Reason::DeliverWinner;
+    }
+    test::ok (savedInBudget && ! duplicatedInBudget,
+              "the chosen safe miss's saved audio is delivered and no delivery-of-winner render is logged");
     Rig finiteExtreme;
     if (! test::run (finiteExtreme.prepare())) return test::report();
     LoudnessSolution extremeResult;

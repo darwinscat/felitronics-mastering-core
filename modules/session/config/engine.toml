@@ -65,6 +65,11 @@ toleranceLu = 0.1
 truePeakAimDb = 0.05
 onSourceGate = true
 limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 7.5, middleLufs = [-10, -8] }
+# The wall (owner, 05.10): stop a manual landing when a dB more of active P95 cut buys less than 0.2 LU.
+# Compare existing passes at least 0.5 dB of P95 apart; no extra pass. The 23-song ladder puts this near 7.7 dB P95,
+# around −8 LUFS: better a little quieter than broken. Max modes keep their own budgets below the knee.
+limiterSlopeBelow = 0.2
+limiterSlopeSpacingDb = 0.5
 
 # THE MAX MODES (owner decisions, 04.10: v0.15.0, and v0.16.0 by ear). A target whose loudnessMode names one (targets.toml,
 # or a person's edit of it) lands as loud as the mode's limiter budget allows — the active-window P95, as limiterBudget, in
@@ -80,6 +85,8 @@ limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 7.5, middleLufs = [-10, -8
 [landing.max]
 ceilingLufs = -5
 floorLufs = -14
+# The drive interval that proves the limiter-budget edge. The master command may override it within 0.05…1 dB.
+budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
 
@@ -272,7 +279,7 @@ vinyl = { fromHz = 120, toHz = 200 }
 # THE COMPRESSOR — the chain stage the glue drives ([glue]).
 # detector: rms, where the core's default is peak — every threshold offset of the glue is calibrated for RMS detection
 #   (with RMS a positive offset cuts almost nothing); peak with the same numbers would be another glue.
-# rmsWindowMs, link, mode, rangeDb, makeupDb, autoMakeup, mix: every field named, the neutral ones too, so the sound
+# rmsWindowMs, link, mode, rangeDb, makeupDb, autoMakeup: every field named, the neutral ones too, so the sound
 #   depends on no default of the core's.
 # lookaheadMs, sidechainHpfHz: the stage's lookahead and its key filter (0: self-keyed) — topology of the chain, stated
 #   for the same reason.
@@ -288,7 +295,6 @@ mode = "downCompress"
 rangeDb = 60
 makeupDb = 0
 autoMakeup = false
-mix = 1
 lookaheadMs = 1
 sidechainHpfHz = 0
 thresholdFrom = "shortTermP95"
@@ -528,6 +534,14 @@ seed = "853c49e6748fea9b"
 autoBlank = true
 autoBlankSamples = 4096
 
+# DELIVERY OF A SOURCE THAT IS ALREADY MASTERED (owner, 05.10): a normalising or quieter non-spec target keeps the
+# source loudness. Above −14 LUFS its peaks get 2 dB of codec headroom; otherwise 1 dB. The recognition thresholds are
+# independent under [observations.alreadyMastered].
+[masteredDelivery]
+loudAboveLufs = -14
+loudCeilingDbTp = -2
+regularCeilingDbTp = -1
+
 # THE DE-ESSER — manual, off, depth −6 dB (an owner decision, after six blind pairs at matched loudness: five of six told
 # apart, none harmed, hats included). offered = false: no shell offers it. Its automatic mode is off until it is
 # calibrated by ear. The sibilance observation is published all the same (owner decision 3.13: shown before any de-esser).
@@ -635,6 +649,9 @@ infraLow = { low = 0.02, high = 0.05, warningFrom = 0.05 }
 wideBass = { sideFractionAtLeast = 0.06, fullAt = 0.3 }
 polarity = { correlationBelow = 0, rawSideFractionAbove = 0.5, fullAtLowCorrelation = -0.5 }
 alreadyLimited = { plrBelowDb = 10.5, fullAtPlrDb = 7 }
+# Already mastered (owner, 05.10, v1's 20.6k uploads): ALL three strict tests. Loud mixes around −15…−13 LUFS must
+# still be mastered normally; loudness alone is no verdict. These thresholds report a finding, not a device setting.
+alreadyMastered = { aboveLufs = -12, peakAboveDbTp = -1.5, plrBelowDb = 11 }
 vinylTop = { aboveHz = 16000 }
 
 # The kind of a finding is its nature (owner decision 01.10, row by row): clipping and bass in opposite polarity are errors
@@ -801,8 +818,10 @@ estimateFromSeconds = 1
 [progress.analysis.weights]
 loudness = 449.51
 report = 895.895
-lowEnd120 = 2410.615
-lowEnd150 = 2410.615
+# The three crossover reports share one 5:22 FFT walk (1 712 ms total); one third is assigned to each result so
+# publication of the already-finished companions does not make the bar jump.
+lowEnd120 = 570.597
+lowEnd150 = 570.597
 forensics = 927.09
 stereo = 108.662
 lowEndSweep = 0.038
@@ -814,11 +833,14 @@ waveformIndex = 140.0
 excursionsIndex = 450.0
 
 # master: the phases of a master — every landing pass weighs passWeight and the measurement of the delivered file
-#   measureWeight, against expectedPasses passes.
+#   measureWeight, against expectedPasses passes; a max master's against its mode's own count: 7 for max clean, 6 for
+#   max dense (an owner decision, 06.10).
 [progress.master]
 passWeight = 1
 measureWeight = 0.15
 expectedPasses = 3
+expectedPassesMaxClean = 7
+expectedPassesMaxDense = 6
 
 # THE BLIND PAIRED PREFERENCE TEST — a development tool, never on a public page: its protocol. Two lanes A / B without
 # labels at equal loudness, "A better / B better / no preference", revealed after the last answer. Nothing here feeds the

@@ -44,6 +44,9 @@ namespace felitronics::session::config
 // targets.toml
 
 enum class Group : std::uint8_t { Streaming, Delivery, Aggregator };
+// How an already-mastered source is delivered. A specification is a requirement and is met normally; a normalising
+// platform is never turned down; Other is a medium/preset whose quieter target likewise does not justify more work.
+enum class TargetClass : std::uint8_t { Specification, Streaming, Other };
 
 struct Album
 {
@@ -56,6 +59,7 @@ struct Target
 {
     std::string key;
     Group group = Group::Streaming;
+    TargetClass targetClass = TargetClass::Other;
     double lufs = 0.0;
     double tp = 0.0;
     double monoBass = 0.0;
@@ -134,6 +138,8 @@ struct Landing
     // active-window P95, a whole number of quarter dB).
     double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
     double cleanBudgetDb = 0.0, denseBudgetDb = 0.0;
+    double maxBudgetResolutionDb = 0.0;
+    double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
 struct PeakClipper
@@ -247,7 +253,6 @@ struct Compressor
     double rangeDb = 0.0;
     double makeupDb = 0.0;
     bool autoMakeup = false;
-    double mix = 0.0;
     double lookaheadMs = 0.0;
     double sidechainHpfHz = 0.0;               // 0: self-keyed
     ThresholdFrom thresholdFrom = ThresholdFrom::ShortTermP95;
@@ -376,6 +381,13 @@ struct Dither
     std::int32_t autoBlankSamples = 0;
 };
 
+struct MasteredDelivery
+{
+    double loudAboveLufs = 0.0;
+    double loudCeilingDbTp = 0.0;
+    double regularCeilingDbTp = 0.0;
+};
+
 // [chain]: the chain's fixed geometry — the internal quantum and the oversampling of the saturation and the limiter.
 struct Chain
 {
@@ -452,6 +464,7 @@ struct Observations
     double polarityCorrelationBelow = 0.0, polarityRawSideFractionAbove = 0.0;    // polarity
     double polarityFullAtLowCorrelation = 0.0;
     double alreadyLimitedPlrBelowDb = 0.0, alreadyLimitedFullAtPlrDb = 0.0;       // alreadyLimited
+    double masteredAboveLufs = 0.0, masteredPeakAboveDbTp = 0.0, masteredPlrBelowDb = 0.0;
     double vinylTopAboveHz = 0.0;                                                 // vinylTop
     Kinds kinds;
     Sibilance sibilance;
@@ -518,6 +531,8 @@ struct Progress
     double masterPassWeight = 0.0;             // [progress.master] passWeight
     double masterMeasureWeight = 0.0;          // [progress.master] measureWeight
     std::int32_t masterExpectedPasses = 0;     // [progress.master] expectedPasses
+    std::int32_t masterExpectedPassesMaxClean = 0;   // [progress.master] expectedPassesMaxClean
+    std::int32_t masterExpectedPassesMaxDense = 0;   // [progress.master] expectedPassesMaxDense
 };
 
 // The blind test's protocol. Its variants — the chains a pair compares — are not here: they are defined with the test.
@@ -549,6 +564,7 @@ struct Engine
     Chain chain;
     Stages stages;
     Dither dither;
+    MasteredDelivery masteredDelivery;
     DeEsser deEsser;
     StereoBursts stereoBursts;
     Observations observations;

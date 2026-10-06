@@ -21,6 +21,7 @@
 #include "SourceMeasurements.h"
 #include "QueryState.h"
 #include "MasterJob.h"
+#include "Observations.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -242,8 +243,13 @@ Checked Session::storageFor (const Request& request) const noexcept
         // Resident name, detached snapshot name, and its worst-case JSON escaping coexist.
         if (name > 9007199254740991ull / 8u
             || footprint.peakBytes + double (8u * name) >= 9007199254740992.0) return rejected (Rejection::TooLong);
-        const auto extra = std::uint64_t (footprint.peakBytes) - std::uint64_t (liveBytes());
-        return storage (extra + 8u * name, std::uint64_t (footprint.largestBlockBytes) + 6u * name);
+        const auto live = std::uint64_t (liveBytes());
+        const auto released = lateMasterJobBytes_ + damageJobBytes_;
+        const auto netLive = live - std::min (live, released);
+        const auto extra = std::uint64_t (footprint.peakBytes) - netLive;
+        auto priced = storage (extra + 8u * name, std::uint64_t (footprint.largestBlockBytes) + 6u * name);
+        priced.releasedBytes = released;
+        return priced;
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -287,6 +293,20 @@ Checked Session::storageFor (const Request& request) const noexcept
         // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
         // and never one issued before.
         if (! samples_) return rejected (Rejection::NoAudio);
+        if (! master->allowClippedGain)
+        {
+            const auto report = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
+                                                        source_.frames, source_.bitDepth }, &project_);
+            const auto row = rules.row (project_.target);
+            const auto mode = detail::loudnessModeOf (rules, project_);
+            const auto ceiling = rules.engine.find ("landing").find ("max").find ("ceilingLufs");
+            const double target = mode == LoudnessMode::Manual ? project_.targetEdit.lufs.value_or (row.lufs.toDouble())
+                : ceiling.decimal() ? ceiling.decimal()->toDouble() : double (ceiling.integer().value_or (0));
+            if ((master->masterAnyway || report.deliveryMode == DeliveryMode::Mastered)
+                && report.clipping == SourceClipStatus::Clipped
+                && report.loudnessLufs && target > *report.loudnessLufs)
+                return rejected (Rejection::ClippedGain);
+        }
         // With the panel open a master the session decides waits until what its devices read has ended; with the panel
         // hidden it is taken, and waits for it itself — resuming a stopped measurement takes a job id of its own.
         const bool decided = master->ready.version == 0;
@@ -300,25 +320,28 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (plan.rejection != Rejection::None) return rejected (plan.rejection);
         const bool room = masterRoom_ > masterCount_;
-        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
+        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * 2u)
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
         // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
         // its job's bytes are free for this one, and it waits its turn again.
         auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
-        priced.releasedBytes = damageJobBytes_;
+        priced.releasedBytes = damageJobBytes_ + lateMasterJobBytes_;
         return priced;
     }
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
-        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && damageCount_ == 0) return rejected (Rejection::NoJob);
+        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && lateMasterId_ == 0 && damageCount_ == 0)
+            return rejected (Rejection::NoJob);
         if (cancel->job == 0 || (cancel->job != job_ && cancel->job != measurementJob_ && cancel->job != needlesJob_
-                                 && damageIndex (cancel->job) == damageCount_)) return rejected (Rejection::UnknownJob);
+                                 && cancel->job != lateMasterId_ && damageIndex (cancel->job) == damageCount_))
+            return rejected (Rejection::UnknownJob);
         // The running grade cancelled frees its walks.
         Checked freed {};
         if (cancel->job == damageJobId_) freed.releasedBytes = damageJobBytes_;
+        if (cancel->job == lateMasterId_) freed.releasedBytes = lateMasterJobBytes_;
         return freed;
     }
     if (const auto* forget = std::get_if<command::Forget> (&request))
@@ -329,6 +352,7 @@ Checked Session::storageFor (const Request& request) const noexcept
             {
                 Checked freed {};
                 if (damageJobId_ != 0 && damageJob_->master == forget->master) freed.releasedBytes = damageJobBytes_;
+                if (lateMasterId_ == forget->master) freed.releasedBytes += lateMasterJobBytes_;
                 return freed;
             }
         return rejected (Rejection::UnknownMaster);
@@ -621,6 +645,9 @@ Answer Session::apply (const Request& request) noexcept
         // The damage graded for an earlier master is parked first — its walks freed before this master allocates — and
         // waits its turn again; it is never ended by a new master.
         parkDamage();
+        // A new delivery supersedes only the previous delivery's optional impact join. Its ready PCM and retained
+        // report stay; the old report records why that one field will not arrive.
+        cancelLateMasterCrest (MeasurementReason::Cancelled, true);
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
         {
@@ -628,7 +655,7 @@ Answer Session::apply (const Request& request) noexcept
             std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
             masters_ = std::move (room);
             masterRoom_ = masterCount_ + 1;
-            if (capabilities_.leanSummary) { leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]); }
+            leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]);
         }
         {
             std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);
@@ -644,15 +671,18 @@ Answer Session::apply (const Request& request) noexcept
         // the measurements its devices read end. A master the session decides waits for them (the panel hidden: with
         // it open the command was refused); a ready one renders at once.
         jobWaiting_ = master->ready.version == 0 && plan_.waiting != 0;
+        jobMasterAnyway_ = master->masterAnyway;
+        jobBudgetResolutionDb_ = master->budgetResolutionDb;
         jobMachineFromFile_ = machineFromFile_;
         jobRecipe_ = Recipe { project_, source_.hash, config::Config::versions().sound };
         jobRecipe_.readyVersion = plan.ready.version;
         if (jobWaiting_)
         {
-            const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
+            const auto passes = detail::expectedPasses (rules.engine, plan.loudnessMode);
             const auto chunks = (source_.frames + 1023u) / 1024u;
             const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
             masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };
+            masterProgress_.analyzers.emplace();
         }
         else startMaster (plan);
         answer.job = job_;
@@ -682,6 +712,8 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
+        if (lateMasterId_ == forget->master)
+            cancelLateMasterCrest (MeasurementReason::MasterForgotten, false);
         if (pendingMaster_.master == forget->master)
         { masterAudio_ = {}; masterAudioBits_ = 0; pendingMaster_ = {}; }
         // A master forgotten while its damage is graded or waits: the job stops with it — no line for a master no longer
@@ -702,6 +734,14 @@ Answer Session::apply (const Request& request) noexcept
                 masterRows_[masterCount_ - 1] = {};
         }
         --masterCount_;
+        if (masterJob_) masterJob_->rowIndex = masterCount_;
+        if (lateMasterJob_)
+        {
+            const auto* target = std::find_if (masters_.get(), masters_.get() + masterCount_,
+                [this] (const Kept& k) noexcept { return k.id == lateMasterId_; });
+            if (target != masters_.get() + masterCount_)
+                lateMasterJob_->rowIndex = std::size_t (target - masters_.get());
+        }
         if (crestJoin_ && index < crestJoinIndex_) --crestJoinIndex_;
     }
     else if (const auto* grade = std::get_if<command::GradeDamage> (&request))
@@ -769,22 +809,26 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
 {
     auto& rows = masterRows_[masterCount_];
     rows = {};
-    rows.passes.reset (new LandingPass[12]);
-    rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
-    rows.traceCapacity = std::uint32_t (plan.traceBuckets);
-    if (plan.glueTrace) rows.glueRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
-    if (plan.saturationTrace) rows.saturationRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
-    if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
-    rows.crestCapacity = plan.crestCapacity;
-    if (plan.costCapacity != 0)
+    rows.workedReady = plan.ready;
+    if (plan.deliveryMode == DeliveryMode::Mastered)
     {
-        rows.costSeries.reset (new double[plan.costCapacity]);
-        rows.sections.reset (new MasterSection[plan.costCapacity]);
+        rows.passes.reset (new LandingPass[mastering::TargetLoudnessSolverLimits::kMaxPasses]);
+        rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
+        rows.traceCapacity = std::uint32_t (plan.traceBuckets);
+        if (plan.glueTrace) rows.glueRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
+        if (plan.saturationTrace) rows.saturationRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
+        if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
+        rows.crestCapacity = plan.crestCapacity;
+        if (plan.costCapacity != 0)
+        {
+            rows.costSeries.reset (new double[plan.costCapacity]);
+            rows.sections.reset (new MasterSection[plan.costCapacity]);
+        }
+        if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
+        if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
+        if (plan.costCapacity != 0) rows.costMomentary.reset (new double[plan.costCapacity]);
+        if (plan.axesCapacity != 0) rows.axes.reset (new analysis::WaveformColumn[plan.axesCapacity]);
     }
-    if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
-    if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
-    if (plan.costCapacity != 0) rows.costMomentary.reset (new double[plan.costCapacity]);
-    if (plan.axesCapacity != 0) rows.axes.reset (new analysis::WaveformColumn[plan.axesCapacity]);
     rows.axesCapacity = plan.axesCapacity;
     rows.costCapacity = plan.costCapacity;
     rows.costScratchCapacity = plan.costScratchCapacity;
@@ -794,8 +838,11 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     // liveBytes() counts the installed row owners separately while this job is active.
     masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
     jobWaiting_ = false;
+    jobMasterAnyway_ = false;
+    jobBudgetResolutionDb_.reset();
     jobRecipe_.readyHash = detail::MasterJob::fingerprint (plan.ready);
     jobRecipe_.deliveryRateHz = plan.deliveryRate;
+    jobRecipe_.deliveryBits = plan.ready.deliveryBits;
     jobRecipe_.readyVersion = plan.ready.version;
     rows.crestMasterId = job_;
     rows.crestSource = jobRecipe_.source;
@@ -911,6 +958,8 @@ bool Driver::mastered (Session& session, JobId job) noexcept
     session.job_ = 0;
     session.jobRecipe_ = {};
     session.jobWaiting_ = false;
+    session.jobMasterAnyway_ = false;
+    session.jobBudgetResolutionDb_.reset();
     session.replan();
     ++session.revision_;
     return true;

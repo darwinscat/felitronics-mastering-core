@@ -715,6 +715,91 @@ void observe (const ObservationInputs& in, Observations& out) noexcept
     out.hum = hum (in, false);
     out.humWandered = hum (in, true);
 }
+void masteredDelivery (SourceReport& out, const Rules& rules, const Project& project) noexcept
+{
+    using text::Fact; using text::FactId; using text::Arg; using text::Unit;
+    if (! out.alreadyMastered.value_or (false) || ! out.loudnessLufs || ! out.truePeakDbTp) return;
+    const auto append = [&out] (const Fact& fact) noexcept
+    {
+        if (out.facts.count < out.facts.items.size()) out.facts.items[out.facts.count++] = fact;
+        else out.advice.items[out.advice.count++] = fact;
+    };
+    const auto target = rules.row (project.target);
+    const auto loudnessMode = loudnessModeOf (rules, project);
+    const auto maximum = rules.engine.find ("landing").find ("max").find ("ceilingLufs");
+    const double targetLufs = loudnessMode == LoudnessMode::Manual
+        ? project.targetEdit.lufs.value_or (target.lufs.toDouble()) : number (maximum);
+    if (target.targetClass == TargetClass::Specification || targetLufs > *out.loudnessLufs)
+    {
+        if (targetLufs > *out.loudnessLufs) append (Fact::of (FactId::SourceMasterLouder));
+        return;
+    }
+    const auto delivery = rules.engine.find ("masteredDelivery");
+    const double loudAbove = number (delivery.find ("loudAboveLufs"));
+    const double ceiling = number (delivery.find (*out.loudnessLufs > loudAbove
+        ? "loudCeilingDbTp" : "regularCeilingDbTp"));
+    const double gain = std::min (0.0, ceiling - *out.truePeakDbTp);
+    out.deliveryCeilingDbTp = ceiling;
+    out.deliveryGainDb = gain;
+    out.deliveryMode = gain < 0.0 ? DeliveryMode::PeaksOnly : DeliveryMode::AsIs;
+    append (out.deliveryMode == DeliveryMode::AsIs
+        ? Fact::of (FactId::SourceDeliveryAsIs)
+        : Fact::of (FactId::SourceDeliveryPeaksOnly, Arg::value (gain, Unit::Db, 1),
+                    Arg::value (ceiling, Unit::DbTp, 1)));
+}
+SourceReport sourceReport (const ObservationInputs& in, const Project* project) noexcept
+{
+    using text::Fact; using text::FactId; using text::Arg; using text::Unit;
+    SourceReport out;
+    const auto append = [&out] (const Fact& fact) noexcept
+    {
+        if (out.facts.count < out.facts.items.size()) out.facts.items[out.facts.count++] = fact;
+        else out.advice.items[out.advice.count++] = fact;
+    };
+    const auto* loudness = resultOf (in, Analyzer::Loudness);
+    const auto lufs = read (loudness, "integratedLufs"), peak = read (loudness, "truePeakDb");
+    out.loudnessLufs = lufs.value; out.truePeakDbTp = peak.value;
+    if (lufs.value && peak.value)
+    {
+        out.plrDb = *peak.value - *lufs.value;
+        const auto config = in.rules.engine.find ("observations").find ("alreadyMastered");
+        out.alreadyMastered = *lufs.value > number (config.find ("aboveLufs"))
+            && *peak.value > number (config.find ("peakAboveDbTp")) && *out.plrDb < number (config.find ("plrBelowDb"));
+    }
+    const auto* detector = resultOf (in, Analyzer::Clipping);
+    const auto runs = read (detector, "runCount"), samples = read (detector, "samplePeak");
+    Fact first;
+    if (runs.value && *runs.value > 0)
+    {
+        out.clipping = SourceClipStatus::Clipped;
+        first = Fact::of (FactId::SourceRealClipping);
+    }
+    else if (runs.value && samples.value && *samples.value >= 1)
+    {
+        out.clipping = SourceClipStatus::SampleOvers;
+        first = Fact::of (FactId::SourceSampleOvers);
+    }
+    else if (runs.value && samples.value && peak.value)
+    {
+        out.clipping = *peak.value > 0 ? SourceClipStatus::InterSampleOvers : SourceClipStatus::Clean;
+        first = *peak.value > 0 ? Fact::of (FactId::SourceInterSampleOvers, Arg::value (*peak.value, Unit::DbTp, 1))
+                                : Fact::of (FactId::SourceNoClipping);
+    }
+    if (out.clipping == SourceClipStatus::NotMeasured)
+    {
+        out.clippingReason = ! runs.value ? runs.reason : ! samples.value ? samples.reason : peak.reason;
+        first = Fact::of (FactId::SourceClippingUnmeasured, Arg::term (reasonTerm (out.clippingReason)));
+    }
+    else out.clippingReason = MeasurementReason::None;
+    append (first);
+    if (spectralWall (in).status == ObservationStatus::Found)
+        append (Fact::of (FactId::SourceFormerLossy));
+    if (out.alreadyMastered.value_or (false))
+        append (Fact::of (FactId::SourceAlreadyMastered,
+            Arg::value (*lufs.value, Unit::Lufs, 1), Arg::value (*peak.value, Unit::DbTp, 1)));
+    if (project) masteredDelivery (out, in.rules, *project);
+    return out;
+}
 } // namespace felitronics::session::detail
 
 //==============================================================================

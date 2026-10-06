@@ -257,13 +257,14 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
         if (price.rejection != Rejection::None || price.bytes == 0 || price.largestBlockBytes == 0) return false;
         Answer rejected;
         const auto before = std::uint64_t (s.liveBytes());
-        if (s.setCapacity ({ double (before + price.bytes - 1u), double (price.largestBlockBytes) }) != Status::Ok) return false;
+        const auto netBefore = before - std::min (before, price.releasedBytes);
+        if (s.setCapacity ({ double (netBefore + price.bytes - 1u), double (price.largestBlockBytes) }) != Status::Ok) return false;
         const auto heapSpent = declared::spend ([&] { rejected = s.apply (small); });
         if (rejected.rejection != Rejection::Memory || heapSpent.requests != 0) return false;
-        if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes - 1u) }) != Status::Ok) return false;
+        if (s.setCapacity ({ double (netBefore + price.bytes), double (price.largestBlockBytes - 1u) }) != Status::Ok) return false;
         const auto blockSpent = declared::spend ([&] { rejected = s.apply (small); });
         if (rejected.rejection != Rejection::Memory || blockSpent.requests != 0) return false;
-        if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes) }) != Status::Ok
+        if (s.setCapacity ({ double (netBefore + price.bytes), double (price.largestBlockBytes) }) != Status::Ok
             || ! master (s, small, f, external, false)) return false;
         if (s.setCapacity ({}) != Status::Ok || ! select (deliveryRate, 18)) return false;
         large.id = 15;
@@ -275,9 +276,10 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
             || ! external[0].samples || ! external[1].samples || ! select (deliveryRate, 19)) return false;
         // The load emptied the masters' room: the first master grows it by one slot (a Kept, its rows' record — the
         // damage grade's inputs in it, the parameters it was delivered with and the walks' plan, under 1 KiB beside them —
-        // and its entry in the grades' queue), kept after the forget; every later cycle reuses that slot and grows nothing.
-        auto warmLive = std::uint64_t (s.liveBytes()) + sizeof (Kept) + sizeof (DamageJobEntry)
-                      + sizeof (felitronics::mastering::MasteringChainParams) + 2048u;
+        // its exact render state for the worked report, and its entry in the grades' queue), kept after the forget;
+        // every later cycle reuses that slot and grows nothing.
+        auto warmLive = std::uint64_t (s.liveBytes()) + 2u * sizeof (Kept) + sizeof (DamageJobEntry)
+                      + sizeof (felitronics::mastering::MasteringChainParams) + sizeof (command::MasterReady) + 2048u;
         for (unsigned cycle = 0; cycle < 3; ++cycle)
         {
             auto warm = request; warm.id = 30u + cycle * 2u;

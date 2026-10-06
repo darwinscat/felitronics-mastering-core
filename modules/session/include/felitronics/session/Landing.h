@@ -39,6 +39,12 @@ public:
                                          std::span<LandingTraceBucket> limiterRows,
                                          std::span<LandingTraceBucket> peakClipRows,
                                          std::uint32_t deliveryRateHz, LandingSummary& out) noexcept;
+    // A max master pulled up to its floor lands twice and keeps one record: passRows writes the first landing's pass log
+    // into the rows when the floor landing begins, and this summary appends the floor landing's after those `earlier`
+    // rows — the pass count and the work count are both landings'.
+    [[nodiscard]] static bool summarize (const mastering::LoudnessSolution& solution, std::uint32_t earlier,
+                                         std::uint64_t earlierWork, std::span<LandingPass> rows, LandingSummary& out) noexcept;
+    [[nodiscard]] static bool passRows (const mastering::LoudnessSolution& solution, std::span<LandingPass> rows) noexcept;
     // The Session pump uses the pass-only summary followed by bounded trace copies.
     // The whole-call overload above remains the numerical control for those copies.
     [[nodiscard]] static bool stepTraces (const mastering::LoudnessSolution& solution,
