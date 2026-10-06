@@ -32,7 +32,19 @@
   edits, and remains separate from the replayable project file.
 - **The Analyzers phase names its running analyzer**, with its own fraction (`Phase.analyzers`, a bounded list, null
   outside that phase). A waiting damage grade says whether it waits for the source measurement or its queue turn
-  (`DamageJobEntry.waitReason`, null while running).
+  (`DamageJobEntry.waitReason`, null while running). The overall Analyzers fraction keeps rising after the shared
+  low-end walk, and an as-is or peaks-only delivery moves its phase fraction with its own copy or renders (the first
+  render to 0.8, a correction render to 0.9) instead of holding 0 until the end.
+- **A max master pulled up to its floor keeps one record**: the first landing's passes, with their reasons, stay in the
+  landing log ahead of the floor landing's; the pass count, the "pass N" label and the bar run on across both landings
+  (`LandingSummary.passes` up to 24). The max modes' progress expectation is config, `[progress.master]
+  expectedPassesMaxClean = 7` / `expectedPassesMaxDense = 6` (owner, 06.10; the pump's literal was 6 for both; manual
+  `expectedPasses` stays 3), for a master waiting for its measurements as for a rendering one; the config's version
+  moves, the sound's does not.
+- **No facade entry writes into a retained master PCM**: every entry that writes a caller buffer, the kit's included,
+  refuses a destination inside any live session's pending master audio with `ERR_OVERLAP`, before the session is asked.
+  A call that may free that audio (load, measured load, attached audio, a command) refuses an input inside it the same
+  way, before anything is freed — a load handed the master's own PCM used to read it after freeing it.
 - **The unread `[compressor] mix` is removed**, including its schema and typed member; the glue device's mix stays
   the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
 - **ABI 13** appends the delivery fields, `masterAnyway`, `budgetResolutionDb`, landing pass P95/reason, source facts

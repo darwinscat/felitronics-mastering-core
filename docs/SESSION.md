@@ -979,7 +979,11 @@ weights of the analyzers that ended and the read share of the current one, again
 120 Hz run, and the infra-low run, the same geometry at another crossover), lowEnd150, forensics, stereo, crest, hum,
 stereoBursts, tempo; so a 0.13 s stereo pass moves the bar a sliver and the 3 s crest a long stretch. The live
 `Stream`/`Report` phases keep their own fractions. Master passes use `passWeight` against `expectedPasses * passWeight + measureWeight`; remeasurement
-finishes at one. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
+finishes at one. A max master's bar expects its mode's renders, `expectedPassesMaxClean` / `expectedPassesMaxDense`
+(`[progress.master]`). A max master pulled up to its floor keeps one record across both landings: the first landing's
+passes stay in its pass log ahead of the floor landing's, and its pass number, render count and bar run on across the
+switch. An as-is or peaks-only delivery moves by its own walks: the copy; each render (the rate conversion, the gain,
+the check), the first render to 0.8 and a correction render to 0.9. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
 estimates; the interface permits them to move backwards. The human pass label uses only `pass`; `totalPasses` belongs
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
 `stepFraction` (v0.14.0) is the current walk over the file, 0..1, a new count for every walk: the measurement's stream;
@@ -1334,6 +1338,10 @@ codec remains available for owned C++ fixtures; `Wire` supplies the transferable
 
 The header fixes the check order: poison; outputs in signature order (null, alignment, span); handle; inputs;
 overlap; session checks. A non-OK status leaves every output untouched. Buffers are disjoint and caller-owned.
+No output may lie in a live session's retained master PCM: one facade helper refuses it, `ERR_OVERLAP`, in every entry
+that writes a caller buffer, the kit's included (`felitronics_session_master_abi_tests`). A call that may free that PCM —
+load, measured load, attached audio, a command (Forget) — refuses an input inside it the same way, before anything is
+freed; no copy is made first. A waveform chunk, which frees nothing, still reads it.
 Size/copy pairs require no intervening mutation. Calls use one thread; callbacks must not reenter the facade.
 
 The only mutable globals are the handle table and poison latch. Eight slots each issue 24-bit generations and retire
