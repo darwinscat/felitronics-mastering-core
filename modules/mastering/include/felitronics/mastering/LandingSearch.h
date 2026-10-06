@@ -192,7 +192,7 @@ public:
         wholePeakHistogram_.fill (0u);
         peakCandidates_ = {}; peakCandidateCount_ = peakForecastIndex_ = 0;
         peakForecastValid_ = false; peakForecastDb_ = std::numeric_limits<double>::quiet_NaN();
-        peakForecastFrames_ = peakForecastSkipFrames_ = 0;
+        peakForecastFrames_ = 0;
         chordOverDrive_ = std::numeric_limits<double>::quiet_NaN(); chordStale_ = 0;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
@@ -257,8 +257,6 @@ public:
                     || request.sourceMomentaryHopFrames <= 0))
             || (! request.limiterGr.off() && ! (request.limiterGr.limitDb >= 0.0 && std::isfinite (request.limiterGr.limitDb)))
             || request.limiterStatisticSkipFrames < 0
-            || ! std::isfinite (request.peakForecastPreRollSeconds)
-            || request.peakForecastPreRollSeconds < 0.0 || request.peakForecastPreRollSeconds > 2.0
             || ! std::isfinite (request.budgetResolutionDb)
             || request.budgetResolutionDb < 0.05 || request.budgetResolutionDb > 1.0
             || (request.maxExcerptSearch && (! std::isfinite (request.maxExcerptSeconds)
@@ -332,15 +330,10 @@ public:
                 return StepResult::More;
             }
             const long long wanted = std::max (1LL, (long long) std::llround (sourceRate_));
-            const long long statisticFrames = std::min (sourceFrames_, wanted);
-            const long long half = statisticFrames / 2;
-            const long long statisticFrom = std::clamp (
-                peakCandidates_[(std::size_t) peakForecastIndex_].frame - half,
-                0LL, sourceFrames_ - statisticFrames);
-            const long long wantedPre = (long long) std::llround (request_.peakForecastPreRollSeconds * sourceRate_);
-            peakForecastFrom_ = std::max (0LL, statisticFrom - wantedPre);
-            peakForecastSkipFrames_ = statisticFrom - peakForecastFrom_;
-            peakForecastFrames_ = peakForecastSkipFrames_ + statisticFrames;
+            peakForecastFrames_ = std::min (sourceFrames_, wanted);
+            const long long half = peakForecastFrames_ / 2;
+            peakForecastFrom_ = std::clamp (peakCandidates_[(std::size_t) peakForecastIndex_].frame - half,
+                                             0LL, sourceFrames_ - peakForecastFrames_);
             for (int c = 0; c < channels_; ++c) peakForecastSource_[c] = source_[c] + peakForecastFrom_;
             if (! clock_.begin (ProgressStage::SearchPass, 0, 0,
                                 2LL * peakForecastFrames_ + chain_->latencySamples() + kBandGrStride + 6,
@@ -354,7 +347,6 @@ public:
             // full request record.
             excerptRequest_ = request_;
             excerptRequest_.landingOnSourceGate = false;
-            excerptRequest_.limiterStatisticSkipFrames = peakForecastSkipFrames_;
             if (! solver_.beginPass (*chain_, *renderer_, params_, peakForecastSource_, out_, channels_,
                                      (int) peakForecastFrames_, excerptRequest_, measurement_, working_, clock_, true))
             {
@@ -1549,7 +1541,7 @@ private:
     double peakBlockPeak_ = 0.0;
     bool peakExcerptPending_ = false;
     const float* peakForecastSource_[core::kMaxChannels] {};
-    long long peakForecastFrom_ = 0, peakForecastFrames_ = 0, peakForecastSkipFrames_ = 0;
+    long long peakForecastFrom_ = 0, peakForecastFrames_ = 0;
     int peakCandidateCount_ = 0, peakForecastIndex_ = 0;
     double peakForecastDb_ = std::numeric_limits<double>::quiet_NaN();
 };

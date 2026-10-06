@@ -144,7 +144,6 @@ struct Landing
     bool maxExcerptPeakP95 = false;
     double maxExcerptPeakOffsetDb = 0.0;
     bool maxExcerptSurvivesForecastMiss = false;
-    double peakForecastPreRollSeconds = 0.0;
     double maxBudgetResolutionDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
