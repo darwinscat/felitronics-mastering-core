@@ -403,7 +403,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
     }
     const auto progress = detail::rules().engine.find ("progress");
     const auto master = progress.find ("master");
-    const auto passes = std::uint32_t (*master.find ("expectedPasses").integer());
+    // The renders a master's bar expects, by the loudness mode it lands in (a waiting master: its recipe's).
+    const auto expectedIn = [] (LoudnessMode mode) { return detail::expectedPasses (detail::rules().engine, mode); };
     const double passWeight = weight (master.find ("passWeight"));
     const double measureWeight = weight (master.find ("measureWeight"));
     std::uint32_t units = 0;
@@ -455,6 +456,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     if (job_ == masterJob)
                     {
                         auto& p = masterProgress_;
+                        const auto passes = expectedIn (detail::loudnessModeOf (detail::rules(), jobRecipe_.project));
                         p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
                         p.analyzers.emplace();
                         if ((waits & detail::bitOf (Analyzer::Excursions)) != 0)
@@ -510,11 +512,11 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 continue;
             }
             const bool delivery = masterJob_->deliveryMode != DeliveryMode::Mastered;
-            const int beforePass = delivery ? 0 : masterJob_->search.startedPasses();
+            const int beforePass = delivery ? 0 : masterJob_->startedPasses();
             const auto outcome = masterTraceActive_ ? mastering::StepResult::Done : masterJob_->step (1024);
             ++masterUnit_;
             const bool end = outcome != mastering::StepResult::More;
-            const auto expectedRenders = delivery ? 0u : masterJob_->mode == LoudnessMode::Manual ? passes : 6u;
+            const auto expectedRenders = delivery ? 0u : expectedIn (masterJob_->mode);
             const auto total = std::uint32_t (std::min<std::uint64_t> (
                 4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u)
                     * std::max (1u, expectedRenders)));
@@ -522,25 +524,27 @@ Stepped Session::step (std::uint32_t budget) noexcept
             if (! delivery && ! end)
             {
                 const double expected = double (std::max (1u, expectedRenders));
-                const double rendered = std::max (0.0, masterJob_->search.renderProgress());
+                const double rendered = masterJob_->renderProgress();
                 const double scaled = rendered <= expected ? 0.8 * rendered / expected
                     : 1.0 - 0.2 * expected / rendered;
                 fraction = std::max (fraction, scaled);
                 // Once the search and its certificate have ended, leave only the fixed 20% completion reserve.
                 if (! masterJob_->search.active()) fraction = std::max (fraction, 0.8);
             }
+            // A delivery (as-is, peaks-only) has no search: its bar is its own walks'.
+            else if (! end) fraction = std::max (fraction, masterJob_->deliveryFraction());
             // The master's passes, and how far its current walk over the file has come — a new count for each walk.
             masterProgress_ = { end ? PhaseName::Final : PhaseName::Pass,
                 end ? 1.0 : std::min (0.999999, fraction),
-                config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->search.startedRenders()), expectedRenders,
+                config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->startedRenders()), expectedRenders,
                 masterUnit_, total, end ? std::nullopt : masterJob_->stepFraction() };
             event.payload.phase = masterProgress_;
             emit (event);
-            if (! delivery && masterJob_->search.startedPasses() != beforePass)
+            if (! delivery && masterJob_->startedPasses() != beforePass)
             {
                 event.kind = EventKind::Fact;
                 (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterPass,
-                    text::Arg::count (masterJob_->search.startedPasses())));
+                    text::Arg::count (masterJob_->startedPasses())));
                 emit (event, masterProgress_);
             }
             if (end)
@@ -582,7 +586,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto clip = std::span<LandingTraceBucket> (rows.traces.get() + rows.traceCapacity, rows.traceCapacity);
                 if (! masterTraceActive_)
                 {
-                    if (! LandingOps::summarize (solution,
+                    if (! LandingOps::summarize (solution, masterJob_->floorFirstPasses, masterJob_->floorFirstWork,
                             { rows.passes.get(), mastering::TargetLoudnessSolverLimits::kMaxPasses }, masterSummary_))
                     { contract (event.jobId); ++units; continue; }
                     masterTraceCursor_ = 0; masterTraceActive_ = true;

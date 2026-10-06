@@ -31,7 +31,7 @@ bool valid (const SnapshotView& v) noexcept
                 || (! landing.limiterWall && (landing.limiterSlope || landing.limiterWallP95Db))
                 || (landing.limiterWall && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
                     || ! std::isfinite (*landing.limiterSlope) || ! std::isfinite (*landing.limiterWallP95Db)))) return false;
-            if (landing.passes > 12 || landing.log.size() != landing.passes
+            if (landing.passes > kLandingRecordPasses || landing.log.size() != landing.passes
                 || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
                     || ! landing.distanceLu || ! landing.truePeakDbTp))
                 || (landing.peaksAboveCeiling && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable

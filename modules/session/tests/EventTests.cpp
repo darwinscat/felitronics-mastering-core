@@ -322,7 +322,8 @@ void pump()
             const auto next = engine.find ("\n[", at + 1);
             engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
         }
-        for (const std::string_view key : { "\nlimiterSlopeBelow = ", "\nlimiterSlopeSpacingDb = ", "\nalreadyMastered = " })
+        for (const std::string_view key : { "\nlimiterSlopeBelow = ", "\nlimiterSlopeSpacingDb = ", "\nalreadyMastered = ",
+                                            "\nexpectedPassesMaxClean = ", "\nexpectedPassesMaxDense = " })
             if (const auto at = engine.find (key); at != std::string::npos)
                 engine.erase (at, engine.find ('\n', at + 1) - at);
         // The unread compressor mix was removed (owner, 05.10); restore it for the older config fingerprints alone.
@@ -413,8 +414,11 @@ void pump()
     // previousVersion takes out what moved the config's version alone — the targets' notes and the three broadcast
     // targets, the engine rows it lists, the EQ bands' tables, the landing's two keys, the damage's table — and with that
     // version put back every job's events but a master's (its damage's job among them) are the ones that config gives.
-    ok (eventsHash (withoutMaster (previousVersion (one))) == 0xedae06e3e510d9bdull
-        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0xedae06e3e510d9bdull,
+    // The overall Analyzers fraction rising with every analyzer after the shared low-end walk (v0.18.0) moves the
+    // measurement's phases, and a waiting master's, in every pin below: their fractions alone (edae06e3e510d9bd,
+    // 3206715474e65370, c545b584467677c4 / de94ace97b284a86, e04fb0798d827192 / f39321f26e038670 before it).
+    ok (eventsHash (withoutMaster (previousVersion (one))) == 0x6a6f689b37e99d64ull
+        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0x6a6f689b37e99d64ull,
         "with the config's version previousVersion restates, every job's events but a master's hold their pin");
     // The landing's two keys ([landing] onSourceGate, limiterBudget) and the damage's table ([cost.damage]) move the
     // master and nothing else: with the config's version they leave put back, every other job's events are the ones the
@@ -441,8 +445,10 @@ void pump()
         return std::pair { events, before ? before->all : std::uint64_t (0) };
     };
     const auto [oneBefore, versionBefore] = withoutKeys (one, true, true);
-    ok (versionBefore == 0x9ae64bc77f749e4cull && eventsHash (withoutMaster (oneBefore)) == 0x3206715474e65370ull
-        && eventsHash (withoutMaster (withoutKeys (cancelled, true, true).first)) == 0x3206715474e65370ull,
+    std::printf ("event fingerprints, every job but the master's, without the landing's keys and the damage's table: %016llx\n",
+        (unsigned long long) eventsHash (withoutMaster (oneBefore)));
+    ok (versionBefore == 0x9ae64bc77f749e4cull && eventsHash (withoutMaster (oneBefore)) == 0xea1228f7b7ec10e1ull
+        && eventsHash (withoutMaster (withoutKeys (cancelled, true, true).first)) == 0xea1228f7b7ec10e1ull,
         "the landing's two keys and the damage's table move the master's events alone: without them the config's version "
         "is 9ae64bc77f749e4c, and every other job's events hold");
     // THE DAMAGE (v0.14.0) is a job of its own after the master: its events carry its own id — its phases, its line and
@@ -469,9 +475,9 @@ void pump()
     const auto cancelledWithoutDamage = eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first));
     std::printf ("event fingerprints, without damage: %016llx %016llx\n",
         (unsigned long long) oneWithoutDamage, (unsigned long long) cancelledWithoutDamage);
-    ok (oneWithoutDamage == 0xc545b584467677c4ull && cancelledWithoutDamage == 0xde94ace97b284a86ull,
+    ok (oneWithoutDamage == 0x62e8614384dd5419ull && cancelledWithoutDamage == 0x1804ac8904cb82c3ull,
         "the damage moves its own job's events, the master's two lines and the config's version alone: without them the "
-        "retained-winner and pass-log pins c545b584467677c4 / de94ace97b284a86 hold");
+        "retained-winner and pass-log pins 62e8614384dd5419 / 1804ac8904cb82c3 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The max modes (v0.15.0) moved the config's version alone here: with it restated (withoutMax) every pin above holds.
@@ -482,7 +488,10 @@ void pump()
     // here (withoutMax restates them too). The optional max-search proof resolution is an active master-command payload,
     // so v0.18's retained-winner search moves these complete-stream pins while the controls above continue to hold.
     // Removing the unreleased Phase fields moves only these complete-stream pins once more.
-    ok (eventsHash (one) == 0xe04fb0798d827192ull && eventsHash (cancelled) == 0xf39321f26e038670ull,
+    // [progress.master] expectedPassesMaxClean / expectedPassesMaxDense (v0.18.0, 7 and 6) move the config's version alone
+    // here: withoutMax restates it above, and these complete-stream pins move by it (fd634188f514143f / c169bfca96d5c915
+    // before them).
+    ok (eventsHash (one) == 0x504d1630b0dda1a5ull && eventsHash (cancelled) == 0xa68792578ab9b2f5ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

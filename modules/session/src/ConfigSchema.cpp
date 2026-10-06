@@ -1144,6 +1144,8 @@ void readProgress (Doc& d, Reader& in, Progress& o)
         t.required ("passWeight", o.masterPassWeight, R { 0.0, 1000.0 });
         t.required ("measureWeight", o.masterMeasureWeight, R { 0.0, 1000.0 });
         t.required ("expectedPasses", o.masterExpectedPasses, I { 1, 1000 });
+        t.required ("expectedPassesMaxClean", o.masterExpectedPassesMaxClean, I { 1, 1000 });
+        t.required ("expectedPassesMaxDense", o.masterExpectedPassesMaxDense, I { 1, 1000 });
         if (! (o.masterPassWeight * o.masterExpectedPasses + o.masterMeasureWeight > 0)) d.outOfRange (t, "passWeight");
     });
 }

@@ -678,7 +678,7 @@ Answer Session::apply (const Request& request) noexcept
         jobRecipe_.readyVersion = plan.ready.version;
         if (jobWaiting_)
         {
-            const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
+            const auto passes = detail::expectedPasses (rules.engine, plan.loudnessMode);
             const auto chunks = (source_.frames + 1023u) / 1024u;
             const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
             masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };

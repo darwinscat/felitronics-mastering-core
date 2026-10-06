@@ -833,11 +833,14 @@ waveformIndex = 140.0
 excursionsIndex = 450.0
 
 # master: the phases of a master — every landing pass weighs passWeight and the measurement of the delivered file
-#   measureWeight, against expectedPasses passes.
+#   measureWeight, against expectedPasses passes; a max master's against its mode's own count: 7 for max clean, 6 for
+#   max dense (an owner decision, 06.10).
 [progress.master]
 passWeight = 1
 measureWeight = 0.15
 expectedPasses = 3
+expectedPassesMaxClean = 7
+expectedPassesMaxDense = 6
 
 # THE BLIND PAIRED PREFERENCE TEST — a development tool, never on a public page: its protocol. Two lanes A / B without
 # labels at equal loudness, "A better / B better / no preference", revealed after the last answer. Nothing here feeds the

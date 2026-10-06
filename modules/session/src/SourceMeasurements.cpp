@@ -358,7 +358,10 @@ void Session::stepSourceMeasurements() noexcept
         if (status != MeasurementStatus::Pending && status != MeasurementStatus::Cancelled) weighed += w;
         else if (run.lowEndsReady && isLowEnd (a)) weighed += w;
     }
-    if (source_.frames != 0 && measurementResults_[index].status == MeasurementStatus::Pending && ! run.lowEndsReady)
+    // The current analyzer's read share — except a low end whose result the shared walk already holds: its whole weight
+    // is counted above. Every analyzer after that walk still adds its own share as it reads.
+    if (source_.frames != 0 && measurementResults_[index].status == MeasurementStatus::Pending
+        && ! (run.lowEndsReady && isLowEnd (id)))
     {
         const double fraction = double (run.frames) / double (source_.frames);
         if (id == Analyzer::LowEnd)

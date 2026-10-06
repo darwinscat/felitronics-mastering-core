@@ -706,6 +706,7 @@ struct Done
     std::vector<float> audio;
     MasterAudioShape shape {};
     Kept kept {};
+    std::vector<double> bar;    // the master job's phase fractions, unit by unit
     bool made = false;
     bool said (text::FactId id) const { return std::any_of (facts.begin(), facts.end(), [&] (const text::Fact& f) { return f.id == id; }); }
     std::string line (text::FactId id) const
@@ -718,10 +719,17 @@ struct Done
 Done finish (Session& s)
 {
     Done out;
+    const auto job = s.job();
     for (unsigned i = 0; i < 4000000 && s.job() != 0; ++i)
     {
         (void) s.step (16);
-        for (const auto& e : s.events()) if (e.kind == EventKind::Fact) out.facts.push_back (e.payload.fact.view());
+        for (const auto& e : s.events())
+        {
+            if (e.kind == EventKind::Fact) out.facts.push_back (e.payload.fact.view());
+            if (e.kind == EventKind::Phase && e.jobId == job
+                && (e.payload.phase.name == PhaseName::Pass || e.payload.phase.name == PhaseName::Final))
+                out.bar.push_back (e.payload.phase.fraction);
+        }
     }
     if (s.job() != 0 || s.masters().empty()) return out;
     out.kept = s.masters().back();
@@ -731,6 +739,19 @@ Done finish (Session& s)
     out.made = token.master == out.kept.id && ! out.audio.empty() && s.copyMaster (token, out.audio) == MasterTransferStatus::Ok;
     (void) s.releaseMaster (token);
     return out;
+}
+// A delivery's bar, as its phases said it: it rises through values between zero and one, never falls, and reaches one only
+// at its last phase. A bar that sat at zero and jumped to one at the end is not one.
+bool honestBar (const std::vector<double>& bar)
+{
+    if (bar.size() < 3 || ! same (bar.back(), 1.0)) return false;
+    bool between = false;
+    for (std::size_t i = 0; i + 1 < bar.size(); ++i)
+    {
+        if (bar[i] >= 1.0 || (i > 0 && bar[i] < bar[i - 1])) return false;
+        between = between || bar[i] > 0.0;
+    }
+    return between;
 }
 bool sameAudio (const Done& a, const Done& b)
 {
@@ -1589,6 +1610,8 @@ void theSourceReport()
             && meter.truePeakDb() <= hotReport->ceilingDbTp && hotReport->peakSafe
             && hotReport->deliveryGainDb < initial.deliveryGainDb,
             "peaks-only measures the resampled 18 kHz delivery and corrects it under the true-peak ceiling");
+        ok (honestBar (deliveredHot.bar),
+            "a resampled peaks-only delivery with its correction render moves its bar from zero to one and never back");
     }
     {
         Seen x;
@@ -1654,6 +1677,7 @@ void theSourceReport()
         && sixteenPlan.deliveryMode == DeliveryMode::PeaksOnly && sixteenPlan.deliveryDithered
         && sixteenPlan.ready.topology.dither && sixteenPlan.ready.deliveryBits == 16,
         "peaks-only uses gain and format dither with no mastering chain or clipped-gain choice; masterAnyway restores the chain");
+    std::vector<double> deliveredBar;
     const auto deliver = [&] (command::Master command, const detail::MasterPlan* fixture = nullptr)
     {
         const auto checked = s.check (command);
@@ -1661,7 +1685,16 @@ void theSourceReport()
         const auto spent = declared::spend ([&] { answer = s.apply (command); });
         bool valid = answer.rejection == Rejection::None && declared::covers (checked.bytes, spent);
         if (valid && fixture) detail::Inspector::deliveryFixture (s, *fixture);
-        for (unsigned i = 0; valid && s.job() != 0 && i < 100000; ++i) (void) s.step (16);
+        deliveredBar.clear();
+        const auto job = s.job();
+        for (unsigned i = 0; valid && s.job() != 0 && i < 100000; ++i)
+        {
+            (void) s.step (16);
+            for (const auto& e : s.events())
+                if (e.kind == EventKind::Phase && e.jobId == job
+                    && (e.payload.phase.name == PhaseName::Pass || e.payload.phase.name == PhaseName::Final))
+                    deliveredBar.push_back (e.payload.phase.fraction);
+        }
         return valid && s.job() == 0 && ! s.masters().empty();
     };
     const auto wavMatches = [&] (const MasterToken& identity, const std::vector<float>& audio,
@@ -1697,6 +1730,7 @@ void theSourceReport()
         return true;
     };
     bool peaksRendered = deliver (safe);
+    ok (honestBar (deliveredBar), "a peaks-only delivery moves its bar from zero to one and never back");
     auto token = s.pendingMaster();
     auto shape = s.masterAudioShape (token);
     peaksRendered = peaksRendered && shape.frames != 0;
@@ -1735,6 +1769,7 @@ void theSourceReport()
     asIsPlan.sourceLufs = -9.0;
     command::Master exactRequest { 20 };
     bool exactRendered = deliver (exactRequest, &asIsPlan);
+    ok (honestBar (deliveredBar), "an as-is delivery moves its bar from zero to one with its copy and never back");
     token = s.pendingMaster();
     shape = s.masterAudioShape (token);
     exactRendered = exactRendered && shape.frames != 0;
