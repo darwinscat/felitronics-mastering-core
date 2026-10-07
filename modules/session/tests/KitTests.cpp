@@ -211,8 +211,9 @@ void parseReadsTheField()
     ok (accepted ("0.325", Lang::En, Term::FieldMonoBassWidth, 0.35) && accepted ("0.33", Lang::En, Term::FieldMonoBassWidth, 0.35),
         "the width moves to its 0.05 grid");
     ok (refused ("1.2", Lang::En, Term::FieldMonoBassWidth, KitRefusal::OutOfDomain), "a width above 1 is refused");
-    // STEP 0 IS NO STEP (owner, 06.10 and 07.10: «все ручки недискретные»): every manual knob but the width keeps the decimal
-    // a person typed — off every grid it used to have — and travels with step 0.
+    // STEP 0 IS NO STEP (owner, 06.10 and 07.10: «все ручки недискретные»): every manual knob keeps the decimal a person
+    // typed — off every grid it used to have — and travels with step 0; mono bass's width and the saturation's mix alone
+    // keep their 0.05 steps.
     {
         struct Typed { Term field; const char* typed; double want; std::uint32_t rate; };
         const Typed stepless[] = {
@@ -236,6 +237,9 @@ void parseReadsTheField()
         }
         ok (kept, "step 0: every manual knob keeps a typed value as typed" + first);
         ok (travels, "step 0: every manual knob's travel has no step");
+        const auto width = Kit::travel (Term::FieldMonoBassWidth), mix = Kit::travel (Term::FieldSaturationMix);
+        ok (width.status == CodecStatus::Ok && sameBits (width.step, 0.05) && mix.status == CodecStatus::Ok && sameBits (mix.step, 0.05),
+            "the two knobs that keep a step: mono bass's width and the saturation's mix, by 0.05");
     }
     ok (accepted ("0.3", Lang::En, Term::FieldGlueMix, 0.3) && accepted ("0,5", Lang::Ru, Term::FieldGlueMix, 0.5) && accepted ("1", Lang::En, Term::FieldGlueMix, 1.0),
         "the glue's mix is kept as typed: it has no step (owner, 07.10)");

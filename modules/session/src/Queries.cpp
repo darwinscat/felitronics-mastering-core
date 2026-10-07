@@ -206,10 +206,13 @@ void detail::ditherFloor (QueryView& v, double* rows, const DitherFinding& dithe
     const int order = shaping == DitherShaping::Weighted ? 2 : shaping == DitherShaping::Psychoacoustic ? 9 : 0;
     const double n = double (std::uint64_t (1) << analysis::SourceForensicsParams {}.fftOrder);
     const double perBin = deliveryRate > 0 ? variance * double (sourceRate) / (double (deliveryRate) * n) : 0.0;
-    const double span = q.columns > 1 ? core::det::log2 (q.toHz / q.fromHz) : 0.0;
+    // The grid's ends exactly as asked; between them a log grid interpolated in log space — no ratio of the ends, which
+    // overflows for a first point near 0 — and kept inside the request.
+    const double lowLog = core::det::log2 (q.fromHz), highLog = core::det::log2 (q.toHz);
     for (std::uint32_t i = 0; i < q.columns; ++i)
     {
-        const double hz = q.columns == 1 ? q.fromHz : q.fromHz * core::det::exp2 (span * double (i) / double (q.columns - 1u));
+        const double hz = i == 0 ? q.fromHz : i + 1u == q.columns ? q.toHz
+            : std::clamp (core::det::exp2 (lowLog + (highLog - lowLog) * double (i) / double (q.columns - 1u)), q.fromHz, q.toHz);
         double value = missing; auto reason = MeasurementReason::None;
         if (! quantised) reason = MeasurementReason::NoSignal;
         else if (! (deliveryRate > 0) || hz > 0.5 * double (deliveryRate)) reason = MeasurementReason::Unsupported;
@@ -451,6 +454,9 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
     }
     if (q.kind == QueryKind::DitherFloor)
     {
+        // The delivery's settings exist once the plan has placed the devices; until then the floor is Pending, and
+        // nothing is allocated for it.
+        if (plan_.dither.bits == 0) return { QueryStatus::Pending, 0, 0, 0 };
         const auto bytes = std::uint64_t (q.columns) * 3u * sizeof (double) + 128u;
         return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
     }
@@ -609,7 +615,8 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     }
     auto v = header (q, source_, revision_, measurementKey_);
     const auto need = queryStorage (q); v.status = need.status;
-    v.reason = need.status == QueryStatus::Empty ? MeasurementReason::None : MeasurementReason::Unsupported;
+    v.reason = need.status == QueryStatus::Empty ? MeasurementReason::None
+             : need.status == QueryStatus::Pending ? MeasurementReason::Pending : MeasurementReason::Unsupported;
     v.complete = need.status == QueryStatus::Empty;
     if (need.status != QueryStatus::Ready) return QueryResult::copy (v);
     Checked request; request.bytes = need.bytes; request.largestBlockBytes = need.largestBlockBytes;

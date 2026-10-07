@@ -147,7 +147,8 @@ public:
     [[nodiscard]] static KitParsed parse (std::string_view typed, text::Lang lang, text::Term field,
                                           std::uint32_t sourceRate) noexcept;
 
-    // The knob's travel and step; step 0 is no step (owner, 07.10: every manual knob but mono bass's width).
+    // The knob's travel and step; step 0 is no step (owner, 07.10: every manual knob but mono bass's width and the
+    // saturation's mix, which keep their 0.05; the high-pass's slope is a choice, not a travel).
     [[nodiscard]] static KitTravel travel (text::Term field) noexcept;
     // Where `value` stands along the travel, 0 … 1 (a value past an end stands at that end).
     [[nodiscard]] static KitNumber position (text::Term field, double value) noexcept;

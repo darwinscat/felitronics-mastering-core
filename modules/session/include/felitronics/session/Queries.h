@@ -27,8 +27,10 @@ inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u
 //   MasterReport            the master whole — the record a full snapshot carries for it, rows included (QueryView::master)
 // WHAT A SOURCE ALSO ANSWERS WITHOUT A MEASUREMENT (masterId 0, the whole source's frames, as LowSpectrum asks):
 //   DitherFloor             the noise floor the current delivery leaves (owner, 07.10): [hz,dbPerBin,reason] on a LOG grid
-//                           of `columns` points from fromHz (> 0) to toHz. The delivery is the plan's (plan.dither: its
-//                           bit depth, on, shaping) at the target's rate (the source's where the target keeps it). The
+//                           of `columns` points from fromHz (> 0) to toHz, both ends exactly as asked; Pending, with
+//                           nothing allocated, until the plan has placed the devices. The delivery is the plan's
+//                           (plan.dither: its bit depth, on, shaping) at the target's rate (the source's where the target
+//                           keeps it). The
 //                           total added noise is white — TPDF dither of ±1 LSB with its quantiser, LSB²/4; plain
 //                           rounding where no dither runs, LSB²/12; LSB = 2^-(bits-1) of full scale 1.0 — shaped by the
 //                           dither's NTF = 1 − H (Weighted, Psychoacoustic: felitronics-core Dither.h; flat with none).
