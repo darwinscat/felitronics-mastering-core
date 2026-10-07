@@ -249,6 +249,8 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
     need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 300.0) && same (e.lowEnd.lowestNoteFromHz, 25.0),
           "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)");
+    need (same (e.lowEnd.occupiedAboveBackgroundDb, 6.0),
+          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
     need (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
     need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].upToDb, 2.6),
@@ -401,6 +403,8 @@ void aDepartureIsNamed()
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
         { false, "lowNoteHz = 10", "lowNoteHz = 20",
           "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
+        { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
+          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
         { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
           "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },

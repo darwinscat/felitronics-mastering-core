@@ -62,7 +62,8 @@ bool finish (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& 
             auto& a = *lowEnd (w, analyzer); auto& store = *run.results[std::size_t (analyzer)];
             detail::SourceResults::lowEnd (store, a, configured (config.find ("occupiedFromDuty")),
                                            configured (config.find ("occupiedMarginWhenOnDb")),
-                                           configured (config.find ("lowestNoteFromHz")));
+                                           configured (config.find ("lowestNoteFromHz")),
+                                           configured (config.find ("occupiedAboveBackgroundDb")));
         };
         if (id == Analyzer::LowEnd)
         {
