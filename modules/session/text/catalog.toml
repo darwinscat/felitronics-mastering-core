@@ -139,6 +139,12 @@ en.other = "repeat consistency: {agreed} of {pairs} pairs"
 ru = "Самая громкая нота баса: {note}"
 en = "Loudest bass note: {note}"
 
+# The loudest of the low end under the band the lowest note is sought from ([lowEnd] lowestNoteFromHz, 30 Hz): no note is
+# named there (owner, 07.10) — low-frequency energy, at its band's centre.
+[messages.loudestLowEnergy]
+ru = "Громче всего в басу — низкочастотная энергия на {hz}"
+en = "Loudest in the low end: low-frequency energy at {hz}"
+
 # Phase 1's warning of a wide bass: its side share. The owner's wording.
 [messages.wideBass]
 ru = "бас широкий (бока {side}) — моно-бас соберёт его, если включён; на наушниках станет уже"

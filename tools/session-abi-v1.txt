@@ -2083,3 +2083,6 @@ wire MasterCommand.budgetResolutionDb? WireNumber
 # convention, answered without a measurement.
 enum felitronics::session::QueryKind::DitherFloor=14
 row QueryDitherFloor element=f64 byteOrder=little columns=hz,dbPerBin,reason stride=3 bytes=24
+# The loudest of the low end under [lowEnd] lowestNoteFromHz names no note (07.10, v0.20.0): low-frequency energy at its
+# frequency.
+enum felitronics::session::text::FactId::LoudestLowEnergy=458

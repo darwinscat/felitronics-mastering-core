@@ -325,6 +325,8 @@ enum class FactId : std::uint16_t
     SourceMasterLouder = 455,
     SourceDeliveryAsIs = 456,
     SourceDeliveryPeaksOnly = 457, // {gain}, {ceiling}
+    // The loudest of the low end under [lowEnd] lowestNoteFromHz (owner, 07.10): no note is named there, only the energy.
+    LoudestLowEnergy = 458,    // the loudest of the low end: low-frequency energy at {hz}
     // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
     HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
     HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}

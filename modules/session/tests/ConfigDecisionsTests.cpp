@@ -101,7 +101,10 @@ constexpr Golden kGolden[] = {
     // ...and [lowEnd.run] fftOrderUpToHz 48000 (owner, 07.10: 96 kHz resolves as 48 kHz): the low-end order rises above
     // 48 kHz, so a master over 48 kHz whose bass was unresolved takes its note; nothing at 48 kHz and under moves; it was
     // 5c869a1028b4a6fd; updated in place, as above.
-    { "2026-10", 0x294f80d8221bb306ull },
+    // ...and [lowEnd] lowestNoteFromHz 30, was 25 (owner, 07.10: the bass's fifth string, B0 30.87 Hz, the limit for
+    // everything): a master whose lowest band on lay between 25 and 30 Hz takes its note from the bands above; it was
+    // 294f80d8221bb306; updated in place, as above.
+    { "2026-10", 0xa38dce3eb12a1f77ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -261,9 +264,9 @@ std::vector<std::string> departures (const config::Config& c)
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
     need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 500.0) && same (e.lowEnd.run.noteTopHz, 300.0)
-          && same (e.lowEnd.lowestNoteFromHz, 25.0),
+          && same (e.lowEnd.lowestNoteFromHz, 30.0),
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)");
     need (e.lowEnd.run.fftOrder == 17 && same (e.lowEnd.run.fftOrderUpToHz, 48000.0),
           "the low end resolves at every rate as at 48 kHz: fftOrder 17 up to 48 kHz, one more per doubling of the rate above it (owner, 07.10)");
     need (same (e.lowEnd.noteRangeShareAtLeastDb, -140.0),
@@ -437,13 +440,13 @@ void aDepartureIsNamed()
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, 3 s in all; not sought under 10 s" },
         { false, "lowNoteHz = 10", "lowNoteHz = 20",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "highNoteHz = 500", "highNoteHz = 300",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "noteTopHz = 300", "noteTopHz = 0",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 44100",
           "the low end resolves at every rate as at 48 kHz: fftOrder 17 up to 48 kHz, one more per doubling of the rate above it (owner, 07.10)" },
         { false, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -160",
@@ -461,9 +464,9 @@ void aDepartureIsNamed()
         { true, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.1 }",
           "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
           "and ceiling (owner, 06.10 and 07.10)" },
-        { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
+        { false, "lowestNoteFromHz = 30", "lowestNoteFromHz = 25",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
         { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",

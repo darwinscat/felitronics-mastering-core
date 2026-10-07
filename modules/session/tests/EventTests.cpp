@@ -546,8 +546,9 @@ void pump()
     // share veto (07.10) once more (af796027fbc2d96d / 63e0b5042dc6966d before it); the background's veto replaced by the
     // bottom of the low end (07.10, v0.20.0) once more (6c3491a8b997b879 / 69b29177d62337ad before it); [hpf] note.aboveHz
     // removed (07.10, v0.20.0) once more (368c55877f9bb7fe / 16eb2ed2f0970d35 before it); [lowEnd.run] fftOrderUpToHz (07.10,
-    // v0.20.0) once more (150088df2017d43a / bd3c2671c8004c1d before it).
-    ok (eventsHash (one) == 0x9610c2a7fc971f3full && eventsHash (cancelled) == 0x0a28dfdf08da9a7dull,
+    // v0.20.0) once more (150088df2017d43a / bd3c2671c8004c1d before it); [lowEnd] lowestNoteFromHz 30 (07.10, v0.20.0) once
+    // more (9610c2a7fc971f3f / 0a28dfdf08da9a7d before it).
+    ok (eventsHash (one) == 0xdcabbe73520f0ea7ull && eventsHash (cancelled) == 0x58311773c47f49e5ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
