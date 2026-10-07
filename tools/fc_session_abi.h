@@ -80,7 +80,9 @@
 //  13            v0.18.0: analyzer progress, damage wait reasons, delivery modes for already-mastered sources and the
 //                read-only as-worked TOML (`fc_session_worked_report_*`); each landing pass's active P95 and reason,
 //                and MasterCommand.budgetResolutionDb. All appended.
-#define FC_SESSION_ABI_VERSION 13u
+//  14            v0.19.0: the delivery's noise floor per bin — QueryKind::DitherFloor and its row (hz, dbPerBin, reason),
+//                answered from the plan's dither at the target's rate without a measurement. No entry point.
+#define FC_SESSION_ABI_VERSION 14u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
