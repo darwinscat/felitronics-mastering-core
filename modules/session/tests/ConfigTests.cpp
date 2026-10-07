@@ -280,9 +280,13 @@ void theSchemaRefuses()
     // over the analyzer's 65 536 hops, no enter level, a band whose corners are one float.
     mustRefuse (E, "hopMs = 100", "hopMs = 1", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
     mustRefuse (E, "blockHops = 4", "blockHops = 65", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
-    mustRefuse (E, "lowNoteHz = 10\nhighNoteHz = 300", "lowNoteHz = 10\nhighNoteHz = 10", "[lowEnd.run]", Fault::Refused,
+    mustRefuse (E, "lowNoteHz = 10\nhighNoteHz = 500", "lowNoteHz = 10\nhighNoteHz = 10", "[lowEnd.run]", Fault::Refused,
                 "lowEnd.run", Refusal::AnalyzerRefuses);
-    mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "highNoteHz = 500", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    // The note's top (07.10): a band centre in hertz, 0 the whole table; the analyzer refuses a negative one.
+    mustRefuse (E, "noteTopHz = 300\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.noteTopHz");
+    mustRefuse (E, "noteTopHz = 300", "noteTopHz = -1", "-1", Fault::OutOfRange, "lowEnd.run.noteTopHz");
+    mustAccept (E, "noteTopHz = 300", "noteTopHz = 0");
     // The lowest band over the background (owner, 07.10): 0…60 dB, required.
     mustRefuse (E, "occupiedAboveBackgroundDb = 6\n", "", "[lowEnd]", Fault::Missing, "lowEnd.occupiedAboveBackgroundDb");
     mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 61", "61", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
@@ -351,7 +355,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     using config::Refusal;
     // A two-note range just two hertz wide: LowEnd::storageFor admits it (MIDI 16 and 17 fall inside 20…22 Hz), and a
     // hand-written semitone rule refused it.
-    const auto twoNotes = bindWith ({ { Document::Engine, "lowNoteHz = 10\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 22" } });
+    const auto twoNotes = bindWith ({ { Document::Engine, "lowNoteHz = 10\nhighNoteHz = 500", "lowNoteHz = 20\nhighNoteHz = 22" } });
     ok (twoNotes && twoNotes->ok(), "lowEnd.run 20…22 Hz: two notes, admitted by the analyzer, passes the schema");
     // The grid is counted from the travel's start: a mono-bass travel from 60.5 Hz puts 120 Hz half a step off.
     std::string targets;

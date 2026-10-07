@@ -247,8 +247,10 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
-    need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 300.0) && same (e.lowEnd.lowestNoteFromHz, 25.0),
-          "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)");
+    need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 500.0) && same (e.lowEnd.run.noteTopHz, 300.0)
+          && same (e.lowEnd.lowestNoteFromHz, 25.0),
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
     need (same (e.lowEnd.occupiedAboveBackgroundDb, 6.0),
           "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
@@ -419,7 +421,14 @@ void aDepartureIsNamed()
         { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
         { false, "lowNoteHz = 10", "lowNoteHz = 20",
-          "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "highNoteHz = 500", "highNoteHz = 300",
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "noteTopHz = 300", "noteTopHz = 0",
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
         { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
           "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
         { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",
@@ -436,7 +445,8 @@ void aDepartureIsNamed()
           "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
           "and ceiling (owner, 06.10 and 07.10)" },
         { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
-          "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
         { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",

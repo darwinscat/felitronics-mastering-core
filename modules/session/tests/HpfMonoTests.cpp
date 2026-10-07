@@ -37,9 +37,10 @@ constexpr double kPi = 3.141592653589793;
 bool same (double a, double b) { return detail::same (a, b); }
 double midiHz (int midi) { return 440.0 * std::pow (2.0, (midi - 69) / 12.0); }
 
-// A LOW-END READING as the first phase publishes it — its band table (MIDI 4…62, 10.30…293.66 Hz, the run's geometry) and its
-// 10 ms blocks — owned here, with the loudness reading beside it, laid out by Analyzer for the planner.
-constexpr int kFirstMidi = 4, kBandCount = 59;
+// A LOW-END READING as the first phase publishes it — its band table (MIDI 4…71, 10.30…493.88 Hz, the run's geometry; the note
+// reads the bands up to 293.66 Hz, MIDI 62) and its 10 ms blocks — owned here, with the loudness reading beside it, laid out by
+// Analyzer for the planner.
+constexpr int kFirstMidi = 4, kBandCount = 68, kNoteTopMidi = 62;
 struct Readings
 {
     std::uint32_t rate = 48000;
@@ -798,9 +799,13 @@ void underTwentyFiveHzIsTheSpectrumsNotTheNotes()
     {
         const auto m = measure (Mix (20).tone (15.43, 0.3));
         const auto bands = bandsOf (m);
+        bool noteTop = bands.size() == std::size_t (kBandCount) * 16;
+        for (std::size_t b = 0; noteTop && b + 16 <= bands.size(); b += 16)
+            noteTop = bands[b] <= kNoteTopMidi || (bands[b + 11] == 0 && bands[b + 12] == 0);
         ok (bands.size() == std::size_t (kBandCount) * 16 && same (bands[0], double (kFirstMidi)) && std::abs (bands[1] - 10.30) < 0.005
-            && same (bands[bands.size() - 16], 62.0),
-            "the table starts at 10.30 Hz (MIDI 4) and still ends at 293.66 Hz (MIDI 62): " + std::to_string (bands.size() / 16) + " bands");
+            && same (bands[bands.size() - 16], 71.0) && std::abs (bands[bands.size() - 15] - 493.88) < 0.005 && noteTop,
+            "the table starts at 10.30 Hz (MIDI 4) and ends at 493.88 Hz (MIDI 71); the bands above 293.66 Hz (MIDI 62) carry no "
+            "occupancy: " + std::to_string (bands.size() / 16) + " bands");
         double total = 0, at = 0;
         for (std::size_t b = 0; b + 16 <= bands.size(); b += 16) { total += bands[b + 6]; if (same (bands[b], 11.0)) at = bands[b + 6]; }
         const auto peak = lowNumber (m, "peakMidi");
