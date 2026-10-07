@@ -230,7 +230,7 @@ void theSchemaRefuses()
                 Refusal::OutOfOrder);   // points at the value of longP90Ms
     mustRefuse (E, "shapingUpToBits = 16", "shapingUpToBits = 24", "24", Fault::Refused, "dither.shapingUpToBits", Refusal::OutOfOrder);
     mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 20", "20", Fault::Refused, "limiter.slowReleaseMs", Refusal::OutOfOrder);
-    mustRefuse (E, "warningLowHz = 23, warningHighHz = 50", "warningLowHz = 23, warningHighHz = 40", "40", Fault::Refused,
+    mustRefuse (E, "warningLowHz = 26, warningHighHz = 50", "warningLowHz = 26, warningHighHz = 40", "40", Fault::Refused,
                 "hpf.comfort.warningHighHz", Refusal::OutOfOrder);
     mustRefuse (E, "hzMin = 15", "hzMin = 80", "80\nmachineTopHz", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
     // The machine's top lies on the knob's travel: above its start, at most its end, a finite number, and there.

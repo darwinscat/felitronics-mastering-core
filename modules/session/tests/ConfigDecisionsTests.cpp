@@ -228,16 +228,16 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "the high-pass slopes are 12, 24 and 48 dB/oct");
     {
         const std::pair<std::string_view, double> marks[] = { { "kick", 50.0 }, { "bass4", 41.2 }, { "bass5", 30.87 },
-                                                              { "piano", 27.5 }, { "guitar", 82.41 }, { "speech", 85.0 } };
+                                                              { "piano", 27.5 }, { "guitar", 82.41 }, { "speech", 70.0 } };
         bool same6 = e.hpf.marks.size() == std::size (marks);
         for (std::size_t i = 0; same6 && i < std::size (marks); ++i)
             same6 = e.hpf.marks[i].key == marks[i].first && same (e.hpf.marks[i].hz, marks[i].second);
         need (same6, "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and "
-                     "speech 85 Hz — no 808 (owner, 06.10)");
+                     "speech 70 Hz — no 808 (owner, 06.10)");
     }
-    need (same (e.hpf.comfort.lowHz, 27.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 27–42 Hz (owner, 06.10)");
-    need (same (e.hpf.comfort.warningLowHz, 23.0) && same (e.hpf.comfort.warningHighHz, 50.0),
-          "the high-pass field warns towards 23 and 50 Hz (owner, 06.10: yellow from 27 down, the ramp as long as before)");
+    need (same (e.hpf.comfort.lowHz, 30.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 30–42 Hz (owner, 06.10)");
+    need (same (e.hpf.comfort.warningLowHz, 26.0) && same (e.hpf.comfort.warningHighHz, 50.0),
+          "the high-pass field warns towards 26 and 50 Hz (owner, 06.10: yellow from 30 down, the ramp as long as before)");
     need (same (e.hpf.noteAboveHz, 20.0) && same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
           && same (e.lowEnd.occupiedFromDuty, 0.10) && same (e.lowEnd.occupiedMarginWhenOnDb, 2.0),
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
@@ -364,12 +364,12 @@ void aDepartureIsNamed()
           "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
         { false, "machineTopHz = 50", "machineTopHz = 51", "the machine's high-pass tops out at 50 Hz" },
         { false, "{ key = \"piano\", hz = 27.5 }", "{ key = \"sub808\", hz = 28 }",
-          "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and speech 85 Hz — no 808 (owner, 06.10)" },
-        { false, "{ key = \"speech\", hz = 85 }", "{ key = \"speech\", hz = 80 }",
-          "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and speech 85 Hz — no 808 (owner, 06.10)" },
-        { false, "comfort = { lowHz = 27,", "comfort = { lowHz = 24,", "the high-pass comfort window is 27–42 Hz (owner, 06.10)" },
-        { false, "warningLowHz = 23,", "warningLowHz = 20,",
-          "the high-pass field warns towards 23 and 50 Hz (owner, 06.10: yellow from 27 down, the ramp as long as before)" },
+          "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and speech 70 Hz — no 808 (owner, 06.10)" },
+        { false, "{ key = \"speech\", hz = 70 }", "{ key = \"speech\", hz = 85 }",
+          "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and speech 70 Hz — no 808 (owner, 06.10)" },
+        { false, "comfort = { lowHz = 30,", "comfort = { lowHz = 27,", "the high-pass comfort window is 30–42 Hz (owner, 06.10)" },
+        { false, "warningLowHz = 26,", "warningLowHz = 23,",
+          "the high-pass field warns towards 26 and 50 Hz (owner, 06.10: yellow from 30 down, the ramp as long as before)" },
         { false, "machineTopHz = 50", "machineTopHz = 80", "the machine's high-pass tops out at 50 Hz" },
         { false, "hzMax = 80", "hzMax = 50", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "hzMax = 80", "hzMax = 81", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
