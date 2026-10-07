@@ -10,7 +10,6 @@
 #include <felitronics/session/Landing.h>
 #include <felitronics/analysis/SourceForensics.h>
 #include <felitronics/core/DetMath.h>
-#include <felitronics/core/Math.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -188,16 +187,19 @@ QueryView header (const MeasurementQuery& q, const Source& source, std::uint64_t
     v.sampleRate = source.sampleRate; v.channels = source.channels; v.stride = stride (q.kind);
     return v;
 }
+} // namespace
 // THE DITHER'S FLOOR (Queries.h, DitherFloor): what the delivery's quantiser adds, white, through the dither's noise
 // transfer function, in the forensics meanPower convention at the source's rate. The shaping filters are the core's
 // (felitronics-core Dither.h: H = Σ h_k z^-(k+1), NTF = 1 − H); the numbers are restated here, read once per column.
-void ditherFloor (QueryView& v, double* rows, const DitherFinding& dither, std::uint32_t sourceRate, std::uint32_t deliveryRate) noexcept
+void detail::ditherFloor (QueryView& v, double* rows, const DitherFinding& dither, std::uint32_t sourceRate,
+                          std::uint32_t deliveryRate) noexcept
 {
+    constexpr double kPi = 3.1415926535897932384626433832795;
     constexpr double weighted[] { 1.5, -0.5 };
     constexpr double psychoacoustic[] { 2.412, -3.370, 3.937, -4.174, 3.353, -2.205, 1.281, -0.569, 0.0847 };
     const auto& q = v.request;
     const bool quantised = dither.bits > 0 && dither.bits < 32;
-    const double lsb = quantised ? std::ldexp (1.0, -(dither.bits - 1)) : 0.0;
+    const double lsb = quantised ? 1.0 / double (std::uint32_t (1) << (dither.bits - 1)) : 0.0;   // exact: a power of two
     const double variance = dither.on ? lsb * lsb / 4.0 : lsb * lsb / 12.0;   // TPDF ±1 LSB with its quantiser; rounding alone
     const auto shaping = dither.on ? dither.shaping : DitherShaping::None;
     const double* h = shaping == DitherShaping::Weighted ? weighted : shaping == DitherShaping::Psychoacoustic ? psychoacoustic : nullptr;
@@ -213,7 +215,7 @@ void ditherFloor (QueryView& v, double* rows, const DitherFinding& dither, std::
         else if (! (deliveryRate > 0) || hz > 0.5 * double (deliveryRate)) reason = MeasurementReason::Unsupported;
         else
         {
-            const double w = 2.0 * core::kPi * hz / double (deliveryRate);
+            const double w = 2.0 * kPi * hz / double (deliveryRate);
             double re = 1.0, im = 0.0;
             for (int k = 0; k < order; ++k)
             {
@@ -230,6 +232,8 @@ void ditherFloor (QueryView& v, double* rows, const DitherFinding& dither, std::
     v.total = v.stored = q.columns; v.complete = true;
     v.reason = MeasurementReason::None; v.status = QueryStatus::Ready;
 }
+namespace
+{
 void curve (QueryView& v, double* rows, const MeasurementResult& result) noexcept
 {
     const auto* bands = array (result, "bands");
@@ -616,7 +620,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         const auto row = detail::rules().row (project_.target);
         const auto deliveryRate = row.sampleRate == 0 ? source_.sampleRate : std::uint32_t (row.sampleRate);
         std::unique_ptr<double[]> rows (new double[std::size_t (q.columns) * 3u]);
-        ditherFloor (v, rows.get(), plan_.dither, source_.sampleRate, deliveryRate);
+        detail::ditherFloor (v, rows.get(), plan_.dither, source_.sampleRate, deliveryRate);
         v.values = { rows.get(), std::size_t (v.stored * v.stride) };
         return QueryResult::copy (v);
     }

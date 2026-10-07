@@ -179,6 +179,30 @@ void nativeQueries()
             ok (clipped.view().stored == 1 && clipped.view().total > 1 && ! clipped.view().complete, "clipping truncation preserves counts");
         }
     }
+    // THE DITHER'S FLOOR (owner, 07.10) through the session: the plan's dither at the target's rate (cd: 16 bits at
+    // 44.1 kHz, TPDF, Weighted), per bin of the source's forensics analysis at 48 kHz — the rows detail::ditherFloor gives.
+    {
+        const auto& dither = snapshot.view().plan.dither;
+        auto dq = q; dq.kind = QueryKind::DitherFloor; dq.fromHz = 20; dq.toHz = 22050; dq.columns = 64;
+        const auto floor = ask (s, dq);
+        QueryView v; v.request = dq;
+        std::vector<double> want (64u * 3u);
+        detail::ditherFloor (v, want.data(), dither, 48000, 44100);
+        ok (dither.bits == 16 && dither.on && dither.shaping == DitherShaping::Weighted && floor.view().status == QueryStatus::Ready
+            && floor.view().stored == 64 && floor.view().stride == 3 && identical (floor.view().values, want)
+            && floor.view().pcmFramesRead == 0,
+            "DitherFloor: the cd delivery's floor, at its rate, named at the source's — answered without a measurement");
+        auto past = dq; past.fromHz = past.toHz = 22050.5; past.columns = 1;
+        const auto above = ask (s, past);
+        ok (above.view().status == QueryStatus::Ready && same (above.view().values[2], double (MeasurementReason::Unsupported)),
+            "DitherFloor above the delivery's 22.05 kHz Nyquist, inside the source's: Unsupported");
+        const auto refused = [&] (MeasurementQuery bad, QueryStatus status)
+        { const auto a = ask (s, bad); return a.view().status == status && a.view().values.empty(); };
+        auto zero = dq; zero.fromHz = 0; auto part = dq; part.fromFrame = 1; auto reversed = dq; reversed.fromHz = 30000; reversed.toHz = 20;
+        auto none = dq; none.columns = 0;
+        ok (refused (zero, QueryStatus::InvalidRange) && refused (part, QueryStatus::InvalidRange) && refused (reversed, QueryStatus::InvalidRange)
+            && refused (none, QueryStatus::ColumnLimit), "DitherFloor refuses a grid from 0 Hz, part of the source, a reversed grid, no columns");
+    }
     const auto summary = s.summary();
     ok (! summary.view().measurementRowsIncluded && snapshot.view().measurementRowsIncluded, "summary explicitly omits large rows");
     for (const auto& r : summary.view().measurements) ok (r.arrays.empty(), "summary retains scalar status without row copies");
@@ -427,9 +451,49 @@ void reviewRegressions()
     }
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "regression C destroy");
 }
+// THE DITHER'S FLOOR (owner, 07.10), the rows alone: the quantiser's white noise — TPDF ±1 LSB with its rounding, LSB²/4;
+// rounding alone, LSB²/12 — through the dither's NTF, the power one bin of a 16384-point Hann analysis reads.
+void ditherFloorRows()
+{
+    felitronics::test::group ("DitherFloor: the delivery's noise floor per bin, in the forensics meanPower convention");
+    const auto rows = [] (const DitherFinding& d, double from, double to, std::uint32_t columns, std::uint32_t source = 48000,
+                          std::uint32_t delivery = 48000)
+    {
+        QueryView v; v.request.kind = QueryKind::DitherFloor; v.request.fromHz = from; v.request.toHz = to; v.request.columns = columns;
+        std::vector<double> out (std::size_t (columns) * 3u);
+        detail::ditherFloor (v, out.data(), d, source, delivery);
+        return out;
+    };
+    const auto db = [] (double power) { return 10.0 * std::log10 (power); };
+    DitherFinding tpdf; tpdf.bits = 16; tpdf.on = true; tpdf.shaping = DitherShaping::None;
+    const auto flat = rows (tpdf, 20.0, 20000.0, 5);
+    bool even = true;
+    for (std::size_t i = 0; i < 5; ++i) even = even && same (flat[3 * i + 2], double (MeasurementReason::None)) && same (flat[3 * i + 1], flat[1]);
+    ok (even && std::fabs (flat[1] - db (1.0 / 4294967296.0 / 16384.0)) < 1e-9 && std::fabs (flat[1] + 138.47) < 0.005
+        && same (flat[0], 20.0) && std::fabs (flat[12] - 20000.0) < 1e-9,
+        "16-bit TPDF at 48 kHz, no shaping: flat at −138.47 dB per bin on a log grid 20 Hz … 20 kHz (" + std::to_string (flat[1]) + ")");
+    DitherFinding weighted = tpdf; weighted.shaping = DitherShaping::Weighted;
+    const auto nyquist = rows (weighted, 24000.0, 24000.0, 1), k1 = rows (weighted, 1000.0, 1000.0, 1);
+    ok (std::fabs (nyquist[1] - (flat[1] + db (9.0))) < 1e-9 && std::fabs (nyquist[1] + 128.9) < 0.05 && std::fabs (k1[1] + 162.0) < 0.05,
+        "16-bit Weighted: −128.9 dB at Nyquist (|NTF|² = 9), −162.0 at 1 kHz (" + std::to_string (nyquist[1]) + ", "
+        + std::to_string (k1[1]) + ")");
+    DitherFinding rounding; rounding.bits = 24; rounding.on = false; rounding.shaping = DitherShaping::Weighted;
+    const auto r24 = rows (rounding, 1000.0, 1000.0, 1);
+    ok (std::fabs (r24[1] - db (1.0 / 70368744177664.0 / 12.0 / 16384.0)) < 1e-9 && std::fabs (r24[1] + 191.4) < 0.05,
+        "24-bit rounding, no dither and so no shaping: −191.4 dB per bin (" + std::to_string (r24[1]) + ")");
+    const auto rated = rows (tpdf, 1000.0, 1000.0, 1, 44100, 48000);
+    ok (std::fabs (rated[1] - (flat[1] + db (44100.0 / 48000.0))) < 1e-9, "named at the source's rate: a 44.1 kHz source's bin, a 48 kHz delivery");
+    DitherFinding wide; wide.bits = 32;
+    const auto above = rows (weighted, 24000.5, 24000.5, 1), none = rows (wide, 1000.0, 1000.0, 1);
+    ok (same (above[2], double (MeasurementReason::Unsupported)) && std::isnan (above[1]) && same (none[2], double (MeasurementReason::NoSignal))
+        && std::isnan (none[1]), "above the delivery's Nyquist: Unsupported; 32 bits, no quantiser: NoSignal");
+    DitherFinding psycho = tpdf; psycho.shaping = DitherShaping::Psychoacoustic;
+    const auto p = rows (psycho, 3000.0, 3000.0, 1);
+    ok (same (p[2], double (MeasurementReason::None)) && p[1] < flat[1], "Psychoacoustic: below the flat floor where the ear is keenest, 3 kHz");
+}
 int main()
 {
-    nativeQueries(); abiQueries(); reviewRegressions();
+    ditherFloorRows(); nativeQueries(); abiQueries(); reviewRegressions();
     std::printf ("measurement-query-digest=%016llx\n", static_cast<unsigned long long> (digest));
     return felitronics::test::report();
 }

@@ -4,8 +4,15 @@
 #include <felitronics/session/Queries.h>
 #include <felitronics/analysis/WaveformIndex.h>
 
+namespace felitronics::session
+{
+struct DitherFinding;
+}
 namespace felitronics::session::detail
 {
+// The DitherFloor query's rows (Queries.h): `v.request`'s log grid, the delivery's dither at `deliveryRate`, the power
+// per bin of the source's forensics analysis at `sourceRate`. Writes 3 · columns values to `rows`.
+void ditherFloor (QueryView& v, double* rows, const DitherFinding& dither, std::uint32_t sourceRate, std::uint32_t deliveryRate) noexcept;
 struct WaveformState
 {
     analysis::WaveformIndex index;
