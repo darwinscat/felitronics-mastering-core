@@ -157,6 +157,13 @@ void nativeQueries()
                 auto band = ask (s, rq);
                 const double expected = kind == QueryKind::LowSpectrum ? row[7] : row[5] / (row[4] + row[5]);
                 ok (std::fabs (band.view().values[1] - expected) < 1e-12, "frequency grid reads retained spectrum and Side evidence");
+                if (kind == QueryKind::LowSpectrum)
+                {
+                    auto whole = rq; whole.spectrum = SpectrumQuantity::Energy;
+                    const auto e = ask (s, whole);
+                    ok (e.view().request.spectrum == SpectrumQuantity::Energy && same (e.view().values[1], row[6]) && ! same (row[6], row[7]),
+                        "asked for energy, LowSpectrum answers the band's whole energy, not its density");
+                }
                 rq.crossoverHz = 150;
                 ok (! ask (s, rq).view().cacheHit, "120 and 150 Hz do not collide");
                 // A band narrower than a Hann main lobe (owner, 06.10 and 07.10): its value as measured, no TooShort — the
