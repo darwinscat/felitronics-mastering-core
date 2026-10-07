@@ -37,31 +37,35 @@ constexpr double kPi = 3.141592653589793;
 bool same (double a, double b) { return detail::same (a, b); }
 double midiHz (int midi) { return 440.0 * std::pow (2.0, (midi - 69) / 12.0); }
 
-// A LOW-END READING as the first phase publishes it — its band table (MIDI 16…62, the run's geometry) and its 10 ms blocks
-// — owned here, with the loudness reading beside it, laid out by Analyzer for the planner.
+// A LOW-END READING as the first phase publishes it — its band table (MIDI 4…71, 10.30…493.88 Hz, the run's geometry; the note
+// reads the bands up to 293.66 Hz, MIDI 62) and its 10 ms blocks — owned here, with the loudness reading beside it, laid out by
+// Analyzer for the planner.
+constexpr int kFirstMidi = 4, kBandCount = 68, kNoteTopMidi = 62;
 struct Readings
 {
     std::uint32_t rate = 48000;
     double hop = 65536;
-    std::vector<double> bands = std::vector<double> (47 * 16, 0.0);
+    std::vector<double> bands = std::vector<double> (kBandCount * 16, 0.0);
     std::vector<double> blocks;
     std::uint64_t blocksNotKept = 0;           // blocks of the piece past what the run holds: a reading of a first part
-    MeasurementValue lowNumbers[4] {};
+    double background = 0;                     // the run's backgroundDensity: the median density of the note range
+    double rangeShare = 0.5;                   // the run's bandRangeShare: the note range's share of the programme
+    MeasurementValue lowNumbers[6] {};
     MeasurementArray lowArrays[2] {};
     MeasurementValue loudness[2] {};
     MeasurementResult results[kAnalyzers] {};
     Readings()
     {
-        for (int b = 0; b < 47; ++b)
+        for (int b = 0; b < kBandCount; ++b)
         {
             double* row = bands.data() + b * 16;
-            row[0] = 16 + b; row[1] = midiHz (16 + b); row[15] = 1;
+            row[0] = kFirstMidi + b; row[1] = midiHz (kFirstMidi + b); row[15] = 1;
         }
     }
     // A band occupied `duty` of the frames, `count` frames, `margin` dB above the duty line.
     void occupy (int midi, double duty, double count, double margin)
     {
-        double* row = bands.data() + (midi - 16) * 16;
+        double* row = bands.data() + (midi - kFirstMidi) * 16;
         row[11] = count; row[12] = duty; row[14] = margin; row[13] = margin - 20;
     }
     void block (double mid, double side, double samples = 480, bool valid = true)
@@ -84,9 +88,11 @@ struct Readings
         lowNumbers[1] = { "sampleRate", double (rate), MeasurementReason::None, 0 };
         lowNumbers[2] = { "peakMidi", 40.0, MeasurementReason::None, 0 };
         lowNumbers[3] = { "crossoverHz", crossover, MeasurementReason::None, 0 };
+        lowNumbers[4] = { "backgroundDensity", background, MeasurementReason::None, 0 };
+        lowNumbers[5] = { "bandRangeShare", rangeShare, MeasurementReason::None, 0 };
         lowArrays[0] = { "blocks", { 0, 480, std::uint64_t (seconds * rate), rate }, 8, blocks.size() / 8 + blocksNotKept, blocks.size() / 8,
                          blocksNotKept == 0, blocks };
-        lowArrays[1] = { "bands", { 0, 0, std::uint64_t (seconds * rate), rate }, 16, 47, 47, true, bands };
+        lowArrays[1] = { "bands", { 0, 0, std::uint64_t (seconds * rate), rate }, 16, kBandCount, kBandCount, true, bands };
         auto& r = results[std::size_t (crossover == 150 ? Analyzer::LowEnd150 : Analyzer::LowEnd)];
         r.status = MeasurementStatus::Ready; r.reason = MeasurementReason::None;
         r.numbers = lowNumbers; r.arrays = lowArrays;
@@ -116,7 +122,7 @@ double coreLoss (double fc, int slope, double rate, double hz)
 
 void theSureLowestNote()
 {
-    felitronics::test::group ("the sure lowest note: 2 dB over the line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
+    felitronics::test::group ("the sure lowest note: 2 dB over the line, 10 % of the frames, from 25 Hz, 3 s in all; not sought under 10 s");
     const auto cut = [] (Readings& r, double seconds = 60) { return plan (r.inputs ("allStreaming", seconds)).found.hpf; };
     {
         Readings r; r.occupy (33, 0.10, 20, 2.0);
@@ -134,11 +140,33 @@ void theSureLowestNote()
         ok (cut (unsureLowest).cut == HpfCut::Unsure, "the lowest occupied band not sure: the floor — never a higher band, which would cut music");
     }
     {
-        Readings r; r.occupy (16, 0.5, 40, 6);
-        r.bands[1] = 20.0;
-        ok (cut (r).cut == HpfCut::Unsure, "a band at 20 Hz exactly is not above 20 Hz: the floor");
-        r.bands[1] = std::nextafter (20.0, 30.0);
-        ok (cut (r).cut != HpfCut::Unsure, "a hair above 20 Hz is");
+        // The search starts at [lowEnd] lowestNoteFromHz, 25 Hz included (owner, 06.10), which [hpf] note.aboveHz (20 Hz) lies under.
+        Readings r; r.occupy (kFirstMidi, 0.5, 40, 6);
+        r.bands[1] = 25.0;
+        ok (cut (r).cut != HpfCut::Unsure && r.bands[1] > 20.0, "a band at 25 Hz exactly is sought — and above 20 Hz");
+        r.bands[1] = std::nextafter (25.0, 0.0);
+        ok (cut (r).cut == HpfCut::Unsure, "a hair under 25 Hz is not: the floor");
+    }
+    {
+        // The lowest band's density over the background, [lowEnd] occupiedAboveBackgroundDb (owner, 07.10): 6 dB is a note, a
+        // hair less is none — the floor, never the band above it.
+        Readings r; r.occupy (28, 0.5, 60, 6); r.occupy (40, 0.5, 60, 6); r.background = 1.0;
+        double& density = r.bands[std::size_t (28 - kFirstMidi) * 16 + 7];
+        r.bands[std::size_t (40 - kFirstMidi) * 16 + 7] = 1.0e6;
+        density = felitronics::core::det::pow10 (0.6);
+        ok (cut (r).noteMidi == 28, "a lowest band 6 dB over the background: the note");
+        density = std::nextafter (density, 0.0);
+        ok (cut (r).cut == HpfCut::Unsure && ! cut (r).noteMidi && same (cut (r).cutoffHz, 32.0),
+            "a hair under 6 dB: no note, the floor — never the band above it");
+    }
+    {
+        // The range's share of the programme, [lowEnd] noteRangeShareAtLeastDb (owner, 07.10): −140 dB is a note, a hair
+        // less is none.
+        Readings r; r.occupy (28, 0.5, 60, 6);
+        r.rangeShare = felitronics::core::det::pow10 (-14.0);
+        ok (cut (r).noteMidi == 28, "a range holding −140 dB of the programme: the note");
+        r.rangeShare = std::nextafter (r.rangeShare, 0.0);
+        ok (cut (r).cut == HpfCut::Unsure && ! cut (r).noteMidi, "a hair under −140 dB: no note, the floor");
     }
     {
         Readings r; r.hop = 48000; r.occupy (33, 0.5, 3, 6);
@@ -158,6 +186,35 @@ void theSureLowestNote()
     }
 }
 
+// THE LOWEST NOTE FROM 25 Hz (owner, 06.10): the table measures from 10 Hz, and the note is sought from [lowEnd]
+// lowestNoteFromHz up — a band under it is the spectrum's, skipped, never the note and never the floor in the note's place.
+void theLowestNoteFromTwentyFiveHz()
+{
+    felitronics::test::group ("the lowest note is sought from 25 Hz up: a band under it is skipped, never the note, never the floor");
+    const auto cut = [] (Readings& r) { return plan (r.inputs ("allStreaming", 60)).found.hpf; };
+    {
+        Readings r; r.occupy (19, 0.5, 60, 6);
+        const auto f = cut (r);
+        ok (f.cut == HpfCut::Unsure && ! f.noteMidi && same (f.cutoffHz, 32.0), "a band at 24.50 Hz, sure by every other test, alone: no note — the floor");
+    }
+    {
+        Readings r; r.occupy (20, 0.5, 60, 6);
+        const auto f = cut (r);
+        ok (f.cut == HpfCut::BelowFloor && f.noteMidi == 20 && same (*f.noteHz, midiHz (20)),
+            "the first band from 25 Hz, 25.96 Hz: the note (under the floor, which stands)");
+    }
+    {
+        Readings r; r.occupy (11, 0.05, 3, 0.5); r.occupy (28, 0.5, 60, 6);
+        const auto f = cut (r);
+        ok (f.cut != HpfCut::Unsure && f.noteMidi == 28,
+            "an unsure band at 15.43 Hz under a sure 41.2 Hz: the note is 41.2 Hz — the rumble neither is the note nor makes it the floor");
+    }
+    {
+        Readings r; r.occupy (11, 0.9, 100, 10);
+        ok (cut (r).cut == HpfCut::Unsure && same (cut (r).cutoffHz, 32.0), "a steady 15.43 Hz and nothing from 25 Hz up: no note, the floor");
+    }
+}
+
 void theCutoffOnTheChainsResponse()
 {
     felitronics::test::group ("the cutoff: the loss the target allows at the note on the chain's own response, the 32 Hz floor, the 50 Hz top");
@@ -173,7 +230,7 @@ void theCutoffOnTheChainsResponse()
         const int slope = target.hpfSlope;
         floors = floors && same (floor, 32.0);
         for (const std::uint32_t rate : { 44100u, 48000u, 96000u })
-            for (int midi = 16; midi <= 62; ++midi)
+            for (int midi = 20; midi <= 62; ++midi)   // every band the note is sought in: from 25 Hz (25.96 Hz) to the table's top
             {
                 Readings in; in.rate = rate; in.occupy (midi, 0.5, 60, 6);
                 const auto p = plan (in.inputs (std::string (target.key).c_str(), 60));
@@ -332,6 +389,35 @@ struct Mix
         }
         return *this;
     }
+    // TPDF dither of ±1 LSB at `bits`, white and independent per channel, from a fixed seed: the noise a delivery adds.
+    Mix& dither (int bits, std::uint32_t seed = 1)
+    {
+        const double lsb = 1.0 / double (std::uint32_t (1) << (bits - 1));
+        for (std::size_t i = 0; i < left.size(); ++i)
+        {
+            const double l = uniform (seed) - uniform (seed), r = uniform (seed) - uniform (seed);
+            left[i] += float (lsb * l); right[i] += float (lsb * r);
+        }
+        return *this;
+    }
+    // A rumble: pink noise (1/f power — Kellet's filter on a fixed-seed white noise) at `rms` into both channels alike.
+    Mix& pink (double rms, std::uint32_t seed = 7)
+    {
+        std::vector<double> x (left.size());
+        double b[7] {}, sum = 0;
+        for (auto& v : x)
+        {
+            const double w = 2 * uniform (seed) - 1;
+            b[0] = 0.99886 * b[0] + w * 0.0555179; b[1] = 0.99332 * b[1] + w * 0.0750759; b[2] = 0.96900 * b[2] + w * 0.1538520;
+            b[3] = 0.86650 * b[3] + w * 0.3104856; b[4] = 0.55000 * b[4] + w * 0.5329522; b[5] = -0.7616 * b[5] - w * 0.0168980;
+            v = b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + w * 0.5362; b[6] = w * 0.115926;
+            sum += v * v;
+        }
+        const double gain = rms / std::sqrt (sum / double (x.size()));
+        for (std::size_t i = 0; i < x.size(); ++i) { left[i] += float (gain * x[i]); right[i] += float (gain * x[i]); }
+        return *this;
+    }
+    static double uniform (std::uint32_t& seed) { seed = seed * 1664525u + 1013904223u; return double (seed >> 8) / 16777216.0; }
     // `level` of a sine at `hz` into both channels, the right one scaled by `rightGain` (−1: inverted).
     Mix& tone (double hz, double level, double rightGain = 1.0, double from = 0, double to = 1e9)
     {
@@ -707,6 +793,103 @@ void theLowestBandWithItsSureness()
         "D1 8 dB under: published and sure (" + std::to_string (sureMargin.value_or (-1.0)) + " dB)");
 }
 
+// UNDER 25 Hz (owner, 06.10): «the spectrum from 10 Hz, the lowest note from 25 Hz» — what sounds under 25 Hz is measured
+// in the table, and is never the lowest note the high-pass and the report read; a bass above it is found as before.
+void underTwentyFiveHzIsTheSpectrumsNotTheNotes()
+{
+    felitronics::test::group ("under 25 Hz: the table measures from 10 Hz, and what sounds there is never the lowest note");
+    const auto note = [] (double hz) { return std::round (12 * std::log2 (hz / 440.0) + 69); };
+    const auto bandsOf = [] (const Measured& m)
+    {
+        std::vector<double> out;
+        const auto snapshot = m.s->snapshot();
+        for (const auto& a : snapshot.view().measurements[std::size_t (Analyzer::LowEnd)].arrays)
+            if (a.name == "bands" && a.columns == 16) out.assign (a.values.begin(), a.values.end());
+        return out;
+    };
+    {
+        const auto m = measure (Mix (20).tone (15.43, 0.3));
+        const auto bands = bandsOf (m);
+        bool noteTop = bands.size() == std::size_t (kBandCount) * 16;
+        for (std::size_t b = 0; noteTop && b + 16 <= bands.size(); b += 16)
+            noteTop = bands[b] <= kNoteTopMidi || (bands[b + 11] == 0 && bands[b + 12] == 0);
+        ok (bands.size() == std::size_t (kBandCount) * 16 && same (bands[0], double (kFirstMidi)) && std::abs (bands[1] - 10.30) < 0.005
+            && same (bands[bands.size() - 16], 71.0) && std::abs (bands[bands.size() - 15] - 493.88) < 0.005 && noteTop,
+            "the table starts at 10.30 Hz (MIDI 4) and ends at 493.88 Hz (MIDI 71); the bands above 293.66 Hz (MIDI 62) carry no "
+            "occupancy: " + std::to_string (bands.size() / 16) + " bands");
+        double total = 0, at = 0;
+        for (std::size_t b = 0; b + 16 <= bands.size(); b += 16) { total += bands[b + 6]; if (same (bands[b], 11.0)) at = bands[b + 6]; }
+        const auto peak = lowNumber (m, "peakMidi");
+        ok (total > 0 && at / total > 0.9 && peak && same (*peak, 11.0),
+            "a 15.43 Hz tone shows in its own band: " + std::to_string (total > 0 ? at / total : 0.0) + " of the table's energy, the loudest band");
+        MeasurementReason why {};
+        const auto lowest = lowNumber (m, "lowestOccupiedHz", &why);
+        ok (! lowest && why == MeasurementReason::NoSignal,
+            "and is no lowest occupied band: nothing from 25 Hz up (" + std::to_string (lowest.value_or (0.0)) + " Hz)");
+        ok (m.s->snapshot().view().observations.lowestLowBand.status == ObservationStatus::NotFound, "the report names no lowest band");
+        ok (m.plan.hpf.cut == HpfCut::Unsure && ! m.plan.hpf.noteMidi && same (m.plan.hpf.cutoffHz, 32.0), "and the high-pass stands at the floor");
+    }
+    {
+        const auto m = measure (Mix (20).tone (55.0, 0.3).tone (15.43, 0.15).tone (440.0, 0.1));
+        ok (m.plan.hpf.cut == HpfCut::Note && m.plan.hpf.noteMidi && same (double (*m.plan.hpf.noteMidi), note (55.0))
+            && m.plan.hpf.cutoffHz > 32 && m.plan.hpf.cutoffHz < 55,
+            "a bass at 55 Hz over a 15.43 Hz rumble 6 dB under it: its note, as before (" + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
+        const auto lowest = lowNumber (m, "lowestOccupiedMidi");
+        ok (lowest && same (*lowest, note (55.0)), "and the lowest occupied band is the bass's");
+    }
+    {
+        const auto m = measure (Mix (20).tone (55.0, 0.3).tone (23.12, 0.15).tone (440.0, 0.1));
+        ok (m.plan.hpf.cut == HpfCut::Note && m.plan.hpf.noteMidi && same (double (*m.plan.hpf.noteMidi), note (55.0))
+            && m.plan.hpf.cutoffHz > 32 && m.plan.hpf.cutoffHz < 55,
+            "a 23.12 Hz rumble under it — under 25 Hz, not 20: the bass's note all the same (" + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
+    }
+}
+
+// A MIX WITH NO BASS SAYS "UNSURE" (owner, 07.10): the lowest band from 25 Hz up that only a high tone's leakage, a dither
+// or a rumble lights stands within a few dB of the note range's background, and [lowEnd] occupiedAboveBackgroundDb vetoes
+// it — never skipping to the band above it. A played bass stands far over the background and is found as before, also
+// 40 dB under a loud 1 kHz tone.
+void aMixWithNoBassIsUnsure()
+{
+    felitronics::test::group ("a mix with no bass is unsure: a band lit by leakage, dither or rumble is vetoed by the background");
+    const auto said = [] (const Measured& m)
+    {
+        const auto sure = lowNumber (m, "lowestOccupiedSure"), midi = lowNumber (m, "lowestOccupiedMidi");
+        return " (cut " + std::to_string (int (m.plan.hpf.cut)) + ", note " + std::to_string (m.plan.hpf.noteMidi.value_or (-1))
+             + ", lowest band " + std::to_string (midi.value_or (-1)) + " sure " + std::to_string (sure.value_or (-1)) + ")";
+    };
+    const auto unsure = [&] (const Measured& m, const std::string& what)
+    {
+        const auto sure = lowNumber (m, "lowestOccupiedSure");
+        ok (m.plan.hpf.cut == HpfCut::Unsure && ! m.plan.hpf.noteMidi && same (m.plan.hpf.cutoffHz, 32.0) && (! sure || same (*sure, 0.0)),
+            what + ": unsure, the floor" + said (m));
+    };
+    const auto found = [&] (const Measured& m, int midi, const std::string& what)
+    {
+        const auto sure = lowNumber (m, "lowestOccupiedSure");
+        ok (m.plan.hpf.noteMidi == midi && m.plan.hpf.cut != HpfCut::Unsure && sure && same (*sure, 1.0), what + said (m));
+    };
+    unsure (measure (Mix (20).tone (1000.0, 0.3)), "a 1 kHz tone alone");
+    unsure (measure (Mix (20).tone (1000.0, 0.3).dither (16)), "a 1 kHz tone over a 16-bit dither");
+    unsure (measure (Mix (20).pink (0.1)), "pink noise alone at −20 dBFS, a rumble that is all there is");
+    // A float tone that is not periodic in the sample grid: its rounding draws real lines into the empty range, 6.3 dB over
+    // the background, in a range holding −172 dB of the programme — the range's share vetoes it.
+    unsure (measure (Mix (20).tone (997.0, 0.25)), "a 997 Hz tone alone, its float rounding lines in the range");
+    {
+        const auto m = measure (Mix (4).tone (997.0, 0.25));
+        const auto sure = lowNumber (m, "lowestOccupiedSure");
+        ok (sure && same (*sure, 0.0), "and 4 s of it: the report's lowest band is not sure, as v0.18.0 read it");
+    }
+    unsure (measure (Mix (20).tone (1000.0, 0.3).pink (0.001)), "a 1 kHz tone over a rumble at −60 dBFS");
+    found (measure (Mix (20).tone (41.2, 0.3)), 28, "E1 41.2 Hz alone: its note");
+    found (measure (Mix (20).tone (30.87, 0.3)), 23, "B0 30.87 Hz alone: its note");
+    found (measure (Mix (20).tone (1000.0, 0.3).tone (41.2, 0.003)), 28, "E1 40 dB under a 1 kHz tone: its note");
+    found (measure (Mix (20).tone (1000.0, 0.3).tone (30.87, 0.003)), 23, "B0 40 dB under a 1 kHz tone: its note");
+    found (measure (Mix (20).tone (30.87, 0.03).tone (61.74, 0.19).tone (1000.0, 0.1)), 23,
+           "a five-string B0 16 dB under its second harmonic: B0, never the harmonic");
+    found (measure (Mix (20).tone (41.2, 0.3).dither (16).pink (0.001)), 28, "E1 over a dither and a rumble: its note");
+}
+
 //==============================================================================
 // MASTER AS SOON AS THE LOUDNESS AND THE TRUE PEAK ARE KNOWN (owner, 02.10): the devices are placed then; a field whose
 // measurement has not ended is the machine's "not measured yet"; a person may edit it; a hidden panel's master waits in
@@ -889,6 +1072,7 @@ void noFileCarriesAPlaceholder()
 int main()
 {
     theSureLowestNote();
+    theLowestNoteFromTwentyFiveHz();
     theCutoffOnTheChainsResponse();
     quietAndUnmeasured();
     theLossOfTheLowEnd();
@@ -900,6 +1084,8 @@ int main()
     aSentenceStatesWhatSounds();
     everyTargetFromOneMeasurement();
     theLowestBandWithItsSureness();
+    underTwentyFiveHzIsTheSpectrumsNotTheNotes();
+    aMixWithNoBassIsUnsure();
     masterAtLoudnessAndPeak();
     aHiddenMasterAtLoudnessAndPeakSoundsAsLate();
     theDeviceRunsGoFirst();

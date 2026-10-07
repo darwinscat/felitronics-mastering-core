@@ -363,7 +363,7 @@ void truncatedLists()
     detail::MeasurementStore lowResult, burstResult;
     lowResult.capacity = 8192; lowResult.rows.reset (new double[8192]);
     burstResult.capacity = 8192; burstResult.rows.reset (new double[8192]);
-    detail::SourceResults::lowEnd (lowResult, low, .1, 2);
+    detail::SourceResults::lowEnd (lowResult, low, .1, 2, 25, 6, -140);
     detail::SourceResults::bursts (burstResult, bursts);
     ok (lowResult.arrays[0].stored == 2 && lowResult.arrays[0].total > 2 && ! lowResult.arrays[0].complete,
         "the low-end adapter cannot silently drop a long file's blocks");

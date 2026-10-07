@@ -2079,3 +2079,7 @@ codec LandingPass.reason LandingPassReason
 # The max budget proof resolution a frontend may ask for on a master (05.10 correction, v0.18.0): absent takes
 # [landing.max] budgetResolutionDb; the wire domain is 0.05…1 dB.
 wire MasterCommand.budgetResolutionDb? WireNumber
+# The delivery's noise floor per bin (07.10, v0.19.0): the plan's dither at the target's rate, in the forensics meanPower
+# convention, answered without a measurement.
+enum felitronics::session::QueryKind::DitherFloor=14
+row QueryDitherFloor element=f64 byteOrder=little columns=hz,dbPerBin,reason stride=3 bytes=24

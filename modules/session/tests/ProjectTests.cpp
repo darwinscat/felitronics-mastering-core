@@ -397,11 +397,14 @@ void numbers()
             if constexpr (std::is_same_v<std::remove_cvref_t<decltype (hand)>, std::optional<double>>)
             {
                 const auto& k = rule.knob;
-                const int scale = std::max ({ int (k.from.scale), int (k.to.scale), int (k.step.scale) });
-                std::int64_t from = 0, to = 0, step = 0;
+                // A stepless knob (owner, 07.10: step 0) takes any decimal: its travel is walked in hundredths of its
+                // places, off every grid it had.
+                const bool stepless = k.step.mantissa == 0;
+                const int scale = std::max ({ int (k.from.scale), int (k.to.scale), int (k.step.scale) }) + (stepless ? 2 : 0);
+                std::int64_t from = 0, to = 0, step = 1;
                 (void) detail::scaleUp (k.from.mantissa, scale - k.from.scale, from);
                 (void) detail::scaleUp (k.to.mantissa, scale - k.to.scale, to);
-                (void) detail::scaleUp (k.step.mantissa, scale - k.step.scale, step);
+                if (! stepless) (void) detail::scaleUp (k.step.mantissa, scale - k.step.scale, step);
                 const auto count = (to - from) / step;
                 for (const auto tick : { std::int64_t (0), std::int64_t (1), count / 3, count / 2, count })
                 {

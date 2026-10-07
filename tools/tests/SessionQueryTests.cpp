@@ -82,6 +82,16 @@ void nativeQueries()
     const auto spent = declared::spend ([&] { ok (s.apply (load).rejection == Rejection::None, "load"); });
     ok (declared::covers (allocation.bytes, spent), "load is declared including waveform controls");
     MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.columns = 17; q.requestId = 9007199254740993ull;
+    {
+        // The delivery's settings do not exist before the plan places the devices: DitherFloor is Pending, with nothing
+        // allocated for it (review, 07.10: it read NoSignal on every row, the dither's depth still 0).
+        auto early = q; early.kind = QueryKind::DitherFloor; early.fromHz = 20; early.toHz = 20000; early.columns = 8;
+        const auto demand = s.queryStorage (early);
+        const auto pendingFloor = ask (s, early);
+        ok (demand.status == QueryStatus::Pending && demand.bytes == 0 && pendingFloor.view().status == QueryStatus::Pending
+            && pendingFloor.view().reason == MeasurementReason::Pending && pendingFloor.view().values.empty(),
+            "DitherFloor before the plan: Pending, allocation-free");
+    }
     ok (s.queryStorage (q).bytes == 0, "unbuilt waveform demand is allocation free");
     auto pending = ask (s, q); ok (pending.view().status == QueryStatus::Pending && pending.view().values.empty(), "overview explicitly pending before construction");
     // Readings now precede waveform construction. Advance to the first indexed block without assuming how many
@@ -157,8 +167,26 @@ void nativeQueries()
                 auto band = ask (s, rq);
                 const double expected = kind == QueryKind::LowSpectrum ? row[7] : row[5] / (row[4] + row[5]);
                 ok (std::fabs (band.view().values[1] - expected) < 1e-12, "frequency grid reads retained spectrum and Side evidence");
+                if (kind == QueryKind::LowSpectrum)
+                {
+                    auto whole = rq; whole.spectrum = SpectrumQuantity::Energy;
+                    const auto e = ask (s, whole);
+                    ok (e.view().request.spectrum == SpectrumQuantity::Energy && same (e.view().values[1], row[6]) && ! same (row[6], row[7]),
+                        "asked for energy, LowSpectrum answers the band's whole energy, not its density");
+                }
                 rq.crossoverHz = 150;
                 ok (! ask (s, rq).view().cacheHit, "120 and 150 Hz do not collide");
+                // A band narrower than a Hann main lobe (owner, 06.10 and 07.10): its value as measured, no TooShort — the
+                // unresolved flag stays on the bands array, and no decision reads these queries.
+                const auto* first = a.values.data();
+                auto lowest = q; lowest.kind = kind; lowest.fromHz = lowest.toHz = first[1]; lowest.columns = 1;
+                const auto unresolved = ask (s, lowest);
+                const double want = kind == QueryKind::LowSpectrum ? first[7] : first[5] / (first[4] + first[5]);
+                const auto& got = unresolved.view().values;
+                ok (first[15] < 0.5 && got.size() == 3 && same (got[2], double (MeasurementReason::None)) && std::isfinite (got[1])
+                    && std::fabs (got[1] - want) <= 1e-9 * std::fabs (want),
+                    std::string (kind == QueryKind::LowSpectrum ? "LowSpectrum" : "LowSide") + " at the unresolved first band ("
+                    + std::to_string (first[1]) + " Hz): its measured value");
             }
         }
         if (kind == QueryKind::Clipping)
@@ -167,6 +195,35 @@ void nativeQueries()
             const auto clipped = ask (s, rq);
             ok (clipped.view().stored == 1 && clipped.view().total > 1 && ! clipped.view().complete, "clipping truncation preserves counts");
         }
+    }
+    // THE DITHER'S FLOOR (owner, 07.10) through the session: the plan's dither at the target's rate (cd: 16 bits at
+    // 44.1 kHz, TPDF, Weighted), per bin of the source's forensics analysis at 48 kHz — the rows detail::ditherFloor gives.
+    {
+        const auto& dither = snapshot.view().plan.dither;
+        auto dq = q; dq.kind = QueryKind::DitherFloor; dq.fromHz = 20; dq.toHz = 22050; dq.columns = 64;
+        const auto floor = ask (s, dq);
+        QueryView v; v.request = dq;
+        std::vector<double> want (64u * 3u);
+        detail::ditherFloor (v, want.data(), dither, 48000, 44100);
+        ok (dither.bits == 16 && dither.on && dither.shaping == DitherShaping::Weighted && floor.view().status == QueryStatus::Ready
+            && floor.view().stored == 64 && floor.view().stride == 3 && identical (floor.view().values, want)
+            && floor.view().pcmFramesRead == 0,
+            "DitherFloor: the cd delivery's floor, at its rate, named at the source's — answered without a measurement");
+        // The grid's ends are the request's exactly (review, 07.10: the last point read 22050.000000000004, past the cd
+        // delivery's Nyquist, and so Unsupported).
+        const auto& f = floor.view().values;
+        ok (same (f[0], 20.0) && same (f[63u * 3u], 22050.0) && same (f[63u * 3u + 2u], double (MeasurementReason::None))
+            && std::isfinite (f[63u * 3u + 1u]), "DitherFloor's last point is 22050 Hz exactly, the delivery's Nyquist, and has its floor");
+        auto past = dq; past.fromHz = past.toHz = 22050.5; past.columns = 1;
+        const auto above = ask (s, past);
+        ok (above.view().status == QueryStatus::Ready && same (above.view().values[2], double (MeasurementReason::Unsupported)),
+            "DitherFloor above the delivery's 22.05 kHz Nyquist, inside the source's: Unsupported");
+        const auto refused = [&] (MeasurementQuery bad, QueryStatus status)
+        { const auto a = ask (s, bad); return a.view().status == status && a.view().values.empty(); };
+        auto zero = dq; zero.fromHz = 0; auto part = dq; part.fromFrame = 1; auto reversed = dq; reversed.fromHz = 30000; reversed.toHz = 20;
+        auto none = dq; none.columns = 0;
+        ok (refused (zero, QueryStatus::InvalidRange) && refused (part, QueryStatus::InvalidRange) && refused (reversed, QueryStatus::InvalidRange)
+            && refused (none, QueryStatus::ColumnLimit), "DitherFloor refuses a grid from 0 Hz, part of the source, a reversed grid, no columns");
     }
     const auto summary = s.summary();
     ok (! summary.view().measurementRowsIncluded && snapshot.view().measurementRowsIncluded, "summary explicitly omits large rows");
@@ -416,9 +473,144 @@ void reviewRegressions()
     }
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "regression C destroy");
 }
+// THE DITHER'S FLOOR (owner, 07.10), the rows alone: the quantiser's white noise — TPDF ±1 LSB with its rounding, LSB²/4;
+// rounding alone, LSB²/12 — through the dither's NTF, the power one bin of a 16384-point Hann analysis reads.
+void ditherFloorRows()
+{
+    felitronics::test::group ("DitherFloor: the delivery's noise floor per bin, in the forensics meanPower convention");
+    const auto rows = [] (const DitherFinding& d, double from, double to, std::uint32_t columns, std::uint32_t source = 48000,
+                          std::uint32_t delivery = 48000)
+    {
+        QueryView v; v.request.kind = QueryKind::DitherFloor; v.request.fromHz = from; v.request.toHz = to; v.request.columns = columns;
+        std::vector<double> out (std::size_t (columns) * 3u);
+        detail::ditherFloor (v, out.data(), d, source, delivery);
+        return out;
+    };
+    const auto db = [] (double power) { return 10.0 * std::log10 (power); };
+    DitherFinding tpdf; tpdf.bits = 16; tpdf.on = true; tpdf.shaping = DitherShaping::None;
+    const auto flat = rows (tpdf, 20.0, 20000.0, 5);
+    bool even = true;
+    for (std::size_t i = 0; i < 5; ++i) even = even && same (flat[3 * i + 2], double (MeasurementReason::None)) && same (flat[3 * i + 1], flat[1]);
+    ok (even && std::fabs (flat[1] - db (1.0 / 4294967296.0 / 16384.0)) < 1e-9 && std::fabs (flat[1] + 138.47) < 0.005
+        && same (flat[0], 20.0) && std::fabs (flat[12] - 20000.0) < 1e-9,
+        "16-bit TPDF at 48 kHz, no shaping: flat at −138.47 dB per bin on a log grid 20 Hz … 20 kHz (" + std::to_string (flat[1]) + ")");
+    DitherFinding weighted = tpdf; weighted.shaping = DitherShaping::Weighted;
+    const auto nyquist = rows (weighted, 24000.0, 24000.0, 1), k1 = rows (weighted, 1000.0, 1000.0, 1);
+    ok (std::fabs (nyquist[1] - (flat[1] + db (9.0))) < 1e-9 && std::fabs (nyquist[1] + 128.9) < 0.05 && std::fabs (k1[1] + 162.0) < 0.05,
+        "16-bit Weighted: −128.9 dB at Nyquist (|NTF|² = 9), −162.0 at 1 kHz (" + std::to_string (nyquist[1]) + ", "
+        + std::to_string (k1[1]) + ")");
+    DitherFinding rounding; rounding.bits = 24; rounding.on = false; rounding.shaping = DitherShaping::Weighted;
+    const auto r24 = rows (rounding, 1000.0, 1000.0, 1);
+    ok (std::fabs (r24[1] - db (1.0 / 70368744177664.0 / 12.0 / 16384.0)) < 1e-9 && std::fabs (r24[1] + 191.4) < 0.05,
+        "24-bit rounding, no dither and so no shaping: −191.4 dB per bin (" + std::to_string (r24[1]) + ")");
+    const auto rated = rows (tpdf, 1000.0, 1000.0, 1, 44100, 48000);
+    ok (std::fabs (rated[1] - (flat[1] + db (44100.0 / 48000.0))) < 1e-9, "named at the source's rate: a 44.1 kHz source's bin, a 48 kHz delivery");
+    DitherFinding wide; wide.bits = 32;
+    const auto above = rows (weighted, 24000.5, 24000.5, 1), none = rows (wide, 1000.0, 1000.0, 1);
+    ok (same (above[2], double (MeasurementReason::Unsupported)) && std::isnan (above[1]) && same (none[2], double (MeasurementReason::NoSignal))
+        && std::isnan (none[1]), "above the delivery's Nyquist: Unsupported; 32 bits, no quantiser: NoSignal");
+    // A first point near 0 (review, 07.10: 1e-308 Hz to 22050 Hz overflowed the ends' ratio into NaN and infinite
+    // frequencies): the ends exactly as asked, every point finite and inside them.
+    const auto tiny = rows (weighted, 1e-308, 22050.0, 2, 44100, 44100), wideGrid = rows (weighted, 1e-308, 22050.0, 7, 44100, 44100);
+    bool inside = same (tiny[0], 1e-308) && same (tiny[3], 22050.0) && same (wideGrid[18], 22050.0);
+    for (std::size_t i = 0; i < 7; ++i)
+        inside = inside && std::isfinite (wideGrid[3 * i]) && wideGrid[3 * i] >= 1e-308 && wideGrid[3 * i] <= 22050.0
+              && (i == 0 || wideGrid[3 * i] > wideGrid[3 * (i - 1)]) && (std::isfinite (wideGrid[3 * i + 1])
+                  || same (wideGrid[3 * i + 2], double (MeasurementReason::NoSignal)));
+    ok (inside, "a grid from 1e-308 Hz: its ends exactly, every frequency finite, rising and inside them");
+    DitherFinding psycho = tpdf; psycho.shaping = DitherShaping::Psychoacoustic;
+    const auto p = rows (psycho, 3000.0, 3000.0, 1);
+    ok (same (p[2], double (MeasurementReason::None)) && p[1] < flat[1], "Psychoacoustic: below the flat floor where the ear is keenest, 3 kHz");
+}
+// THE DITHER'S FLOOR ALWAYS ENDS (review, 07.10): a silent source's plan cannot be made — Unavailable, not Pending
+// forever; a measurement cancelled before the placement — Cancelled, Pending again once it continues, Ready at its end.
+void ditherFloorEnds()
+{
+    felitronics::test::group ("DitherFloor reaches a terminal answer: Unavailable for a plan that cannot be made, Cancelled while stopped");
+    const auto floor = [] (Session& s, std::uint64_t frames)
+    {
+        MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.kind = QueryKind::DitherFloor;
+        q.fromHz = 20; q.toHz = 20000; q.columns = 8;
+        return std::pair { s.queryStorage (q), ask (s, q) };
+    };
+    const auto toTheEnd = [] (Session& s) { for (unsigned i = 0; i < 1000000 && s.step (64).state != StepState::Done; ++i) {} };
+    {
+        std::vector<float> zeros (96000, 0.0f);
+        const float* planes[] { zeros.data() };
+        auto made = Session::create(); auto& s = *made.session;
+        ok (s.apply (command::Load { 1, { planes, 1, zeros.size(), 48000 }, {} }).rejection == Rejection::None, "PRECONDITION: silence loads");
+        toTheEnd (s);
+        ok (s.snapshot().view().plan.status == PlanStatus::Unavailable && s.measurementJob() == 0,
+            "PRECONDITION: silence measured to the end, its plan unavailable");
+        const auto [demand, answer] = floor (s, zeros.size());
+        ok (demand.status == QueryStatus::Unavailable && demand.bytes == 0 && answer.view().status == QueryStatus::Unavailable
+            && answer.view().values.empty(), "a silent source: DitherFloor is Unavailable, never Pending forever");
+    }
+    {
+        constexpr std::uint64_t frames = 480000;
+        std::vector<float> left (frames), right (frames); source (left, right);
+        const float* planes[] { left.data(), right.data() };
+        auto made = Session::create(); auto& s = *made.session;
+        ok (s.apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None
+            && s.apply (command::Cancel { 2, s.measurementJob() }).rejection == Rejection::None,
+            "PRECONDITION: a source loads, and its measurement is cancelled before it starts");
+        const auto [stopped, stoppedAnswer] = floor (s, frames);
+        ok (stopped.status == QueryStatus::Cancelled && stopped.bytes == 0 && stoppedAnswer.view().status == QueryStatus::Cancelled
+            && stoppedAnswer.view().reason == MeasurementReason::Cancelled && stoppedAnswer.view().values.empty(),
+            "cancelled before the placement: DitherFloor is Cancelled");
+        ok (s.apply (command::ContinueMeasurement { 3 }).rejection == Rejection::None
+            && floor (s, frames).second.view().status == QueryStatus::Pending, "continued: Pending again");
+        toTheEnd (s);
+        ok (floor (s, frames).second.view().status == QueryStatus::Ready, "and Ready once the plan has placed the devices");
+    }
+    {
+        // Stopped in the window after the loudness is measured and before the devices are placed (review, 07.10: the
+        // loudness kept Ready and the plan None, so the floor answered Pending forever while step() said Done).
+        constexpr std::uint64_t frames = 480000;
+        std::vector<float> left (frames), right (frames); source (left, right);
+        const float* planes[] { left.data(), right.data() };
+        auto made = Session::create(); auto& s = *made.session;
+        ok (s.apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None, "PRECONDITION: a source loads");
+        const auto window = [&]
+        {
+            const auto snapshot = s.snapshot();
+            return snapshot.view().measurements[std::size_t (Analyzer::Loudness)].status == MeasurementStatus::Ready
+                && snapshot.view().plan.dither.bits == 0;
+        };
+        bool found = false;
+        for (unsigned i = 0; i < 1000000 && ! (found = window()) && s.step (1).state != StepState::Done; ++i) {}
+        ok (found && s.measurementJob() != 0, "PRECONDITION: the loudness is Ready, the devices not yet placed, the measurement running");
+        ok (floor (s, frames).second.view().status == QueryStatus::Pending, "there, while the measurement runs: Pending");
+        ok (s.apply (command::Cancel { 2, s.measurementJob() }).rejection == Rejection::None && s.state() == State::MeasurementStopped
+            && s.step (64).state == StepState::Done, "PRECONDITION: the measurement is cancelled there, and the pump has nothing to do");
+        const auto [demand, answer] = floor (s, frames);
+        ok (demand.status == QueryStatus::Cancelled && demand.bytes == 0 && answer.view().status == QueryStatus::Cancelled,
+            "cancelled after the loudness, before the placement: Cancelled, not Pending forever");
+        ok (s.apply (command::ContinueMeasurement { 3 }).rejection == Rejection::None
+            && floor (s, frames).second.view().status == QueryStatus::Pending, "continued: Pending again");
+        toTheEnd (s);
+        ok (floor (s, frames).second.view().status == QueryStatus::Ready, "and Ready at its end");
+    }
+    {
+        // A measured source (the sidecar's facts, no audio and no measurement job) places the devices at once when its
+        // loudness and true peak are usable, and never otherwise.
+        const auto measured = [&] (std::optional<double> truePeak)
+        {
+            auto made = Session::create(); auto& s = *made.session;
+            const MeasuredSource facts { "measured", 0x1234567890abcdefull, 480000, 48000, 2, 48000, 24, true, -14.0, truePeak };
+            const bool loaded = s.loadMeasured (1, facts).rejection == Rejection::None && s.measurementJob() == 0;
+            return std::pair { loaded, floor (s, facts.frames).first.status };
+        };
+        const auto [usableLoaded, usable] = measured (-1.0);
+        const auto [unusableLoaded, unusable] = measured (std::nullopt);
+        ok (usableLoaded && usable == QueryStatus::Ready, "a measured source with its loudness and true peak: placed at once, Ready");
+        ok (unusableLoaded && unusable == QueryStatus::Unavailable,
+            "a measured source without a true peak: nothing will place the devices — Unavailable, not Pending forever");
+    }
+}
 int main()
 {
-    nativeQueries(); abiQueries(); reviewRegressions();
+    ditherFloorRows(); ditherFloorEnds(); nativeQueries(); abiQueries(); reviewRegressions();
     std::printf ("measurement-query-digest=%016llx\n", static_cast<unsigned long long> (digest));
     return felitronics::test::report();
 }

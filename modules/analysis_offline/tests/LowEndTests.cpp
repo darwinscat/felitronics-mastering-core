@@ -83,6 +83,7 @@
 #include <complex>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <algorithm>
 #include <random>
 #include <string>
@@ -2239,5 +2240,57 @@ int main()
         }
     }
 
+    //==========================================================================
+    test::group ("noteTopHz — a table to 500 Hz reads the note bit for bit as a 300 Hz table (owner, 07.10: the drawings)");
+    {
+        // A bass and a side tone under 300 Hz, and two LOUDER tones above it: without the note's top they would be the
+        // loudest bands, the frames' maxima and the background's majority. 12 s at 12 kHz: several frames.
+        const std::size_t n = 144000;
+        Stereo x; x.l.assign (n, 0.0f); x.r.assign (n, 0.0f);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const double t = (double) i / kFs;
+            const double m = 0.3 * std::sin (2.0 * kPi * 41.2 * t) + 0.6 * std::sin (2.0 * kPi * 400.0 * t);
+            const double sd = 0.1 * std::sin (2.0 * kPi * 110.0 * t) + 0.4 * std::sin (2.0 * kPi * 450.0 * t);
+            x.l[i] = (float) (m + sd); x.r[i] = (float) (m - sd);
+        }
+        const auto measured = [&] (double highNoteHz, double noteTopHz)
+        {
+            LowEndParams p = base; p.lowNoteHz = 10.0; p.highNoteHz = highNoteHz; p.noteTopHz = noteTopHz; p.fftOrder = 15;
+            auto le = std::make_unique<LowEnd>(); le->setParams (p);
+            ok (test::run (le->prepare (kFs, 4096, 2)) && test::run (feed (*le, x, 2)), "prepare and feed");
+            return le;
+        };
+        const auto wide = measured (500.0, 300.0), narrow = measured (300.0, 0.0), whole = measured (500.0, 0.0);
+        const auto b64 = [] (double v) { return std::bit_cast<std::uint64_t> (v); };
+        bool bands = wide->bandCount() > narrow->bandCount() && narrow->bandCount() > 0;
+        for (int b = 0; bands && b < narrow->bandCount(); ++b)
+        {
+            const auto w = wide->band (b), o = narrow->band (b);
+            bands = w.midi == o.midi && b64 (w.energy) == b64 (o.energy) && b64 (w.density) == b64 (o.density)
+                 && b64 (w.sideEnergy) == b64 (o.sideEnergy) && b64 (w.centroidHz) == b64 (o.centroidHz)
+                 && wide->dutyCount (b) == narrow->dutyCount (b) && b64 (wide->duty (b)) == b64 (narrow->duty (b))
+                 && b64 (wide->levelWhenOnDb (b)) == b64 (narrow->levelWhenOnDb (b))
+                 && b64 (wide->marginWhenOnDb (b)) == b64 (narrow->marginWhenOnDb (b));
+        }
+        bool above = true;
+        for (int b = narrow->bandCount(); b < wide->bandCount(); ++b)
+            above = above && wide->dutyCount (b) == 0 && wide->band (b).energy > 0.0;
+        ok (bands, "every band up to 300 Hz: its energy, density, side, centroid, duty and margin, bit for bit");
+        ok (above, "a band above 300 Hz: measured for a drawing, and an occupancy of 0");
+        const auto lw = wide->lowestOccupiedBand (0.1, 25.0), ln = narrow->lowestOccupiedBand (0.1, 25.0);
+        ok (wide->noteReason() == narrow->noteReason() && wide->noteValid() && wide->dutyFrames() == narrow->dutyFrames()
+            && wide->peakBand() == narrow->peakBand() && wide->peakDensityBand() == narrow->peakDensityBand()
+            && wide->secondBand() == narrow->secondBand() && wide->peakMidi() == narrow->peakMidi()
+            && b64 (wide->backgroundDensity()) == b64 (narrow->backgroundDensity())
+            && b64 (wide->peakBandEnergy()) == b64 (narrow->peakBandEnergy()) && b64 (wide->peakShare()) == b64 (narrow->peakShare())
+            && b64 (wide->totalBandEnergy()) == b64 (narrow->totalBandEnergy()) && b64 (wide->bandRangeShare()) == b64 (narrow->bandRangeShare())
+            && b64 (wide->peakCentroidHz()) == b64 (narrow->peakCentroidHz()) && wide->firstResolvedBand() == narrow->firstResolvedBand()
+            && lw.band == ln.band && lw.midi == ln.midi && b64 (lw.duty) == b64 (ln.duty) && b64 (lw.marginWhenOnDb) == b64 (ln.marginWhenOnDb),
+            "the note's readings — peak, runner-up, background, totals, share, lowest occupied band — bit for bit (peak MIDI "
+            + std::to_string (wide->peakMidi()) + ")");
+        ok (whole->peakMidi() != narrow->peakMidi() && b64 (whole->backgroundDensity()) != b64 (narrow->backgroundDensity()),
+            "CONTROL: the whole 500 Hz table without the note's top reads another note (MIDI " + std::to_string (whole->peakMidi()) + ")");
+    }
     return test::report();
 }

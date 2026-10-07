@@ -85,7 +85,15 @@ constexpr Golden kGolden[] = {
     // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
     // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
     // It was 3ca74d45e21253d9; updated in place before the release.
-    { "2026-10", 0x086fda481af08315ull },
+    // ...and the low end measured from 10 Hz, the lowest note sought from 25 Hz (owner, 06.10: [lowEnd.run] lowNoteHz 10,
+    // [lowEnd] lowestNoteFromHz 25): a master whose lowest band on lay between 20 and 25 Hz takes its note from the bands
+    // above; it was 086fda481af08315; updated in place, as above (no 2026-10 project is saved).
+    // ...and every manual knob stepless (owner, 07.10: step 0, a typed value kept as typed — no machine value moves), the
+    // low-end table to 500 Hz with the note's readings kept to 300 Hz (noteTopHz, 07.10: the drawings), and [lowEnd]
+    // occupiedAboveBackgroundDb 6 (07.10: a mix with no bass is unsure); it was e16b73aead43a728; updated in place, as above.
+    // ...and [lowEnd] noteRangeShareAtLeastDb −140 (07.10, the same decision: a float tone's rounding lines are no note); it
+    // was 4fab20b29ed728bb; updated in place, as above.
+    { "2026-10", 0x702dd4d0cbf8d059ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -223,9 +231,18 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.hpf.hzMax, 80.0), "a person's high-pass knob travels to 80 Hz (owner, 01.10)");
     need (same (e.hpf.hzMin, 15.0), "the high-pass knob starts at 15 Hz");
     need (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "the high-pass slopes are 12, 24 and 48 dB/oct");
-    need (same (e.hpf.comfort.lowHz, 24.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 24–42 Hz");
-    need (same (e.hpf.comfort.warningLowHz, 20.0) && same (e.hpf.comfort.warningHighHz, 50.0),
-          "the high-pass field warns towards 20 and 50 Hz");
+    {
+        const std::pair<std::string_view, double> marks[] = { { "kick", 50.0 }, { "bass4", 41.2 }, { "bass5", 30.87 },
+                                                              { "piano", 27.5 }, { "guitar", 82.41 }, { "speech", 70.0 } };
+        bool same6 = e.hpf.marks.size() == std::size (marks);
+        for (std::size_t i = 0; same6 && i < std::size (marks); ++i)
+            same6 = e.hpf.marks[i].key == marks[i].first && same (e.hpf.marks[i].hz, marks[i].second);
+        need (same6, "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and "
+                     "speech 70 Hz — no 808 (owner, 06.10)");
+    }
+    need (same (e.hpf.comfort.lowHz, 30.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 30–42 Hz (owner, 06.10)");
+    need (same (e.hpf.comfort.warningLowHz, 26.0) && same (e.hpf.comfort.warningHighHz, 50.0),
+          "the high-pass field warns towards 26 and 50 Hz (owner, 06.10: yellow from 30 down, the ramp as long as before)");
     need (same (e.hpf.noteAboveHz, 20.0) && same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
           && same (e.lowEnd.occupiedFromDuty, 0.10) && same (e.lowEnd.occupiedMarginWhenOnDb, 2.0),
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
@@ -235,24 +252,49 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
+    need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 500.0) && same (e.lowEnd.run.noteTopHz, 300.0)
+          && same (e.lowEnd.lowestNoteFromHz, 25.0),
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
+    need (same (e.lowEnd.occupiedAboveBackgroundDb, 6.0),
+          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)");
+    need (same (e.lowEnd.noteRangeShareAtLeastDb, -140.0),
+          "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
     need (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
     need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].upToDb, 2.6),
           "the machine glues on cd alone, up to 2.6 dB");
-    need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.1),
-          "the glue knob runs 0…3 dB in steps of 0.1");
+    need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.0),
+          "the glue knob runs 0…3 dB, stepless (owner, 07.10)");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
     need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
-    need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.2) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
+    need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.0) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
           && same (e.glue.mixDomain.min, 0.0) && same (e.glue.mixDomain.max, 1.0),
-          "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)");
+          "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)");
     need (same (e.glue.detectorOverP95Db, 1.5), "the glue's threshold is calibrated 1.5 dB over the P95: the knob is the reduction the loud places really get");
     const config::MonoBass& m = e.monoBass;
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
     need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),
           "the mono-bass width knob runs 0…1 in steps of 0.05");
-    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 5.0),
-          "the mono-bass crossover knob runs 60…300 Hz in steps of 5 (owner, 02.10)");
+    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 0.0),
+          "the mono-bass crossover knob runs 60…300 Hz, stepless (owner, 07.10)");
+    // THE COMFORT WINDOWS (owner, 07.10): low, high, warningLow, warningHigh — where a knob's field is neutral, out to red.
+    const auto window = [] (double low, double high, double warningLow, double warningHigh, double l, double h, double wl, double wh)
+    { return same (low, l) && same (high, h) && same (warningLow, wl) && same (warningHigh, wh); };
+    need (window (m.comfort.lowHz, m.comfort.highHz, m.comfort.warningLowHz, m.comfort.warningHighHz, 100, 180, 75, 250)
+          && window (e.glue.comfort.low, e.glue.comfort.high, e.glue.comfort.warningLow, e.glue.comfort.warningHigh, 0, 1.5, 0, 6)
+          && window (e.glue.mixComfort.low, e.glue.mixComfort.high, e.glue.mixComfort.warningLow, e.glue.mixComfort.warningHigh, 0.3, 1, 0, 1)
+          && window (e.saturation.driveComfort.low, e.saturation.driveComfort.high, e.saturation.driveComfort.warningLow,
+                     e.saturation.driveComfort.warningHigh, 0, 1.5, 0, 8),
+          "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
+          "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)");
+    // EVERY OTHER MANUAL KNOB IS STEPLESS (owner, 06.10 and 07.10: «все ручки недискретные»): step 0 keeps a typed value.
+    need (same (e.hpf.hzStep, 0.0) && same (e.tilt.step, 0.0) && same (e.low.step, 0.0) && same (e.bands.body.step, 0.0)
+          && same (e.bands.mud.step, 0.0) && same (e.bands.forward.step, 0.0) && same (e.bands.brightness.step, 0.0)
+          && same (e.bands.air.step, 0.0) && same (e.saturation.driveStep, 0.0) && same (c.targets.editLufs.step, 0.0)
+          && same (c.targets.editTp.step, 0.0),
+          "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
+          "and ceiling (owner, 06.10 and 07.10)");
     const auto& b = e.bands;
     need (same (b.body.normal.min, -1.5) && same (b.body.normal.max, 1.5) && same (b.forward.normal.min, -1.5) && same (b.forward.normal.max, 1.5)
           && same (b.brightness.normal.min, -1.5) && same (b.brightness.normal.max, 1.5) && same (b.air.normal.min, -1.5) && same (b.air.normal.max, 1.5)
@@ -266,8 +308,8 @@ std::vector<std::string> departures (const config::Config& c)
           "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");
     need (same (p.clippedPerMinute, 10.0), "a source is clipped from 10 confirmed clips a minute");
     need (same (p.kneeDb, 0.0), "the peak clipper is a hard clip");
-    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 6.0) && same (p.manualStepDb, 0.1),
-          "the manual cut off the peaks runs 0…6 dB in steps of 0.1 (owner, 02.10)");
+    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 6.0) && same (p.manualStepDb, 0.0),
+          "the manual cut off the peaks runs 0…6 dB, stepless (owner, 02.10 and 07.10)");
     need (e.dither.seed == 0x853c49e6748fea9bull && e.dither.autoBlank && e.dither.autoBlankSamples == 4096
           && e.dither.shaping == config::NoiseShaping::Weighted,
           "the dither: weighted TPDF from the fixed seed, blanked after 4096 zero samples");
@@ -347,6 +389,13 @@ void aDepartureIsNamed()
         { false, "regularCeilingDbTp = -1", "regularCeilingDbTp = -2",
           "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
         { false, "machineTopHz = 50", "machineTopHz = 51", "the machine's high-pass tops out at 50 Hz" },
+        { false, "{ key = \"piano\", hz = 27.5 }", "{ key = \"sub808\", hz = 28 }",
+          "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and speech 70 Hz — no 808 (owner, 06.10)" },
+        { false, "{ key = \"speech\", hz = 70 }", "{ key = \"speech\", hz = 85 }",
+          "the high-pass curve's marks: kick 50, E1 41.2, B0 30.87, the piano's A0 27.5, the guitar's E2 82.41 and speech 70 Hz — no 808 (owner, 06.10)" },
+        { false, "comfort = { lowHz = 30,", "comfort = { lowHz = 27,", "the high-pass comfort window is 30–42 Hz (owner, 06.10)" },
+        { false, "warningLowHz = 26,", "warningLowHz = 23,",
+          "the high-pass field warns towards 26 and 50 Hz (owner, 06.10: yellow from 30 down, the ramp as long as before)" },
         { false, "machineTopHz = 50", "machineTopHz = 80", "the machine's high-pass tops out at 50 Hz" },
         { false, "hzMax = 80", "hzMax = 50", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "hzMax = 80", "hzMax = 81", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
@@ -378,6 +427,35 @@ void aDepartureIsNamed()
           "targets.club.hpfFloor" },
         { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
+        { false, "lowNoteHz = 10", "lowNoteHz = 20",
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "highNoteHz = 500", "highNoteHz = 300",
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "noteTopHz = 300", "noteTopHz = 0",
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -160",
+          "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)" },
+        { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
+          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
+        { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",
+          "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
+          "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)" },
+        { false, "driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }",
+          "driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 6 }",
+          "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
+          "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)" },
+        { false, "hzStep = 0", "hzStep = 1",
+          "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
+          "and ceiling (owner, 06.10 and 07.10)" },
+        { true, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.1 }",
+          "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
+          "and ceiling (owner, 06.10 and 07.10)" },
+        { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
+          "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
+          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
         { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
@@ -394,8 +472,8 @@ void aDepartureIsNamed()
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
         { false, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0.4",
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
-        { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
-        { false, "mixStep = 0.2", "mixStep = 0.05", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
+        { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)" },
+        { false, "mixStep = 0\n", "mixStep = 0.2\n", "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)" },
         { false, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.5 }", "the machine glues on cd alone, up to 2.6 dB" },
         { false, "lowWidth = 0\n", "lowWidth = 0.2\n", "mono bass is full mono below its crossover" },
         { false, "hzMin = 15", "hzMin = 16", "the high-pass knob starts at 15 Hz" },
