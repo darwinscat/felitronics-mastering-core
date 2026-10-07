@@ -291,6 +291,12 @@ void theSchemaRefuses()
     mustRefuse (E, "noteTopHz = 300\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.noteTopHz");
     mustRefuse (E, "noteTopHz = 300", "noteTopHz = -1", "-1", Fault::OutOfRange, "lowEnd.run.noteTopHz");
     mustAccept (E, "noteTopHz = 300", "noteTopHz = 0");
+    // The rate up to which fftOrder holds (owner, 07.10: 96 kHz resolves as 48 kHz): required and positive; one that asks an
+    // order the analyzer cannot take at a source rate (1 Hz: 13 more at 8 kHz) refuses the block.
+    mustRefuse (E, "fftOrderUpToHz = 48000\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.fftOrderUpToHz");
+    mustRefuse (E, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 0", "0", Fault::OutOfRange, "lowEnd.run.fftOrderUpToHz");
+    mustRefuse (E, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 1", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    mustAccept (E, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 96000");
     // The background's veto is gone (owner, 07.10: real mixes keep their notes): [lowEnd] occupiedAboveBackgroundDb is unknown.
     mustRefuse (E, "occupiedMarginWhenOnDb = 2\n", "occupiedMarginWhenOnDb = 2\noccupiedAboveBackgroundDb = 6\n", "occupiedAboveBackgroundDb",
                 Fault::UnknownKey, "lowEnd.occupiedAboveBackgroundDb");

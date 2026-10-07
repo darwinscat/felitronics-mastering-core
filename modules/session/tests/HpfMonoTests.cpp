@@ -12,6 +12,7 @@
 #include "Devices.h"
 #include "EqCurve.h"
 #include "Grid.h"
+#include "MeasurementPlan.h"
 #include "Planner.h"
 #include "RealMixLowEnd.h"
 #include <felitronics/session/Snapshot.h>
@@ -375,9 +376,9 @@ void whereTheBassSounds()
 
 struct Mix
 {
-    static constexpr std::uint32_t rate = 48000;
+    std::uint32_t rate = 48000;
     std::vector<float> left, right;
-    explicit Mix (double seconds) : left (std::size_t (seconds * rate)), right (left.size()) {}
+    explicit Mix (double seconds, std::uint32_t at = 48000) : rate (at), left (std::size_t (seconds * at)), right (left.size()) {}
     // A passage of a sine from `from` to `to` seconds, fading over 50 ms at each end (a gated sine's click is broadband).
     Mix& passage (double hz, double level, double from, double to)
     {
@@ -458,7 +459,7 @@ Measured measure (const Mix& m, const char* target = "allStreaming")
     auto& s = *out.s;
     const float* planes[] { m.left.data(), m.right.data() };
     (void) s.apply (command::SetTarget { 1, target });
-    ok (s.apply (command::Load { 2, { planes, 2, m.left.size(), Mix::rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
+    ok (s.apply (command::Load { 2, { planes, 2, m.left.size(), m.rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
     untilTheLowEnd (s, 2000000);
     out.plan = s.snapshot().view().plan;
     return out;
@@ -742,7 +743,7 @@ void everyTargetFromOneMeasurement()
             && (v.view().plan.hpf.cut == HpfCut::Note || v.view().plan.hpf.cut == HpfCut::Floor)
             && v.view().measurements[std::size_t (Analyzer::LowEnd)].key == before.view().measurements[std::size_t (Analyzer::LowEnd)].key;
         if (v.view().plan.hpf.cut == HpfCut::Note)
-            each = each && std::abs (coreLoss (d.hpf.machine.fq, target.hpfSlope, Mix::rate, *v.view().plan.hpf.noteHz) - target.noteLossDb.toDouble()) < 1e-6;
+            each = each && std::abs (coreLoss (d.hpf.machine.fq, target.hpfSlope, 48000, *v.view().plan.hpf.noteHz) - target.noteLossDb.toDouble()) < 1e-6;
     }
     ok (each, "every target: its slope, its crossover, its loss at the note; the person's edit reset by the change");
     ok (! again, "and no measurement ran again");
@@ -930,6 +931,48 @@ void realMixesKeepTheirNotes()
     ok (gaze && gaze->v018Note == 27, "PRECONDITION: Cold Gaze of Eternity, the demo, had D♯1 at v0.18.0");
 }
 
+// EVERY RATE RESOLVES AS 48 kHz DOES (owner, 07.10): the low-end run's order is the one whose bin is no wider than the
+// configured order's at [lowEnd.run] fftOrderUpToHz — 17 up to 48 kHz, as before, one more per doubling above it — so a bass
+// at 88.2, 96 or 192 kHz is found as at 48 kHz, with the same window and hop in seconds, and nothing at 48 kHz and under moves.
+void everyRateResolvesAsFortyEight()
+{
+    felitronics::test::group ("every rate resolves as 48 kHz does: the order rises above 48 kHz, and nothing at 48 kHz and under moves");
+    {
+        bool each = true;
+        std::string worst;
+        const std::pair<std::uint32_t, int> orders[] = { { 8000, 17 }, { 11025, 17 }, { 16000, 17 }, { 22050, 17 }, { 32000, 17 },
+                                                         { 44100, 17 }, { 48000, 17 }, { 48001, 18 }, { 88200, 18 }, { 96000, 18 },
+                                                         { 96001, 19 }, { 176400, 19 }, { 192000, 19 }, { 384000, 20 }, { 768000, 21 } };
+        for (const auto& [rate, order] : orders)
+        {
+            const Pcm pcm { nullptr, 2, std::uint64_t (rate) * 20u, rate };
+            const auto p = detail::MeasurementPlan::parametersFor (pcm);
+            const bool all = p.lowEnd.fftOrder == order && p.lowEnd150.fftOrder == order && p.infraLow.fftOrder == order;
+            const auto plan = detail::MeasurementPlan::storageFor (pcm, p);
+            const bool available = plan.analyzers[std::size_t (Analyzer::LowEnd)].available;
+            if (! (all && available) && worst.empty()) worst = std::to_string (rate) + " Hz: order " + std::to_string (p.lowEnd.fftOrder);
+            each = each && all && available;
+        }
+        ok (each, "the order of all three low-end runs: 17 from 8 to 48 kHz, 18 to 96, 19 to 192, 20 at 384, 21 at 768 — and "
+                  "the run is available at each" + (worst.empty() ? "" : " — not " + worst));
+    }
+    for (const std::uint32_t rate : { 88200u, 96000u, 192000u })
+    {
+        const std::string at = " at " + std::to_string (rate) + " Hz";
+        const auto e1 = measure (Mix (20, rate).tone (41.2, 0.3));
+        const auto resolved = lowNumber (e1, "lowestOccupiedResolved"), hop = lowNumber (e1, "hopSamples");
+        ok (e1.plan.hpf.cut == HpfCut::Note && e1.plan.hpf.noteMidi == 28 && resolved && same (*resolved, 1.0),
+            "E1 41.2 Hz alone" + at + ": its note, resolved (cut " + std::to_string (int (e1.plan.hpf.cut)) + ")");
+        const double window = rate > 96000 ? 524288.0 : 262144.0;
+        ok (hop && same (*hop, window / 2) && std::abs (window / rate - 131072.0 / (rate == 88200 ? 44100 : 48000)) < 1e-12,
+            "and the run's window and hop" + at + " last as at " + (rate == 88200 ? "44.1" : "48") + " kHz: hop " + std::to_string (hop.value_or (0)));
+        const auto b0 = measure (Mix (20, rate).tone (30.87, 0.3).tone (1000.0, 0.1));
+        ok (b0.plan.hpf.noteMidi == 23 && b0.plan.hpf.cut == HpfCut::BelowFloor, "B0 30.87 Hz under a 1 kHz tone" + at + ": its note, under the floor");
+        const auto none = measure (Mix (20, rate).tone (1000.0, 0.3));
+        ok (none.plan.hpf.cut == HpfCut::Unsure && same (none.plan.hpf.cutoffHz, 32.0), "a 1 kHz tone alone" + at + ": unsure, the floor");
+    }
+}
+
 //==============================================================================
 // MASTER AS SOON AS THE LOUDNESS AND THE TRUE PEAK ARE KNOWN (owner, 02.10): the devices are placed then; a field whose
 // measurement has not ended is the machine's "not measured yet"; a person may edit it; a hidden panel's master waits in
@@ -941,7 +984,7 @@ Early loadMix (const Mix& m, const char* target)
     Early out { Session::create().session };
     const float* planes[] { m.left.data(), m.right.data() };
     (void) out.s->apply (command::SetTarget { 1, target });
-    ok (out.s->apply (command::Load { 2, { planes, 2, m.left.size(), Mix::rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
+    ok (out.s->apply (command::Load { 2, { planes, 2, m.left.size(), m.rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
     return out;
 }
 template <class P> bool pumpUntil (Session& s, P&& done, unsigned limit = 4000000)
@@ -1127,6 +1170,7 @@ int main()
     underTwentyFiveHzIsTheSpectrumsNotTheNotes();
     aMixWithNoBassIsUnsure();
     realMixesKeepTheirNotes();
+    everyRateResolvesAsFortyEight();
     masterAtLoudnessAndPeak();
     aHiddenMasterAtLoudnessAndPeakSoundsAsLate();
     theDeviceRunsGoFirst();

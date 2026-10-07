@@ -197,8 +197,15 @@ infraLowCrossoverHz = 30
 # drawings (LowSpectrum, LowSide: the side share for mono bass up to 500), while noteTopHz keeps every reading of the
 # note — occupancy, the loudest band, the lowest band, the NoEnergy gate — on the bands up to 300 Hz, MIDI 4…62, as
 # before: a band above it carries energy, density and side for a drawing, and an occupancy of 0. fftOrder 17: a 2.73 s window and a
-# 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo); its bands are four bins wide — a Hann
-# main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1, 50.71 at 96), and the bands under that are published as unresolved. skipBlocks 0 is a named
+# 1.365 s hop at 48 kHz (18 would take 10.7 MiB of the run's own buffers instead of 5.4 on stereo); its bands are four bins wide — a Hann
+# main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1), and the bands under that are published as unresolved.
+# fftOrderUpToHz (owner, 07.10: 96 kHz resolves as 48 kHz): fftOrder holds up to this rate, and above it the order is the
+# smallest whose bin is no wider than fftOrder's here — 18 at 88.2 and 96 kHz, 19 to 192 kHz — so the bands resolve from
+# the same 25.36 Hz (23.30 at 88.2) and the window and the hop last as long; at 17 a 96 kHz run resolved only from 50.71 Hz
+# and found no bass under it. A rate under it keeps fftOrder, never a lower order. Measured at 96 kHz: 0.67 s of the run per
+# minute of programme instead of 0.83 (half the frames), and its own buffers 10.7 MiB instead of 5.4, as 18 would at 48 kHz — the declared
+# work peak of a 10-minute stereo source 15.8 MiB higher (684 MiB), its declared peak, the load's, unchanged at 879 MiB.
+# skipBlocks 0 is a named
 # impossibility rather than a choice: the settling count the core derives from the filter is not on its interface, and
 # skipBlocks moves only the histogram, which is not read. The schema hands this block — and the infra-low run, the same
 # geometry split at infraLowCrossoverHz — to LowEnd::storageFor at every source rate the product accepts (8, 44.1, 48 and
@@ -209,6 +216,7 @@ lowNoteHz = 10
 highNoteHz = 500
 noteTopHz = 300
 fftOrder = 17
+fftOrderUpToHz = 48000
 dutyThresholdDb = 20
 skipBlocks = 0
 

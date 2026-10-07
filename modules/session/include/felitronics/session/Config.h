@@ -179,7 +179,8 @@ struct LowEndRun
     double lowNoteHz = 0.0;
     double highNoteHz = 0.0;
     double noteTopHz = 0.0;                    // the note's readings see the bands up to here; above, drawings alone
-    std::int32_t fftOrder = 0;
+    std::int32_t fftOrder = 0;                 // the order up to fftOrderUpToHz; above it, one more per doubling of the rate
+    double fftOrderUpToHz = 0.0;
     double dutyThresholdDb = 0.0;
     std::int32_t skipBlocks = 0;
 };

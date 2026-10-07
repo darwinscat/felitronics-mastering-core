@@ -55,7 +55,9 @@ MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
     p.lowEnd.lowNoteHz = number (run.find ("lowNoteHz"));
     p.lowEnd.highNoteHz = number (run.find ("highNoteHz"));
     p.lowEnd.noteTopHz = number (run.find ("noteTopHz"));
-    p.lowEnd.fftOrder = int (number (run.find ("fftOrder")));
+    // The order that resolves at this rate as fftOrder does at fftOrderUpToHz (owner, 07.10: 96 kHz as 48 kHz).
+    p.lowEnd.fftOrder = analysis::LowEnd::fftOrderFor (double (pcm.sampleRate), int (number (run.find ("fftOrder"))),
+                                                       number (run.find ("fftOrderUpToHz")));
     p.lowEnd.dutyThresholdDb = number (run.find ("dutyThresholdDb"));
     p.lowEnd.skipBlocks = int (number (run.find ("skipBlocks")));
     const auto blockFrames = std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (pcm.sampleRate) * 0.01 + 0.5)));

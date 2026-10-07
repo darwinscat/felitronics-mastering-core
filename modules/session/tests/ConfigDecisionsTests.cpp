@@ -98,7 +98,10 @@ constexpr Golden kGolden[] = {
     // it was 702dd4d0cbf8d059; updated in place, as above.
     // ...and [hpf] note.aboveHz removed (owner, 07.10): it was 20 Hz, under the 25 Hz the note is sought from, so no note
     // and no master moves; it was 298d807f53e7f865; updated in place, as above.
-    { "2026-10", 0x5c869a1028b4a6fdull },
+    // ...and [lowEnd.run] fftOrderUpToHz 48000 (owner, 07.10: 96 kHz resolves as 48 kHz): the low-end order rises above
+    // 48 kHz, so a master over 48 kHz whose bass was unresolved takes its note; nothing at 48 kHz and under moves; it was
+    // 5c869a1028b4a6fd; updated in place, as above.
+    { "2026-10", 0x294f80d8221bb306ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -261,6 +264,8 @@ std::vector<std::string> departures (const config::Config& c)
           && same (e.lowEnd.lowestNoteFromHz, 25.0),
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
+    need (e.lowEnd.run.fftOrder == 17 && same (e.lowEnd.run.fftOrderUpToHz, 48000.0),
+          "the low end resolves at every rate as at 48 kHz: fftOrder 17 up to 48 kHz, one more per doubling of the rate above it (owner, 07.10)");
     need (same (e.lowEnd.noteRangeShareAtLeastDb, -140.0),
           "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
@@ -439,6 +444,8 @@ void aDepartureIsNamed()
         { false, "noteTopHz = 300", "noteTopHz = 0",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 44100",
+          "the low end resolves at every rate as at 48 kHz: fftOrder 17 up to 48 kHz, one more per doubling of the rate above it (owner, 07.10)" },
         { false, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -160",
           "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)" },
         { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",

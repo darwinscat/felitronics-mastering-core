@@ -893,6 +893,20 @@ public:
     }
     static constexpr int lobeBins() noexcept { return kLobeBins; }   // so a caller never re-types the 4
 
+    // THE ORDER THAT RESOLVES AT `sampleRate` AS `order` DOES AT `upToHz`: the smallest order at or above `order` whose bin,
+    // sampleRate / 2^order, is no wider than upToHz / 2^order's — `order` itself at upToHz and under, one more per doubling
+    // of the rate above it (88.2 and 96 kHz take 18 where 44.1 and 48 kHz take 17). The bin width, the window's duration
+    // and the hop's are then those at upToHz or finer, so the bands resolve from the same centre and the frames fall as
+    // often. Never lower than `order`: a rate under upToHz keeps it. A non-finite or non-positive rate or upToHz gives
+    // `order`, and the result stops 32 above it — what the analyzer admits is storageFor()'s to say.
+    static int fftOrderFor (double sampleRate, int order, double upToHz) noexcept
+    {
+        if (! (sampleRate > 0.0) || ! (upToHz > 0.0) || ! std::isfinite (sampleRate) || ! std::isfinite (upToHz)) return order;
+        int k = 0;
+        for (double edge = upToHz; k < 32 && sampleRate > edge; edge *= 2.0) ++k;
+        return order + k;
+    }
+
     //==============================================================================
     // --- the report: part 2b, OCCUPANCY. How OFTEN a band is there, not how loud it is on average ---
     //
