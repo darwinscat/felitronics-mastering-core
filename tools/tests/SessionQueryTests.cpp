@@ -522,9 +522,51 @@ void ditherFloorRows()
     const auto p = rows (psycho, 3000.0, 3000.0, 1);
     ok (same (p[2], double (MeasurementReason::None)) && p[1] < flat[1], "Psychoacoustic: below the flat floor where the ear is keenest, 3 kHz");
 }
+// THE DITHER'S FLOOR ALWAYS ENDS (review, 07.10): a silent source's plan cannot be made — Unavailable, not Pending
+// forever; a measurement cancelled before the placement — Cancelled, Pending again once it continues, Ready at its end.
+void ditherFloorEnds()
+{
+    felitronics::test::group ("DitherFloor reaches a terminal answer: Unavailable for a plan that cannot be made, Cancelled while stopped");
+    const auto floor = [] (Session& s, std::uint64_t frames)
+    {
+        MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.kind = QueryKind::DitherFloor;
+        q.fromHz = 20; q.toHz = 20000; q.columns = 8;
+        return std::pair { s.queryStorage (q), ask (s, q) };
+    };
+    const auto toTheEnd = [] (Session& s) { for (unsigned i = 0; i < 1000000 && s.step (64).state != StepState::Done; ++i) {} };
+    {
+        std::vector<float> zeros (96000, 0.0f);
+        const float* planes[] { zeros.data() };
+        auto made = Session::create(); auto& s = *made.session;
+        ok (s.apply (command::Load { 1, { planes, 1, zeros.size(), 48000 }, {} }).rejection == Rejection::None, "PRECONDITION: silence loads");
+        toTheEnd (s);
+        ok (s.snapshot().view().plan.status == PlanStatus::Unavailable && s.measurementJob() == 0,
+            "PRECONDITION: silence measured to the end, its plan unavailable");
+        const auto [demand, answer] = floor (s, zeros.size());
+        ok (demand.status == QueryStatus::Unavailable && demand.bytes == 0 && answer.view().status == QueryStatus::Unavailable
+            && answer.view().values.empty(), "a silent source: DitherFloor is Unavailable, never Pending forever");
+    }
+    {
+        constexpr std::uint64_t frames = 480000;
+        std::vector<float> left (frames), right (frames); source (left, right);
+        const float* planes[] { left.data(), right.data() };
+        auto made = Session::create(); auto& s = *made.session;
+        ok (s.apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None
+            && s.apply (command::Cancel { 2, s.measurementJob() }).rejection == Rejection::None,
+            "PRECONDITION: a source loads, and its measurement is cancelled before it starts");
+        const auto [stopped, stoppedAnswer] = floor (s, frames);
+        ok (stopped.status == QueryStatus::Cancelled && stopped.bytes == 0 && stoppedAnswer.view().status == QueryStatus::Cancelled
+            && stoppedAnswer.view().reason == MeasurementReason::Cancelled && stoppedAnswer.view().values.empty(),
+            "cancelled before the placement: DitherFloor is Cancelled");
+        ok (s.apply (command::ContinueMeasurement { 3 }).rejection == Rejection::None
+            && floor (s, frames).second.view().status == QueryStatus::Pending, "continued: Pending again");
+        toTheEnd (s);
+        ok (floor (s, frames).second.view().status == QueryStatus::Ready, "and Ready once the plan has placed the devices");
+    }
+}
 int main()
 {
-    ditherFloorRows(); nativeQueries(); abiQueries(); reviewRegressions();
+    ditherFloorRows(); ditherFloorEnds(); nativeQueries(); abiQueries(); reviewRegressions();
     std::printf ("measurement-query-digest=%016llx\n", static_cast<unsigned long long> (digest));
     return felitronics::test::report();
 }

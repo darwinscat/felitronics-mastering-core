@@ -27,16 +27,17 @@ inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u
 //   MasterReport            the master whole — the record a full snapshot carries for it, rows included (QueryView::master)
 // WHAT A SOURCE ALSO ANSWERS WITHOUT A MEASUREMENT (masterId 0, the whole source's frames, as LowSpectrum asks):
 //   DitherFloor             the noise floor the current delivery leaves (owner, 07.10): [hz,dbPerBin,reason] on a LOG grid
-//                           of `columns` points from fromHz (> 0) to toHz, both ends exactly as asked; Pending, with
-//                           nothing allocated, until the plan has placed the devices. The delivery is the plan's
-//                           (plan.dither: its bit depth, on, shaping) at the target's rate (the source's where the target
-//                           keeps it). The
-//                           total added noise is white — TPDF dither of ±1 LSB with its quantiser, LSB²/4; plain
-//                           rounding where no dither runs, LSB²/12; LSB = 2^-(bits-1) of full scale 1.0 — shaped by the
-//                           dither's NTF = 1 − H (Weighted, Psychoacoustic: felitronics-core Dither.h; flat with none).
-//                           The value is in the forensics `meanPower` convention, so it lies on the song's spectrum on
-//                           one axis: 10·log10 of the power a Hann window of N = 2^SourceForensicsParams::fftOrder (16384)
-//                           reads in ONE bin at the SOURCE's rate, |X_k|² / (N·Σw²), one-sided, not folded —
+//                           of `columns` points from fromHz (> 0) to toHz, both ends exactly as asked; nothing allocated
+//                           until the plan has placed the devices — Pending while that can come, Unavailable when no plan
+//                           can be made (a silent source), Cancelled while the measurement is stopped. The delivery is the
+//                           plan's (plan.dither: its bit depth, on, shaping) at the target's rate (the source's where the
+//                           target keeps it). The total added noise is white — TPDF dither of ±1 LSB with its quantiser,
+//                           LSB²/4; plain rounding where no dither runs, LSB²/12; LSB = 2^-(bits-1) of full scale 1.0 —
+//                           shaped by the dither's NTF = 1 − H (Weighted, Psychoacoustic: felitronics-core Dither.h;
+//                           flat with none). The value is in the forensics `meanPower` convention, so it lies on the
+//                           song's spectrum on one axis: 10·log10 of the power a Hann window of
+//                           N = 2^SourceForensicsParams::fftOrder (16384) reads in ONE bin at the SOURCE's rate,
+//                           |X_k|² / (N·Σw²), one-sided, not folded —
 //                           variance · |NTF(f)|² · sourceRate / (deliveryRate · N). Above the delivery's Nyquist:
 //                           reason Unsupported; a delivery of 32 bits and more (no quantiser): reason NoSignal.
 enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform,
