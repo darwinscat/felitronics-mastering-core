@@ -2294,6 +2294,52 @@ int main()
     }
 
     //==========================================================================
+    test::group ("noteFromHz — each frame's loudest band is sought from it up; only the occupancy moves (owner, 07.10)");
+    {
+        // A quiet E1 under a 15 Hz rumble 26 dB louder, 12 s at 12 kHz, a table from 10 Hz.
+        const std::size_t n = 144000;
+        Stereo x; x.l.assign (n, 0.0f); x.r.assign (n, 0.0f);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const double t = (double) i / kFs;
+            x.l[i] = x.r[i] = (float) (0.4 * std::sin (2.0 * kPi * 15.0 * t) + 0.02 * std::sin (2.0 * kPi * 41.2 * t));
+        }
+        const auto measured = [&] (double noteFromHz)
+        {
+            LowEndParams p = base; p.lowNoteHz = 10.0; p.highNoteHz = 300.0; p.fftOrder = 15; p.noteFromHz = noteFromHz;
+            auto le = std::make_unique<LowEnd>(); le->setParams (p);
+            ok (test::run (le->prepare (kFs, 4096, 2)) && test::run (feed (*le, x, 2)), "prepare and feed");
+            return le;
+        };
+        const auto whole = measured (0.0), from30 = measured (30.0);
+        const auto b64 = [] (double v) { return std::bit_cast<std::uint64_t> (v); };
+        int e1 = -1, rumble = -1;
+        for (int b = 0; b < whole->bandCount(); ++b)
+        {
+            if (whole->band (b).midi == 28) e1 = b;
+            if (whole->band (b).midi == 10) rumble = b;   // 14.57 Hz holds most of a 15 Hz tone
+        }
+        ok (e1 >= 0 && rumble >= 0 && whole->dutyCount (e1) == 0 && from30->dutyCount (e1) == from30->dutyFrames() && from30->dutyFrames() > 0,
+            "E1 under the rumble: never on against the whole table's loudest band, on in every frame against the loudest from 30 Hz");
+        ok (rumble >= 0 && from30->dutyCount (rumble) > 0 && from30->marginWhenOnDb (rumble) > whole->marginWhenOnDb (rumble),
+            "a band under 30 Hz is still measured against that reference — and stands over it");
+        bool same = whole->bandCount() == from30->bandCount() && whole->dutyFrames() == from30->dutyFrames();
+        for (int b = 0; same && b < whole->bandCount(); ++b)
+            same = b64 (whole->band (b).energy) == b64 (from30->band (b).energy) && b64 (whole->band (b).density) == b64 (from30->band (b).density);
+        ok (same && whole->peakMidi() == from30->peakMidi() && b64 (whole->backgroundDensity()) == b64 (from30->backgroundDensity())
+            && b64 (whole->bandRangeShare()) == b64 (from30->bandRangeShare()) && whole->noteReason() == from30->noteReason(),
+            "the energies, the peak, the background, the range's share and the frame gate: bit for bit");
+        LowEndParams bad = base; bad.noteFromHz = -1.0;
+        LowEndParams nan = base; nan.noteFromHz = std::numeric_limits<double>::quiet_NaN();
+        ok (! LowEnd::storageFor (kFs, 2, bad).ok && ! LowEnd::storageFor (kFs, 2, nan).ok, "a negative or NaN noteFromHz is refused");
+        LowEndParams q = base; q.lowNoteHz = 10.0; q.highNoteHz = 300.0; q.fftOrder = 15;
+        LowEnd primary, alike, companion; primary.setParams (q); alike.setParams (q); q.noteFromHz = 30.0; companion.setParams (q);
+        ok (primary.prepare (kFs, 4096, 2) && alike.prepareWithoutSpectrum (kFs, 4096, 2) && companion.prepareWithoutSpectrum (kFs, 4096, 2)
+            && feed (primary, x, 2) && alike.finishWithSpectrum (primary) && ! companion.finishWithSpectrum (primary),
+            "a companion whose reference starts elsewhere does not take the primary's occupancy; one that starts alike does");
+    }
+
+    //==========================================================================
     test::group ("fftOrderFor — the order that resolves at a rate as the given order does at upToHz (owner, 07.10: 96 kHz as 48)");
     {
         bool each = true;

@@ -403,14 +403,16 @@ void readLimiter (Doc& d, Reader& in, Limiter& o)
 }
 
 // The low end (analysis::LowEnd): the main run and the infra-low run — the same geometry, split at infraLowCrossoverHz —
-// each admitted by LowEnd::storageFor at every source rate — at the order that rate takes — or refused whole.
-bool lowEndAdmits (const LowEndRun& r, double crossoverHz)
+// each admitted by LowEnd::storageFor at every source rate — at the order that rate takes — or refused whole. noteFromHz is
+// [lowEnd] lowestNoteFromHz, the bottom of each frame's occupancy reference.
+bool lowEndAdmits (const LowEndRun& r, double crossoverHz, double noteFromHz)
 {
     analysis::LowEndParams p;
     p.crossoverHz = crossoverHz;
     p.lowNoteHz = r.lowNoteHz;
     p.highNoteHz = r.highNoteHz;
     p.noteTopHz = r.noteTopHz;
+    p.noteFromHz = noteFromHz;
     p.dutyThresholdDb = r.dutyThresholdDb;
     p.skipBlocks = r.skipBlocks;
     return std::all_of (std::begin (kSourceRates), std::end (kSourceRates), [&] (double rate)
@@ -441,12 +443,12 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
                               t.required ("skipBlocks", r.skipBlocks) };
         run = std::all_of (std::begin (read), std::end (read), [] (bool x) { return x; });
     });
-    if (run && ! lowEndAdmits (o.run, o.run.crossoverHz)) d.refuse (in, "run", Refusal::AnalyzerRefuses);
+    if (run && ! lowEndAdmits (o.run, o.run.crossoverHz, o.lowestNoteFromHz)) d.refuse (in, "run", Refusal::AnalyzerRefuses);
     // The infra-low run is a second split BELOW the main one.
     if (in.required ("infraLowCrossoverHz", o.infraLowCrossoverHz, R { 0.0, 1.0e6 }) && run)
     {
         if (! (o.infraLowCrossoverHz < o.run.crossoverHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::OutOfOrder);
-        else if (! lowEndAdmits (o.run, o.infraLowCrossoverHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::AnalyzerRefuses);
+        else if (! lowEndAdmits (o.run, o.infraLowCrossoverHz, o.lowestNoteFromHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::AnalyzerRefuses);
     }
 }
 

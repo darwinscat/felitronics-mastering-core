@@ -180,6 +180,12 @@ struct LowEndParams
     // totalBandEnergy() and bandRangeShare(). A band above it is measured for a drawing alone: energy, density, side,
     // centroid, and an occupancy of 0. 0 (the default) means the whole table — the readings exactly as without it.
     double noteTopHz   = 0.0;
+    // THE OCCUPANCY REFERENCE'S BOTTOM: each frame's loudest band — the reference every band's occupancy is measured
+    // against — is sought among the note's bands whose centre lies at or above it, so a rumble under it cannot hold the
+    // bands above it under the duty line. Only that reference: the frame gate, the counts, the peak, the background and the
+    // NoEnergy gate read the whole note range as before, and a band under it is still counted against the reference.
+    // 0 (the default) means the whole table — the readings exactly as without it.
+    double noteFromHz  = 0.0;
     double tuningHz    = 440.0;     // A4. f(n) = tuningHz * 2^((n-69)/12), MIDI numbering (60 = C4)
     int    fftOrder    = 17;        // N = 1 << fftOrder. 17 is the smallest that resolves a semitone at
                                     // 30 Hz at 48 kHz — see "RESOLUTION" above.
@@ -373,6 +379,7 @@ public:
         if (p.skipBlocks < 0 || p.skipBlocks > kMaxBlocksLimit) return s;
         if (! (p.dutyThresholdDb >= 0.0) || ! (p.dutyThresholdDb <= 200.0)) return s;
         if (! (p.noteTopHz >= 0.0)) return s;
+        if (! (p.noteFromHz >= 0.0)) return s;
         if (! (p.crossoverHz >= kMinCrossoverHz) || ! (p.crossoverHz <= 0.49 * sampleRate)) return s;   // Svf would clamp either end silently
         if (! (p.tuningHz >= kMinNoteHz) || ! (p.tuningHz < sampleRate)) return s;
         if (! (p.lowNoteHz >= kMinNoteHz) || ! (p.highNoteHz > p.lowNoteHz)) return s;
@@ -463,9 +470,8 @@ private:
             if (! midiRange (params_, lo, hi)) return false;
             midiLo_ = lo;
         }
-        noteBands_ = bandCount_;
-        if (params_.noteTopHz > 0.0)
-            for (noteBands_ = 0; noteBands_ < bandCount_ && noteHz (params_, midiLo_ + noteBands_) <= params_.noteTopHz;) ++noteBands_;
+        noteBands_ = noteBandCount (params_, midiLo_, bandCount_);
+        noteFrom_ = noteBandFrom (params_, midiLo_, bandCount_);
 
         blocks_.resizeForOverwrite (st.blockRecords);
         bands_.assign (st.bands, LowEndBand {});
@@ -667,7 +673,7 @@ public:
     {
         if (! prepared_ || spectrumPrepared_ || finished_ || ! source.finished_ || ! source.spectrumPrepared_ || this == &source
             || channels_ != source.channels_ || ! core::exactlyEqual (sampleRate_, source.sampleRate_)
-            || bandCount_ != source.bandCount_ || noteBands_ != source.noteBands_ || windowSamples() != source.windowSamples()
+            || bandCount_ != source.bandCount_ || noteBands_ != source.noteBands_ || noteFrom_ != source.noteFrom_ || windowSamples() != source.windowSamples()
             || hopSamples() != source.hopSamples() || ! core::exactlyEqual (binHz_, source.binHz_)) return false;
         for (int b = 0; b < bandCount_; ++b)
             if (bands_[(std::size_t) b].midi != source.bands_[(std::size_t) b].midi
@@ -931,7 +937,9 @@ public:
         return dutyFrames_ > 0 ? (double) dutyCount (b) / (double) dutyFrames_ : 0.0;
     }
     // HOW LOUD THE BAND IS WHEN IT IS ON, against the loudest band of the same frame, in dB — the mean
-    // over the frames that counted it. In [-dutyThresholdDb, 0] by construction. This is the number duty
+    // over the frames that counted it. In [-dutyThresholdDb, 0] by construction for a band the reference is sought in
+    // (centre at or above noteFromHz); a band under noteFromHz is measured against a reference it takes no part in, so it
+    // can read above 0 dB (a rumble louder than every band from noteFromHz up). This is the number duty
     // does NOT carry: two bands with the same duty can sit at 0 dB ("it IS the bass when it plays") and at
     // -19 dB ("it just scraped in"), and a consumer choosing a filter needs to tell those apart. 0.0 when
     // the band was never counted.
@@ -946,7 +954,7 @@ public:
     // caller asking "how much room did it have" wants. Zero means it sat exactly on the line.
     double marginWhenOnDb (int b) const noexcept
     {
-        return dutyCount (b) > 0 ? levelWhenOnDb (b) + params_.dutyThresholdDb : 0.0;
+        return dutyCount (b) > 0 ? levelWhenOnDb (b) + params_.dutyThresholdDb : 0.0;   // above dutyThresholdDb likewise
     }
     double dutyThresholdDb() const noexcept { return params_.dutyThresholdDb; }   // the installed value
 
@@ -1125,6 +1133,23 @@ private:
     static double noteHz (const LowEndParams& p, int midi) noexcept
     {
         return p.tuningHz * core::det::exp2 ((double) (midi - 69) / 12.0);
+    }
+
+    // The bands the note's readings see: those whose centre lies at or under noteTopHz (all of them at 0).
+    static int noteBandCount (const LowEndParams& p, int loMidi, int bands) noexcept
+    {
+        if (! (p.noteTopHz > 0.0)) return bands;
+        int n = 0;
+        while (n < bands && noteHz (p, loMidi + n) <= p.noteTopHz) ++n;
+        return n;
+    }
+    // The first band the occupancy reference sees: the first whose centre lies at or above noteFromHz (band 0 at 0).
+    static int noteBandFrom (const LowEndParams& p, int loMidi, int bands) noexcept
+    {
+        if (! (p.noteFromHz > 0.0)) return 0;
+        int b = 0;
+        while (b < bands && ! (noteHz (p, loMidi + b) >= p.noteFromHz)) ++b;
+        return b;
     }
 
     // The band set: every MIDI note whose CENTRE lies inside [lowNoteHz, highNoteHz]. Computed from the
@@ -1349,7 +1374,7 @@ private:
         {
             const double e = traceMid_[(std::size_t) b] + traceSide_[(std::size_t) b];
             bandTotal += e;
-            if (e > frameMax) frameMax = e;
+            if (b >= noteFrom_ && e > frameMax) frameMax = e;
         }
         if (! (frameMax > 0.0) || ! (bandTotal > kNoteFloorShare * frameTotal)) return;
         ++dutyFrames_;
@@ -1457,6 +1482,7 @@ private:
     bool prepared_ = false, spectrumPrepared_ = false, finished_ = false;
     double sampleRate_ = 48000.0, binHz_ = 0.0;
     int channels_ = 0, bandCount_ = 0, midiLo_ = 0, noteBands_ = 0;   // noteBands_: the bands at or under noteTopHz
+    int noteFrom_ = 0;                                                // the first band the occupancy reference sees
     std::int64_t blockSamples_ = 0;
 
     SpectrumFrames frames_;

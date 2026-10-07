@@ -419,13 +419,15 @@ included — at a cutoff of max(what the sure lowest note allows, the target's f
 machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 80 Hz (`hzMax`, owner 01.10: a voice with
 a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all from 30 Hz up (`[lowEnd] lowestNoteFromHz`, owner 07.10: the bass's
 fifth string, B0 30.87 Hz, the limit for everything; the run measures from 10 Hz for the spectrum, and a band under 30 Hz
-is skipped — never the note, and never named one: the loudest band there is low-frequency energy at its frequency, though it still takes part in each
-frame's loudest-band reference, so a rumble more than about 18 dB over the bass can keep the bass off; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
+is skipped — never the note, and never named one: the loudest band there is low-frequency energy at its frequency; each frame's loudest-band reference is sought from
+30 Hz too (`LowEndParams::noteFromHz`, owner 07.10), so a rumble under it, however loud, does not keep the bass off; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
 of the frames, stands 2 dB over the duty line and is where the low end starts — the band under it, under 30 Hz included,
 never on (owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither, a noise or a rumble, which
 light both sides of 30 Hz alike — is unsure, and the veto never skips to the band above; it replaced a veto on the band's
 density over the note range's background, which took the lowest note from real mixes — a dense mix's lowest note stands
-−6 to +0.4 dB over that median — and gives v0.18.0's note on them, the two demo songs held in `RealMixLowEnd.h`), the range holding −140 dB of the programme's energy
+−6 to +0.4 dB over that median — and gives v0.18.0's note on them, the two demo songs held in `RealMixLowEnd.h`; it bites
+only at B0, the first band from 30 Hz, where A♯0 vetoes it: above B0 the band under the lowest band on is silent by
+construction, and the no-bass guard there is the range's share), the range holding −140 dB of the programme's energy
 (`[lowEnd] noteRangeShareAtLeastDb`, the same decision: a float tone's rounding lines in an otherwise empty range are no
 note), and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
@@ -1655,7 +1657,7 @@ needles job. Continue resumes the saved analyzer, PCM offset and output-copy pos
 | Analyzer / array | Columns, in order |
 | --- | --- |
 | LowEnd / blocks | start, samples, finite samples, holes, Mid energy, Side energy, valid, index |
-| LowEnd / bands | MIDI, centre Hz, width Hz, bins per band, Mid/Side/total energy, density, centroid Hz, cents, Side fraction, duty count, duty, level when on dB, margin dB, resolved |
+| LowEnd / bands | MIDI, centre Hz, width Hz, bins per band, Mid/Side/total energy, density, centroid Hz, cents, Side fraction, duty count, duty, level when on dB, margin dB, resolved — level when on lies in [−dutyThresholdDb, 0] and margin in [0, dutyThresholdDb] only for a band from `[lowEnd] lowestNoteFromHz` up, where each frame's reference is sought; a band under it can read above 0 dB and above the threshold |
 | LowEnd / sideHistogram | count per Side-fraction bin |
 | Forensics / meanPower | one column per channel, frequency bin order |
 | Forensics / gridExponentHistogram | one column per channel, native exponent-bucket order |

@@ -169,8 +169,9 @@ manualStepDb = 0
 #   band must also be where the low end starts — the band under it never on, under lowestNoteFromHz included — or it is
 #   no note: a veto, never a skip to the band above it, which would make a harmonic the note. A noise, a dither, a high
 #   tone's leakage or a rumble lights the bands on both sides of 30 Hz alike; a played lowest note has nothing on under
-#   it. No number: on real mixes it gives the note v0.18.0 named, and unsure on every no-bass case of the tests. The
-#   background's veto it replaces (a density 6 dB over the note range's median) took the note from real mixes: a dense
+#   it. No number: on real mixes it gives the note v0.18.0 named, and unsure on every no-bass case of the tests. It bites
+#   only at B0, the first band from lowestNoteFromHz, where A♯0 vetoes it: above B0 the band under the lowest band on is
+#   silent by construction, and the no-bass guard there is noteRangeShareAtLeastDb. The background's veto it replaces (a density 6 dB over the note range's median) took the note from real mixes: a dense
 #   mix's lowest note stands −6 to +0.4 dB over that median (Cold Gaze of Eternity −0.35 dB).
 # noteRangeShareAtLeastDb (owner, 07.10, the same decision): the note's range must also hold this share of the programme's
 #   energy (`bandRangeShare`), or there is no note — a second veto on the decision alone, for a tone whose rounding draws
@@ -179,8 +180,9 @@ manualStepDb = 0
 # lowestNoteFromHz (owner, 07.10: «the bass's fifth string the limit for everything — 30»; 25 since 06.10, 20 before): the
 #   lowest note is sought from the first band whose centre lies at or above it, B0 at 30.87 Hz, a five-string's lowest. The
 #   run measures from 10 Hz for the spectrum and the drawings, and a band under this one is skipped — it is never the note,
-#   and nothing under it is ever NAMED a note: the loudest band there is low-frequency energy at its frequency. It still takes part in each frame's loudest-band
-#   reference, so a rumble more than about 18 dB over the bass can keep the bass from counting as on (then: unsure, floor).
+#   and nothing under it is ever NAMED a note: the loudest band there is low-frequency energy at its frequency. Each frame's
+#   loudest-band reference, which every band's occupancy is measured against, is sought from it too (owner, 07.10), so a
+#   rumble under it, however loud, does not keep the bass off; a band under it is still measured against that reference.
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
