@@ -417,16 +417,21 @@ derivation of a master's chain from a project, and a master the session decides 
 from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
 included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
 machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 80 Hz (`hzMax`, owner 01.10: a voice with
-a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all from 25 Hz up (`[lowEnd] lowestNoteFromHz`, owner 06.10: the run
-measures from 10 Hz for the spectrum, and a band under 25 Hz is skipped — never the note, though it still takes part in each
-frame's loudest-band reference, so a rumble more than about 18 dB over the bass can keep the bass off; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
-of the frames, stands 2 dB over the duty line and its density 6 dB over the note range's background (`[lowEnd]
-occupiedAboveBackgroundDb`, owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither or a
-rumble — is unsure, and the veto never skips to the band above), the range holding −140 dB of the programme's energy
+a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all from 30 Hz up (`[lowEnd] lowestNoteFromHz`, owner 07.10: the bass's
+fifth string, B0 30.87 Hz, the limit for everything; the run measures from 10 Hz for the spectrum, and a band under 30 Hz
+is skipped — never the note, and never named one: the loudest band there is low-frequency energy at its frequency; each frame's loudest-band reference is sought from
+30 Hz too (`LowEndParams::noteFromHz`, owner 07.10), so a rumble under it, however loud, does not keep the bass off; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
+of the frames, stands 2 dB over the duty line and is where the low end starts — the band under it, under 30 Hz included,
+never on (owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither, a noise or a rumble, which
+light both sides of 30 Hz alike — is unsure, and the veto never skips to the band above; it replaced a veto on the band's
+density over the note range's background, which took the lowest note from real mixes — a dense mix's lowest note stands
+−6 to +0.4 dB over that median — and gives v0.18.0's note on them, the two demo songs held in `RealMixLowEnd.h`; it bites
+only at B0, the first band from 30 Hz, where A♯0 vetoes it: above B0 the band under the lowest band on is silent by
+construction, and the no-bass guard there is the range's share), the range holding −140 dB of the programme's energy
 (`[lowEnd] noteRangeShareAtLeastDb`, the same decision: a float tone's rounding lines in an otherwise empty range are no
-note), lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
+note), and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
-sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
+sure — or a lowest band that fails — gives the floor, never a higher band. Every rate resolves the bands as 48 kHz does (`[lowEnd.run] fftOrderUpToHz`, owner 07.10): above 48 kHz the run's order rises by one per doubling, so a bass at 88.2, 96 or 192 kHz is found as at 48 kHz, and nothing at 48 kHz and under moves. The cutoff the note allows is found on the
 chain's own response (`highPassCutoffFor`: the matched cascade of the target's slope at the source's rate, by bisection,
 not rounded to the hertz) so that it takes exactly the target's `noteLossDb` there (1 dB, club 0.3). Mono bass is weighed
 by the harm itself: the loss the low end takes folded to mono, 10·log10((mid + side) / mid) over the 10 ms blocks of the
@@ -627,8 +632,9 @@ the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(kno
 normalised true peak — no trial render; the compensation is 0, the mix as set, the shaper's output at 0 dB (`plan.saturation`). Its TYPE is
 the shaper's curve (`SaturationFields::type`, felitronics-core's `WaveShaper::Shape`): the machine's layer holds the
 config's `[saturation] shape`, tape (owner, 01.10; tanh before), and never another — so a hand drive with no type
-picked sounds tape; a person picks tanh, tube, transistor, transformer or tape, and
-an edit or a file that gives atan, cubic or asym by hand is refused `NotOneOf` (those stay the config's, for research).
+picked sounds tape; a person picks tanh, tube, transistor, transformer, tape, or one of the two diodes (owner 07.10):
+cubic, the symmetric, and asym, the asymmetric (at `[saturation] bias` 0.2 with its DC blocker at `dcBlockHz` 10, written
+for asym alone) — and an edit or a file that gives atan by hand is refused `NotOneOf` (it stays the config's, for research).
 WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
 compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and
 `saturationCutUsualDb`, the soft clipper's cut of peaks — `MasteringChain::clipperPeaks`: the peak of the stage's
@@ -1086,7 +1092,7 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | kind | row meaning |
 |---|---|
 | Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
-| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). LowSpectrum's quantity is the request's `spectrum`: `0` (the default, and what a request without the field gets) is DENSITY — the band's energy per hertz of its width, the tilt-free curve; `1` is ENERGY — the band's whole energy, what a bar per band shows, above the density by 10·log10(band width in Hz) dB (−2.3 dB at the lowest band — 0.60 Hz wide at 10.3 Hz — and 11.6 dB at 250 Hz), row `[Hz,energy,reason]`. The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. The table runs from 10.30 to 493.88 Hz (MIDI 4…71, `[lowEnd.run] highNoteHz = 500`, owner 07.10: the side share for mono bass up to 500 Hz); every reading of the note sees the bands up to `noteTopHz = 300` alone, bit for bit what a 300 Hz table gives. A band narrower than a Hann main lobe (the bands array's column 15 = 0: under 25.36 Hz at 48 kHz) gives its value as measured, not `TooShort` (owner, 06.10 and 07.10) — the flag stays on the array, and no decision reads these queries. These kinds require the whole-source frame range and a finite grid within Nyquist. |
+| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). LowSpectrum's quantity is the request's `spectrum`: `0` (the default, and what a request without the field gets) is DENSITY — the band's energy per hertz of its width, the tilt-free curve; `1` is ENERGY — the band's whole energy, what a bar per band shows, above the density by 10·log10(band width in Hz) dB (−2.3 dB at the lowest band — 0.60 Hz wide at 10.3 Hz — and 11.6 dB at 250 Hz), row `[Hz,energy,reason]`. The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. The table runs from 10.30 to 493.88 Hz (MIDI 4…71, `[lowEnd.run] highNoteHz = 500`, owner 07.10: the side share for mono bass up to 500 Hz); every reading of the note sees the bands up to `noteTopHz = 300` alone, bit for bit what a 300 Hz table gives. A band narrower than a Hann main lobe (the bands array's column 15 = 0: under 25.36 Hz at 48 kHz and 96 kHz, whose run takes order 18 — `[lowEnd.run] fftOrderUpToHz`, owner 07.10: above 48 kHz the order rises until the bin is no wider than at 48 kHz) gives its value as measured, not `TooShort` (owner, 06.10 and 07.10) — the flag stays on the array, and no decision reads these queries. These kinds require the whole-source frame range and a finite grid within Nyquist. |
 | Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. With a `masterId` (and the master's source `audioId`) the curve is that MASTER's: the job's own meter over the delivered audio, a row per 100 ms of it, reasoned the same way (the rows before a whole window are `TooShort`) — each reading bit for bit what the delivered audio gives measured as a source — and ASKED AND NAMED IN THE SOURCE'S FRAMES: the source's own request with a `masterId` added, its range refused past the source's end, `sampleRate` the source's rate, so on A/B the master's rows lie under the source's. How the delivered audio lines up with the source: the renderer cuts the chain's latency off and keeps the length, so at the source's rate (a target with `sampleRate = 0`) delivered frame n is source frame n and the rows are the source's frame for frame; a converted delivery is `ceil(frames·delivery/source)` long and its frame n carries source time n/delivery within half a delivered sample (the converter's rational latency, trimmed to the nearest sample), so a row ending at delivered frame e is named `round(e·source/delivery)` — exactly the source's row when both rates are whole multiples of 100 Hz. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
@@ -1412,7 +1418,7 @@ cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLow
 of full scale a 64th apart, each with what the chain's saturator settled on a held level gives for it — the stage's own
 design arithmetic, `mastering::MasteringChain::clipperDesign` (the one `clipperQuietGain` reads), on the parameters the
 session writes the stage with (`detail::clipperParams`, writeDynamics's): the core's WaveShaper at the type and
-k = 10^(drive/20) − 1, the config's bias, its drive compensation, the dry/wet blend, no trim. For the five types a person may
+k = 10^(drive/20) − 1, the config's bias, its drive compensation, the dry/wet blend, no trim. For the seven types a person may
 pick; the transformer and tape as their static cores (the flux follows history, the emphasis frequency; at a held level
 tape is its core). The drive is the shaper's own — the plan's `saturation.driveDb`, or the knob for an input peaking at
 0 dBTP. Its tanh is the platform's, as the chain's is, so the curve is not in the pinned corpus: the kit suite holds it to
@@ -1454,7 +1460,7 @@ a file's machine layer is retained, and any defaults label but the current one i
 | Glue | 0–6 dB | Product |
 | Glue mix | 0–1 | Product |
 | Saturation drive / mix | 0–12 dB / 0–1 | Product / device |
-| Saturation type (by hand) | tanh, tube, transistor, transformer, tape | Product |
+| Saturation type (by hand) | tanh, tube, transistor, transformer, tape, cubic and asym (the symmetric and asymmetric diodes) | Product |
 | Tilt / low | −6–6 dB | Product |
 | Needles above ceiling | 0–6 dB | Product |
 
@@ -1652,7 +1658,7 @@ needles job. Continue resumes the saved analyzer, PCM offset and output-copy pos
 | Analyzer / array | Columns, in order |
 | --- | --- |
 | LowEnd / blocks | start, samples, finite samples, holes, Mid energy, Side energy, valid, index |
-| LowEnd / bands | MIDI, centre Hz, width Hz, bins per band, Mid/Side/total energy, density, centroid Hz, cents, Side fraction, duty count, duty, level when on dB, margin dB, resolved |
+| LowEnd / bands | MIDI, centre Hz, width Hz, bins per band, Mid/Side/total energy, density, centroid Hz, cents, Side fraction, duty count, duty, level when on dB, margin dB, resolved — level when on lies in [−dutyThresholdDb, 0] and margin in [0, dutyThresholdDb] only for a band from `[lowEnd] lowestNoteFromHz` up, where each frame's reference is sought; a band under it can read above 0 dB and above the threshold |
 | LowEnd / sideHistogram | count per Side-fraction bin |
 | Forensics / meanPower | one column per channel, frequency bin order |
 | Forensics / gridExponentHistogram | one column per channel, native exponent-bucket order |

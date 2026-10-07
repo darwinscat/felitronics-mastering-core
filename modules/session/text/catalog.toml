@@ -86,6 +86,10 @@ transformer.ru = "Трансформаторная"
 transformer.en = "Transformer"
 tape.ru = "Ленточная"
 tape.en = "Tape"
+asym.ru = "Диод (асимметричный)"
+asym.en = "Diode (asymmetric)"
+cubic.ru = "Диод (симметричный)"
+cubic.en = "Diode (symmetric)"
 
 # The BS.1116 impairment scale, as the damage's line names the worst window's grade (5 down to 1).
 [terms.damageGrade]
@@ -138,6 +142,12 @@ en.other = "repeat consistency: {agreed} of {pairs} pairs"
 [messages.loudestLowNote]
 ru = "Самая громкая нота баса: {note}"
 en = "Loudest bass note: {note}"
+
+# The loudest of the low end under the band the lowest note is sought from ([lowEnd] lowestNoteFromHz, 30 Hz): no note is
+# named there (owner, 07.10) — low-frequency energy, at its band's centre.
+[messages.loudestLowEnergy]
+ru = "Громче всего в басу — низкочастотная энергия на {hz}"
+en = "Loudest in the low end: low-frequency energy at {hz}"
 
 # Phase 1's warning of a wide bass: its side share. The owner's wording.
 [messages.wideBass]

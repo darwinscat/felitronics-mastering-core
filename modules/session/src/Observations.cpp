@@ -400,6 +400,9 @@ Observation lowNote (const ObservationInputs& in, std::string_view kind, std::st
     }
     o.value = *midi.value;
     o.second = *hz.value;
+    // Under the band the lowest note is sought from no note is named (owner, 07.10): the loudest band there is low-frequency
+    // energy, and its fact says the frequency alone.
+    if (kind == "loudestLowNote" && ! (*hz.value >= number (in.rules.engine.find ("lowEnd").find ("lowestNoteFromHz")))) o.third = 1.0;
     // The lowest band carries its sureness: an unsure one is shown, doubtful — half as confident as the doubtful line.
     const auto sure = read (r, "lowestOccupiedSure");
     const bool doubtful = kind == "lowestLowBand" && sure.value && ! (*sure.value > 0.5);
@@ -919,7 +922,9 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
             if (o.third > 0.5) return Fact::of (FactId::SourceLimitedClipped, Arg::value (o.value, Unit::Db, 1));
             return Fact::of (FactId::SourceLimitedBus, Arg::value (o.value, Unit::Db, 1));
         case ObservationKind::SpectralWall:   return Fact::of (FactId::SourceLossy, Arg::value (o.value / 1000.0, Unit::KHz, 1));
-        case ObservationKind::LoudestLowNote: return Fact::of (FactId::LoudestLowNote, Arg::midi (std::int64_t (o.value)));
+        case ObservationKind::LoudestLowNote:
+            if (o.third > 0.5) return Fact::of (FactId::LoudestLowEnergy, Arg::value (o.second, Unit::Hz, 1));
+            return Fact::of (FactId::LoudestLowNote, Arg::midi (std::int64_t (o.value)));
         case ObservationKind::LowestLowBand:
             return Fact::of (o.doubtful ? FactId::SourceLowestBandUnsure : FactId::SourceLowestBand, Arg::midi (std::int64_t (o.value)),
                              Arg::value (o.second, Unit::Hz, 1));

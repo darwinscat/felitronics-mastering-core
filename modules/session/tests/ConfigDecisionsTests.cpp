@@ -93,7 +93,20 @@ constexpr Golden kGolden[] = {
     // occupiedAboveBackgroundDb 6 (07.10: a mix with no bass is unsure); it was e16b73aead43a728; updated in place, as above.
     // ...and [lowEnd] noteRangeShareAtLeastDb −140 (07.10, the same decision: a float tone's rounding lines are no note); it
     // was 4fab20b29ed728bb; updated in place, as above.
-    { "2026-10", 0x702dd4d0cbf8d059ull },
+    // ...and [lowEnd] occupiedAboveBackgroundDb removed (owner, 07.10: real mixes keep their notes): the lowest band is a
+    // note only where the band under it was never on — a master whose lowest note the background's veto took has it again;
+    // it was 702dd4d0cbf8d059; updated in place, as above.
+    // ...and [hpf] note.aboveHz removed (owner, 07.10): it was 20 Hz, under the 25 Hz the note is sought from, so no note
+    // and no master moves; it was 298d807f53e7f865; updated in place, as above.
+    // ...and [lowEnd.run] fftOrderUpToHz 48000 (owner, 07.10: 96 kHz resolves as 48 kHz): the low-end order rises above
+    // 48 kHz, so a master over 48 kHz whose bass was unresolved takes its note; nothing at 48 kHz and under moves; it was
+    // 5c869a1028b4a6fd; updated in place, as above.
+    // ...and [lowEnd] lowestNoteFromHz 30, was 25 (owner, 07.10: the bass's fifth string, B0 30.87 Hz, the limit for
+    // everything): a master whose lowest band on lay between 25 and 30 Hz takes its note from the bands above; it was
+    // 294f80d8221bb306; updated in place, as above.
+    // ...and the two diodes by hand (owner, 07.10): [saturation] bias 0.2 and dcBlockHz 10, written for asym alone — no
+    // existing master moves (every other type keeps bias 0 and no blocker); it was a38dce3eb12a1f77; updated in place, as above.
+    { "2026-10", 0x06ea4bbff433f2e6ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -243,9 +256,9 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.hpf.comfort.lowHz, 30.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 30–42 Hz (owner, 06.10)");
     need (same (e.hpf.comfort.warningLowHz, 26.0) && same (e.hpf.comfort.warningHighHz, 50.0),
           "the high-pass field warns towards 26 and 50 Hz (owner, 06.10: yellow from 30 down, the ramp as long as before)");
-    need (same (e.hpf.noteAboveHz, 20.0) && same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
+    need (same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
           && same (e.lowEnd.occupiedFromDuty, 0.10) && same (e.lowEnd.occupiedMarginWhenOnDb, 2.0),
-          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, 3 s in all; not sought under 10 s");
     need (same (e.monoBass.lossWarnFromDb, 1.0) && same (e.monoBass.lossOffAboveDb, 3.0),
           "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB");
     need (! e.stages.monoBass, "mono bass is placed by its weighed loss, never before it");
@@ -253,11 +266,12 @@ std::vector<std::string> departures (const config::Config& c)
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
     need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 500.0) && same (e.lowEnd.run.noteTopHz, 300.0)
-          && same (e.lowEnd.lowestNoteFromHz, 25.0),
+          && same (e.lowEnd.lowestNoteFromHz, 30.0),
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
-    need (same (e.lowEnd.occupiedAboveBackgroundDb, 6.0),
-          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)");
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)");
+    need (e.lowEnd.run.fftOrder == 17 && same (e.lowEnd.run.fftOrderUpToHz, 48000.0),
+          "the low end resolves at every rate as at 48 kHz: fftOrder 17 up to 48 kHz, one more per doubling of the rate above it (owner, 07.10)");
+    need (same (e.saturation.bias, 0.2) && same (e.saturation.dcBlockHz, 10.0), "the asymmetric diode by hand: bias 0.2, its DC blocker at 10 Hz, written for it alone (owner, 07.10)");
     need (same (e.lowEnd.noteRangeShareAtLeastDb, -140.0),
           "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
@@ -425,21 +439,23 @@ void aDepartureIsNamed()
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
         { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
           "targets.club.hpfFloor" },
-        { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
-          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
+        { false, "note = { soundingAtLeastS = 3 }", "note = { soundingAtLeastS = 2 }",
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, 3 s in all; not sought under 10 s" },
         { false, "lowNoteHz = 10", "lowNoteHz = 20",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "highNoteHz = 500", "highNoteHz = 300",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "noteTopHz = 300", "noteTopHz = 0",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
+        { false, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 44100",
+          "the low end resolves at every rate as at 48 kHz: fftOrder 17 up to 48 kHz, one more per doubling of the rate above it (owner, 07.10)" },
+        { false, "bias = 0.2\n", "bias = 0.3\n", "the asymmetric diode by hand: bias 0.2, its DC blocker at 10 Hz, written for it alone (owner, 07.10)" },
+        { false, "dcBlockHz = 10\n", "dcBlockHz = 5\n", "the asymmetric diode by hand: bias 0.2, its DC blocker at 10 Hz, written for it alone (owner, 07.10)" },
         { false, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -160",
           "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)" },
-        { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
-          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
         { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",
           "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
           "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)" },
@@ -453,9 +469,9 @@ void aDepartureIsNamed()
         { true, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.1 }",
           "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
           "and ceiling (owner, 06.10 and 07.10)" },
-        { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
+        { false, "lowestNoteFromHz = 30", "lowestNoteFromHz = 25",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
-          "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+          "from 30 Hz, B0 30.87 Hz, a five-string's lowest (owner, 06.10 and 07.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
         { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",

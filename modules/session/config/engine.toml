@@ -165,19 +165,24 @@ manualStepDb = 0
 #   band be occupied in at least occupiedFromDuty of the frames (10 %). Without a band that passes, or a valid note, there
 #   is no note: the target's floor, never the loudest band in its place, and never a higher band — a note above the true
 #   one would cut music.
-# occupiedAboveBackgroundDb (owner, 07.10: a mix with no bass says "unsure"): the lowest band must also stand this far
-#   above the background — its density (energy per hertz) over the median density of the other bands of the note's
-#   range — or it is no note: a veto, never a skip to the band above it, which would make a harmonic the note. A band
-#   that only the leakage of a high tone, a dither or a rumble lights reads within 2 dB of the background; a played
-#   note reads 17 dB over it and more (a 0.5 s B0) — up to 100 dB on a held bass.
+# THE BOTTOM OF THE LOW END (owner, 07.10: a mix with no bass says "unsure"; the real songs keep their notes): the lowest
+#   band must also be where the low end starts — the band under it never on, under lowestNoteFromHz included — or it is
+#   no note: a veto, never a skip to the band above it, which would make a harmonic the note. A noise, a dither, a high
+#   tone's leakage or a rumble lights the bands on both sides of 30 Hz alike; a played lowest note has nothing on under
+#   it. No number: on real mixes it gives the note v0.18.0 named, and unsure on every no-bass case of the tests. It bites
+#   only at B0, the first band from lowestNoteFromHz, where A♯0 vetoes it: above B0 the band under the lowest band on is
+#   silent by construction, and the no-bass guard there is noteRangeShareAtLeastDb. The background's veto it replaces (a density 6 dB over the note range's median) took the note from real mixes: a dense
+#   mix's lowest note stands −6 to +0.4 dB over that median (Cold Gaze of Eternity −0.35 dB).
 # noteRangeShareAtLeastDb (owner, 07.10, the same decision): the note's range must also hold this share of the programme's
 #   energy (`bandRangeShare`), or there is no note — a second veto on the decision alone, for a tone whose rounding draws
 #   real lines into an otherwise empty range (a float 997 Hz tone: −172 dB, its lines 6.3 dB over the background). The
 #   least share a sure note in the tests holds is −107 dB; a mix holds −30 dB and more.
-# lowestNoteFromHz (owner, 06.10: «the spectrum from 10 Hz, the lowest note from 25 Hz — not 20, 25»): the lowest note is
-#   sought from the first band whose centre lies at or above it, G#0 at 25.96 Hz. The run measures from 10 Hz for the
-#   spectrum, and a band under this one is skipped — it is never the note. It still takes part in each frame's loudest-band
-#   reference, so a rumble more than about 18 dB over the bass can keep the bass from counting as on (then: unsure, floor).
+# lowestNoteFromHz (owner, 07.10: «the bass's fifth string the limit for everything — 30»; 25 since 06.10, 20 before): the
+#   lowest note is sought from the first band whose centre lies at or above it, B0 at 30.87 Hz, a five-string's lowest. The
+#   run measures from 10 Hz for the spectrum and the drawings, and a band under this one is skipped — it is never the note,
+#   and nothing under it is ever NAMED a note: the loudest band there is low-frequency energy at its frequency. Each frame's
+#   loudest-band reference, which every band's occupancy is measured against, is sought from it too (owner, 07.10), so a
+#   rumble under it, however loud, does not keep the bass off; a band under it is still measured against that reference.
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
@@ -185,9 +190,8 @@ manualStepDb = 0
 [lowEnd]
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2
-occupiedAboveBackgroundDb = 6
 noteRangeShareAtLeastDb = -140
-lowestNoteFromHz = 25
+lowestNoteFromHz = 30
 infraLowCrossoverHz = 30
 
 # THE GEOMETRY OF THE MAIN RUN — the core's LowEnd defaults written out as numbers, so that nothing depends on a default
@@ -196,8 +200,15 @@ infraLowCrossoverHz = 30
 # drawings (LowSpectrum, LowSide: the side share for mono bass up to 500), while noteTopHz keeps every reading of the
 # note — occupancy, the loudest band, the lowest band, the NoEnergy gate — on the bands up to 300 Hz, MIDI 4…62, as
 # before: a band above it carries energy, density and side for a drawing, and an occupancy of 0. fftOrder 17: a 2.73 s window and a
-# 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo); its bands are four bins wide — a Hann
-# main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1, 50.71 at 96), and the bands under that are published as unresolved. skipBlocks 0 is a named
+# 1.365 s hop at 48 kHz (18 would take 10.7 MiB of the run's own buffers instead of 5.4 on stereo); its bands are four bins wide — a Hann
+# main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1), and the bands under that are published as unresolved.
+# fftOrderUpToHz (owner, 07.10: 96 kHz resolves as 48 kHz): fftOrder holds up to this rate, and above it the order is the
+# smallest whose bin is no wider than fftOrder's here — 18 at 88.2 and 96 kHz, 19 to 192 kHz — so the bands resolve from
+# the same 25.36 Hz (23.30 at 88.2) and the window and the hop last as long; at 17 a 96 kHz run resolved only from 50.71 Hz
+# and found no bass under it. A rate under it keeps fftOrder, never a lower order. Measured at 96 kHz: 0.67 s of the run per
+# minute of programme instead of 0.83 (half the frames), and its own buffers 10.7 MiB instead of 5.4, as 18 would at 48 kHz — the declared
+# work peak of a 10-minute stereo source 15.8 MiB higher (684 MiB), its declared peak, the load's, unchanged at 879 MiB.
+# skipBlocks 0 is a named
 # impossibility rather than a choice: the settling count the core derives from the filter is not on its interface, and
 # skipBlocks moves only the histogram, which is not read. The schema hands this block — and the infra-low run, the same
 # geometry split at infraLowCrossoverHz — to LowEnd::storageFor at every source rate the product accepts (8, 44.1, 48 and
@@ -208,6 +219,7 @@ lowNoteHz = 10
 highNoteHz = 500
 noteTopHz = 300
 fftOrder = 17
+fftOrderUpToHz = 48000
 dutyThresholdDb = 20
 skipBlocks = 0
 
@@ -222,9 +234,9 @@ skipBlocks = 0
 # how much; "the cutoff hit 50 Hz: the lowest note is higher" when machineTopHz stops it.
 # note (owner decision 3.2): the lowest note — the lowest band on at all from [lowEnd] lowestNoteFromHz up — is sure when its
 #   band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
-#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line and [lowEnd] occupiedAboveBackgroundDb (6 dB) above the
-#   background, the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, lies above aboveHz (not DC, not rumble) and sounds at least
-#   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
+#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, the band under it never on (the low end starts there),
+#   the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, and sounds at least soundingAtLeastS
+#   in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
 # hzStep: 0 — the cutoff knob has no step (owner, 06.10): a typed value is kept as typed, and the travel is continuous.
@@ -257,7 +269,7 @@ machineTopHz = 50
 slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24
-note = { aboveHz = 20, soundingAtLeastS = 3 }
+note = { soundingAtLeastS = 3 }
 comfort = { lowHz = 30, highHz = 42, warningLowHz = 26, warningHighHz = 50 }
 curveTopDb = 0
 curveBottomDb = -36
@@ -433,11 +445,24 @@ mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
 #   is a jerk. mix 0…1. No output knob: the landing sets the level before the limiter, so a trim would be undone.
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
 # shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
-#   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer and tape;
-#   atan, cubic and asym stay here, for research. tape is the default (owner, 01.10): the machine never raises the drive,
+#   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer, tape, cubic —
+#   the symmetric diode, a hard knee and flat past |x| = 1/k, odd harmonics — and asym — the asymmetric diode, a second
+#   even-harmonic colour beside tube (owner, 07.10, both); atan stays here, for research. Under autoComp 0 every type is
+#   normalised to its own peak, and its small-signal gain at 1.5 / 3.3 / 6 / 9 dB of drive is: cubic 1.012 / 1.077 /
+#   1.493 / 2.728, tanh 1.012 / 1.070 / 1.310 / 1.917, tube 0.957 / 0.936 / 1.020 / 1.387, asym 1.008 / 1.028 / 1.115 /
+#   1.283 — cubic lifts the quiet parts most past 6 dB. tape is the default (owner, 01.10): the machine never raises the drive,
 #   so the type is heard once a person does.
-# bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
-# value is one setting.
+# bias and dcBlockHz: the asymmetric diode's fixed bias and its DC blocker's corner, written to the stage for asym alone
+#   (every other type runs at bias 0 and no blocker, tube included, as before). bias 0.2 (07.10, measured on the static
+#   curve with a sine): the diode is tube's curve where the drive k·0.2 reaches tube's fixed 0.3, at 8 dB of drive — the
+#   red line — and cleaner under it, rougher past it. At 3.3 dB of drive (a knob of 3 on a −1 dBTP mix) H2 stands −35 dBc
+#   at −0.9 dBFS (H3 −37) and −40 dBc at −6 dBFS (H3 −47) — tube −25 and −30; its small-signal gain 1.005…1.115 up to 6 dB,
+#   between tanh's 1.012…1.310 and tube's 0.936…1.020 (0.3 would be tube's twin at 6 dB, 0.5 loses level as it drives:
+#   0.85 at 6 dB). Its mean shifts by up to −0.016 of full scale at 3.3 dB — the blocker at 10 Hz (the core's own
+#   default) takes it off before the limiter. The blocker is a one-pole high-pass on the wet path: at mix 1 it takes
+#   0.97 dB at 20 Hz, 0.43 dB at B0 (30.87 Hz) and 0.25 dB at E1 (41.2 Hz). Both are written by the type, so a research
+#   config with shape = "asym" runs as the diode too: bias 0.2 and the blocker. Below a drive of 0.00087 dB (the core's
+#   number) every value is one setting.
 # cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the
 #   peak of its output, quantum by quantum, after its mix — never the fall of the whole chain's true
 #   peak (that is the limiter's and the peak clipper's work). A peak-normalised shaper lifts everything under full scale,
@@ -454,12 +479,12 @@ driveDb = 0
 driveRange = [0, 12]
 driveStep = 0
 driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }
-bias = 0
+bias = 0.2
 mix = 1
 mixRange = [0, 1]
 mixStep = 0.05
 autoComp = 0
-dcBlockHz = 0
+dcBlockHz = 10
 cut = { loudShare = 0.05 }
 
 # TILT — a manual device with one knob, in dB, and its tick: the machine does not touch timbre (a tilt taken from a

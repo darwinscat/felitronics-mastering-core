@@ -55,7 +55,10 @@ MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
     p.lowEnd.lowNoteHz = number (run.find ("lowNoteHz"));
     p.lowEnd.highNoteHz = number (run.find ("highNoteHz"));
     p.lowEnd.noteTopHz = number (run.find ("noteTopHz"));
-    p.lowEnd.fftOrder = int (number (run.find ("fftOrder")));
+    p.lowEnd.noteFromHz = number (low.find ("lowestNoteFromHz"));   // the occupancy reference from the lowest note's bottom
+    // The order that resolves at this rate as fftOrder does at fftOrderUpToHz (owner, 07.10: 96 kHz as 48 kHz).
+    p.lowEnd.fftOrder = analysis::LowEnd::fftOrderFor (double (pcm.sampleRate), int (number (run.find ("fftOrder"))),
+                                                       number (run.find ("fftOrderUpToHz")));
     p.lowEnd.dutyThresholdDb = number (run.find ("dutyThresholdDb"));
     p.lowEnd.skipBlocks = int (number (run.find ("skipBlocks")));
     const auto blockFrames = std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (pcm.sampleRate) * 0.01 + 0.5)));
@@ -206,6 +209,7 @@ std::uint64_t MeasurementPlan::key (std::uint64_t pcmHash, const MeasurementPara
         h.add (low.lowNoteHz);
         h.add (low.highNoteHz);
         h.add (low.noteTopHz);
+        h.add (low.noteFromHz);
         h.add (low.tuningHz);
         h.add (low.fftOrder);
         h.add (low.hop);

@@ -161,12 +161,13 @@ void theSchemaRefuses()
     mustRefuse (E, "[tilt]\ndomain = [-6, 6]\nband = 1\nnormal = [-1.5, 1.5]\nhard = [-3, 3]",
                 "[tilt]\ndomain = [1, 6]\nband = 1\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
-    mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
+    // [hpf] note.aboveHz is gone (owner, 07.10): the note is sought from [lowEnd] lowestNoteFromHz alone, and the key is unknown.
+    mustRefuse (E, "note = { ", "note = { aboveHz = 20, ", "aboveHz", Fault::UnknownKey, "hpf.note.aboveHz");
     // Where the lowest note is sought from (owner, 06.10): a band centre in hertz, 0 the whole table, under the table's top.
-    mustRefuse (E, "lowestNoteFromHz = 25\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
-    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
-    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = -1", "-1", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
-    mustAccept (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 0");
+    mustRefuse (E, "lowestNoteFromHz = 30\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 30", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 30", "lowestNoteFromHz = -1", "-1", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustAccept (E, "lowestNoteFromHz = 30", "lowestNoteFromHz = 0");
     // A knob's step is 0 or more (owner, 07.10): 0, no step, is what every manual knob takes now; under 0 is no step at all.
     mustRefuse (E, "hzStep = 0", "hzStep = -1", "-1", Fault::OutOfRange, "hpf.hzStep");
     mustRefuse (E, "frequencyStep = 0", "frequencyStep = -1", "-1", Fault::OutOfRange, "monoBass.frequencyStep");
@@ -290,11 +291,15 @@ void theSchemaRefuses()
     mustRefuse (E, "noteTopHz = 300\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.noteTopHz");
     mustRefuse (E, "noteTopHz = 300", "noteTopHz = -1", "-1", Fault::OutOfRange, "lowEnd.run.noteTopHz");
     mustAccept (E, "noteTopHz = 300", "noteTopHz = 0");
-    // The lowest band over the background (owner, 07.10): 0…60 dB, required.
-    mustRefuse (E, "occupiedAboveBackgroundDb = 6\n", "", "[lowEnd]", Fault::Missing, "lowEnd.occupiedAboveBackgroundDb");
-    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 61", "61", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
-    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = -1", "-1", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
-    mustAccept (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 0");
+    // The rate up to which fftOrder holds (owner, 07.10: 96 kHz resolves as 48 kHz): required and positive; one that asks an
+    // order the analyzer cannot take at a source rate (1 Hz: 13 more at 8 kHz) refuses the block.
+    mustRefuse (E, "fftOrderUpToHz = 48000\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.fftOrderUpToHz");
+    mustRefuse (E, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 0", "0", Fault::OutOfRange, "lowEnd.run.fftOrderUpToHz");
+    mustRefuse (E, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 1", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    mustAccept (E, "fftOrderUpToHz = 48000", "fftOrderUpToHz = 96000");
+    // The background's veto is gone (owner, 07.10: real mixes keep their notes): [lowEnd] occupiedAboveBackgroundDb is unknown.
+    mustRefuse (E, "occupiedMarginWhenOnDb = 2\n", "occupiedMarginWhenOnDb = 2\noccupiedAboveBackgroundDb = 6\n", "occupiedAboveBackgroundDb",
+                Fault::UnknownKey, "lowEnd.occupiedAboveBackgroundDb");
     // The note range's share of the programme (owner, 07.10): −240…0 dB, required.
     mustRefuse (E, "noteRangeShareAtLeastDb = -140\n", "", "[lowEnd]", Fault::Missing, "lowEnd.noteRangeShareAtLeastDb");
     mustRefuse (E, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = 1", "1", Fault::OutOfRange, "lowEnd.noteRangeShareAtLeastDb");

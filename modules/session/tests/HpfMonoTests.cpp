@@ -12,7 +12,9 @@
 #include "Devices.h"
 #include "EqCurve.h"
 #include "Grid.h"
+#include "MeasurementPlan.h"
 #include "Planner.h"
+#include "RealMixLowEnd.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/eq/EqBand.h>
 #include <felitronics/core/DetMath.h>
@@ -122,7 +124,7 @@ double coreLoss (double fc, int slope, double rate, double hz)
 
 void theSureLowestNote()
 {
-    felitronics::test::group ("the sure lowest note: 2 dB over the line, 10 % of the frames, from 25 Hz, 3 s in all; not sought under 10 s");
+    felitronics::test::group ("the sure lowest note: 2 dB over the line, 10 % of the frames, from 30 Hz, 3 s in all; not sought under 10 s");
     const auto cut = [] (Readings& r, double seconds = 60) { return plan (r.inputs ("allStreaming", seconds)).found.hpf; };
     {
         Readings r; r.occupy (33, 0.10, 20, 2.0);
@@ -134,30 +136,31 @@ void theSureLowestNote()
         const auto g = cut (rare);
         ok (g.cut == HpfCut::Unsure && ! g.noteMidi && same (g.cutoffHz, 32.0),
             "a hair under 10 % of the frames: the lowest band is not sure — the floor, never the next band as the note");
-        Readings once; once.occupy (20, 0.004, 1, 6); once.occupy (45, 0.5, 60, 6);
+        Readings once; once.occupy (23, 0.004, 1, 6); once.occupy (45, 0.5, 60, 6);
         ok (cut (once).cut == HpfCut::Unsure && same (cut (once).cutoffHz, 32.0), "a lowest band on in a single frame: the floor all the same");
         Readings unsureLowest; unsureLowest.occupy (33, 0.2, 20, 1.0); unsureLowest.occupy (45, 0.5, 60, 6);
         ok (cut (unsureLowest).cut == HpfCut::Unsure, "the lowest occupied band not sure: the floor — never a higher band, which would cut music");
     }
     {
-        // The search starts at [lowEnd] lowestNoteFromHz, 25 Hz included (owner, 06.10), which [hpf] note.aboveHz (20 Hz) lies under.
+        // The search starts at [lowEnd] lowestNoteFromHz, 30 Hz included (owner, 07.10), and nothing else bounds it from below.
         Readings r; r.occupy (kFirstMidi, 0.5, 40, 6);
-        r.bands[1] = 25.0;
-        ok (cut (r).cut != HpfCut::Unsure && r.bands[1] > 20.0, "a band at 25 Hz exactly is sought — and above 20 Hz");
-        r.bands[1] = std::nextafter (25.0, 0.0);
-        ok (cut (r).cut == HpfCut::Unsure, "a hair under 25 Hz is not: the floor");
+        r.bands[1] = 30.0;
+        ok (cut (r).cut != HpfCut::Unsure, "a band at 30 Hz exactly is sought");
+        r.bands[1] = std::nextafter (30.0, 0.0);
+        ok (cut (r).cut == HpfCut::Unsure, "a hair under 30 Hz is not: the floor");
     }
     {
-        // The lowest band's density over the background, [lowEnd] occupiedAboveBackgroundDb (owner, 07.10): 6 dB is a note, a
-        // hair less is none — the floor, never the band above it.
-        Readings r; r.occupy (28, 0.5, 60, 6); r.occupy (40, 0.5, 60, 6); r.background = 1.0;
-        double& density = r.bands[std::size_t (28 - kFirstMidi) * 16 + 7];
-        r.bands[std::size_t (40 - kFirstMidi) * 16 + 7] = 1.0e6;
-        density = felitronics::core::det::pow10 (0.6);
-        ok (cut (r).noteMidi == 28, "a lowest band 6 dB over the background: the note");
-        density = std::nextafter (density, 0.0);
+        // The bottom of the low end (owner, 07.10): the lowest band on at all from 30 Hz is a note only where the band under
+        // it — under 30 Hz included — was never on; on in a single frame, it is no note: the floor, never the band above it.
+        Readings r; r.occupy (23, 0.5, 60, 6); r.occupy (28, 0.5, 60, 6);
+        ok (cut (r).noteMidi == 23, "a lowest band at 30.87 Hz, B0, with nothing on under it: the note");
+        r.occupy (22, 0.004, 1, 0.5);
         ok (cut (r).cut == HpfCut::Unsure && ! cut (r).noteMidi && same (cut (r).cutoffHz, 32.0),
-            "a hair under 6 dB: no note, the floor — never the band above it");
+            "the band under it, 29.14 Hz, on in one frame: no note, the floor — never the band above it");
+        Readings lower; lower.occupy (23, 0.5, 60, 6); lower.occupy (21, 0.5, 60, 6);
+        ok (cut (lower).noteMidi == 23, "a band on further under 30 Hz, 27.50 Hz, with 29.14 Hz silent: the note all the same");
+        Readings first; first.occupy (kFirstMidi, 0.5, 40, 6); first.bands[1] = 30.0;
+        ok (cut (first).noteMidi == kFirstMidi, "the table's first band, with no band under it: the note");
     }
     {
         // The range's share of the programme, [lowEnd] noteRangeShareAtLeastDb (owner, 07.10): −140 dB is a note, a hair
@@ -186,22 +189,23 @@ void theSureLowestNote()
     }
 }
 
-// THE LOWEST NOTE FROM 25 Hz (owner, 06.10): the table measures from 10 Hz, and the note is sought from [lowEnd]
-// lowestNoteFromHz up — a band under it is the spectrum's, skipped, never the note and never the floor in the note's place.
-void theLowestNoteFromTwentyFiveHz()
+// THE LOWEST NOTE FROM 30 Hz (owner, 06.10 and 07.10: the bass's fifth string the limit for everything): the table measures
+// from 10 Hz, and the note is sought from [lowEnd] lowestNoteFromHz up — a band under it is the spectrum's, skipped, never
+// the note and never the floor in the note's place.
+void theLowestNoteFromThirtyHz()
 {
-    felitronics::test::group ("the lowest note is sought from 25 Hz up: a band under it is skipped, never the note, never the floor");
+    felitronics::test::group ("the lowest note is sought from 30 Hz up: a band under it is skipped, never the note, never the floor");
     const auto cut = [] (Readings& r) { return plan (r.inputs ("allStreaming", 60)).found.hpf; };
     {
-        Readings r; r.occupy (19, 0.5, 60, 6);
+        Readings r; r.occupy (22, 0.5, 60, 6);
         const auto f = cut (r);
-        ok (f.cut == HpfCut::Unsure && ! f.noteMidi && same (f.cutoffHz, 32.0), "a band at 24.50 Hz, sure by every other test, alone: no note — the floor");
+        ok (f.cut == HpfCut::Unsure && ! f.noteMidi && same (f.cutoffHz, 32.0), "a band at 29.14 Hz, sure by every other test, alone: no note — the floor");
     }
     {
-        Readings r; r.occupy (20, 0.5, 60, 6);
+        Readings r; r.occupy (23, 0.5, 60, 6);
         const auto f = cut (r);
-        ok (f.cut == HpfCut::BelowFloor && f.noteMidi == 20 && same (*f.noteHz, midiHz (20)),
-            "the first band from 25 Hz, 25.96 Hz: the note (under the floor, which stands)");
+        ok (f.cut == HpfCut::BelowFloor && f.noteMidi == 23 && same (*f.noteHz, midiHz (23)),
+            "the first band from 30 Hz, B0 30.87 Hz: the note (under the floor, which stands)");
     }
     {
         Readings r; r.occupy (11, 0.05, 3, 0.5); r.occupy (28, 0.5, 60, 6);
@@ -211,7 +215,7 @@ void theLowestNoteFromTwentyFiveHz()
     }
     {
         Readings r; r.occupy (11, 0.9, 100, 10);
-        ok (cut (r).cut == HpfCut::Unsure && same (cut (r).cutoffHz, 32.0), "a steady 15.43 Hz and nothing from 25 Hz up: no note, the floor");
+        ok (cut (r).cut == HpfCut::Unsure && same (cut (r).cutoffHz, 32.0), "a steady 15.43 Hz and nothing from 30 Hz up: no note, the floor");
     }
 }
 
@@ -230,7 +234,7 @@ void theCutoffOnTheChainsResponse()
         const int slope = target.hpfSlope;
         floors = floors && same (floor, 32.0);
         for (const std::uint32_t rate : { 44100u, 48000u, 96000u })
-            for (int midi = 20; midi <= 62; ++midi)   // every band the note is sought in: from 25 Hz (25.96 Hz) to the table's top
+            for (int midi = 23; midi <= 62; ++midi)   // every band the note is sought in: from 30 Hz (30.87 Hz) to the table's top
             {
                 Readings in; in.rate = rate; in.occupy (midi, 0.5, 60, 6);
                 const auto p = plan (in.inputs (std::string (target.key).c_str(), 60));
@@ -257,7 +261,7 @@ void theCutoffOnTheChainsResponse()
     ok (exact, "a note that decides: core's own high-pass takes exactly the target's loss there (1 dB, club 0.3), on every target, slope and rate" + (worst.empty() ? "" : " — not " + worst));
     ok (unrounded, "the cutoff is not rounded to the hertz");
     ok (stops, "a floor above the note's cutoff takes more of it, and says how much; a top below it takes less");
-    Readings low; low.occupy (21, 0.5, 60, 6);                // 27.5 Hz: an 808 under the floor
+    Readings low; low.occupy (23, 0.5, 60, 6);                // 30.87 Hz, B0: a five-string under the floor
     const auto f = plan (low.inputs ("allStreaming", 60)).found.hpf;
     ok (f.cut == HpfCut::BelowFloor && same (f.cutoffHz, 32.0) && *f.noteLossDb > 3, "a note under the floor: 32 Hz, and the note cut by "
         + std::to_string (*f.noteLossDb) + " dB");
@@ -373,9 +377,9 @@ void whereTheBassSounds()
 
 struct Mix
 {
-    static constexpr std::uint32_t rate = 48000;
+    std::uint32_t rate = 48000;
     std::vector<float> left, right;
-    explicit Mix (double seconds) : left (std::size_t (seconds * rate)), right (left.size()) {}
+    explicit Mix (double seconds, std::uint32_t at = 48000) : rate (at), left (std::size_t (seconds * at)), right (left.size()) {}
     // A passage of a sine from `from` to `to` seconds, fading over 50 ms at each end (a gated sine's click is broadband).
     Mix& passage (double hz, double level, double from, double to)
     {
@@ -456,7 +460,7 @@ Measured measure (const Mix& m, const char* target = "allStreaming")
     auto& s = *out.s;
     const float* planes[] { m.left.data(), m.right.data() };
     (void) s.apply (command::SetTarget { 1, target });
-    ok (s.apply (command::Load { 2, { planes, 2, m.left.size(), Mix::rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
+    ok (s.apply (command::Load { 2, { planes, 2, m.left.size(), m.rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
     untilTheLowEnd (s, 2000000);
     out.plan = s.snapshot().view().plan;
     return out;
@@ -529,8 +533,8 @@ void aRareLowNoteIsNotSkipped()
             "and the floor says the lowest band was not sure: " + said);
     }
     {
-        // One 0.2 s thump at 25 Hz.
-        auto mix = bassy(); mix.passage (25.0, 0.4, 40.0, 40.2);
+        // One 0.2 s thump at 31 Hz, from where the note is sought.
+        auto mix = bassy(); mix.passage (31.0, 0.4, 40.0, 40.2);
         const auto m = measure (mix);
         ok (m.plan.hpf.cut == HpfCut::Unsure && same (m.plan.hpf.cutoffHz, 32.0), "one thump under the bass: the floor as well ("
             + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
@@ -740,7 +744,7 @@ void everyTargetFromOneMeasurement()
             && (v.view().plan.hpf.cut == HpfCut::Note || v.view().plan.hpf.cut == HpfCut::Floor)
             && v.view().measurements[std::size_t (Analyzer::LowEnd)].key == before.view().measurements[std::size_t (Analyzer::LowEnd)].key;
         if (v.view().plan.hpf.cut == HpfCut::Note)
-            each = each && std::abs (coreLoss (d.hpf.machine.fq, target.hpfSlope, Mix::rate, *v.view().plan.hpf.noteHz) - target.noteLossDb.toDouble()) < 1e-6;
+            each = each && std::abs (coreLoss (d.hpf.machine.fq, target.hpfSlope, 48000, *v.view().plan.hpf.noteHz) - target.noteLossDb.toDouble()) < 1e-6;
     }
     ok (each, "every target: its slope, its crossover, its loss at the note; the person's edit reset by the change");
     ok (! again, "and no measurement ran again");
@@ -793,11 +797,21 @@ void theLowestBandWithItsSureness()
         "D1 8 dB under: published and sure (" + std::to_string (sureMargin.value_or (-1.0)) + " dB)");
 }
 
-// UNDER 25 Hz (owner, 06.10): «the spectrum from 10 Hz, the lowest note from 25 Hz» — what sounds under 25 Hz is measured
-// in the table, and is never the lowest note the high-pass and the report read; a bass above it is found as before.
-void underTwentyFiveHzIsTheSpectrumsNotTheNotes()
+// The loudest-of-the-low-end observation's line, in English and in Russian ({} where it is not stated).
+std::pair<std::string, std::string> loudestLowLine (const Measured& m)
 {
-    felitronics::test::group ("under 25 Hz: the table measures from 10 Hz, and what sounds there is never the lowest note");
+    const auto snapshot = m.s->snapshot();
+    const auto& facts = snapshot.view().observationFacts;
+    for (std::size_t i = 0; i < facts.count; ++i)
+        if (const auto& f = facts.items[i]; f.kind == ObservationKind::LoudestLowNote) return { text::Text::text (f.fact, text::Lang::En), text::Text::text (f.fact, text::Lang::Ru) };
+    return {};
+}
+
+// UNDER 30 Hz (owner, 06.10 and 07.10): «the spectrum from 10 Hz», the lowest note from 30 Hz — what sounds under it is measured
+// in the table, and is never the lowest note the high-pass and the report read; a bass above it is found as before.
+void underThirtyHzIsTheSpectrumsNotTheNotes()
+{
+    felitronics::test::group ("under 30 Hz: the table measures from 10 Hz, and what sounds there is never the lowest note, nor named one");
     const auto note = [] (double hz) { return std::round (12 * std::log2 (hz / 440.0) + 69); };
     const auto bandsOf = [] (const Measured& m)
     {
@@ -822,12 +836,29 @@ void underTwentyFiveHzIsTheSpectrumsNotTheNotes()
         const auto peak = lowNumber (m, "peakMidi");
         ok (total > 0 && at / total > 0.9 && peak && same (*peak, 11.0),
             "a 15.43 Hz tone shows in its own band: " + std::to_string (total > 0 ? at / total : 0.0) + " of the table's energy, the loudest band");
-        MeasurementReason why {};
-        const auto lowest = lowNumber (m, "lowestOccupiedHz", &why);
-        ok (! lowest && why == MeasurementReason::NoSignal,
-            "and is no lowest occupied band: nothing from 25 Hz up (" + std::to_string (lowest.value_or (0.0)) + " Hz)");
-        ok (m.s->snapshot().view().observations.lowestLowBand.status == ObservationStatus::NotFound, "the report names no lowest band");
+        // The occupancy reference from 30 Hz (owner, 07.10): the tone's leakage is the loudest from 30 Hz up, so the reading
+        // names B0 30.87 Hz as the lowest band — unsure, and the plan stands at the floor.
+        const auto lowest = lowNumber (m, "lowestOccupiedHz"), sure = lowNumber (m, "lowestOccupiedSure");
+        ok (lowest && std::abs (*lowest - 30.87) < 0.005 && sure && same (*sure, 0.0),
+            "and its lowest occupied band, from 30 Hz up, is B0 30.87 Hz, unsure (" + std::to_string (lowest.value_or (0.0)) + " Hz)");
+        const auto lowestBand = m.s->snapshot().view().observations.lowestLowBand;
+        ok (lowestBand.status == ObservationStatus::Found && lowestBand.doubtful && same (lowestBand.value, 23.0),
+            "the report names the lowest band B0, unsure");
+        // ...and the loudest of the low end, under 30 Hz, is named as low-frequency energy at its frequency — never a note
+        // (owner, 07.10).
+        const auto line = loudestLowLine (m);
+        ok (line.first == "Loudest in the low end: low-frequency energy at 15.4\u00A0Hz" && line.second.find ("энергия") != std::string::npos
+            && line.second.find ("нота") == std::string::npos && m.s->snapshot().view().observations.loudestLowNote.third == 1.0,
+            "the loudest of the low end is low-frequency energy at 15.4 Hz, no note: \"" + line.first + "\" / \"" + line.second + "\"");
         ok (m.plan.hpf.cut == HpfCut::Unsure && ! m.plan.hpf.noteMidi && same (m.plan.hpf.cutoffHz, 32.0), "and the high-pass stands at the floor");
+    }
+    {
+        // The occupancy reference from 30 Hz (owner, 07.10): E1 under a 15.43 Hz rumble 26 dB louder is on, and its note.
+        const auto m = measure (Mix (20).tone (41.2, 0.02).tone (15.43, 0.4));
+        ok (m.plan.hpf.cut == HpfCut::Note && m.plan.hpf.noteMidi == 28, "E1 under a 15.43 Hz rumble 26 dB louder: its note (cut "
+            + std::to_string (int (m.plan.hpf.cut)) + ")");
+        const auto b0 = measure (Mix (20).tone (30.87, 0.01).tone (15.43, 0.4));
+        ok (b0.plan.hpf.noteMidi == 23, "B0 under a 15.43 Hz rumble 32 dB louder: its note");
     }
     {
         const auto m = measure (Mix (20).tone (55.0, 0.3).tone (15.43, 0.15).tone (440.0, 0.1));
@@ -836,22 +867,37 @@ void underTwentyFiveHzIsTheSpectrumsNotTheNotes()
             "a bass at 55 Hz over a 15.43 Hz rumble 6 dB under it: its note, as before (" + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
         const auto lowest = lowNumber (m, "lowestOccupiedMidi");
         ok (lowest && same (*lowest, note (55.0)), "and the lowest occupied band is the bass's");
+        const auto line = loudestLowLine (m);
+        ok (line.first == "Loudest bass note: A1" && m.s->snapshot().view().observations.loudestLowNote.third == 0.0,
+            "and the loudest of the low end, from 30 Hz up, is its note: \"" + line.first + "\"");
     }
     {
-        const auto m = measure (Mix (20).tone (55.0, 0.3).tone (23.12, 0.15).tone (440.0, 0.1));
+        const auto m = measure (Mix (20).tone (55.0, 0.3).tone (27.5, 0.15).tone (440.0, 0.1));
         ok (m.plan.hpf.cut == HpfCut::Note && m.plan.hpf.noteMidi && same (double (*m.plan.hpf.noteMidi), note (55.0))
             && m.plan.hpf.cutoffHz > 32 && m.plan.hpf.cutoffHz < 55,
-            "a 23.12 Hz rumble under it — under 25 Hz, not 20: the bass's note all the same (" + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
+            "a 27.50 Hz rumble under it — under 30 Hz, not 25: the bass's note all the same (" + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
+    }
+    {
+        // The bass's fifth string the limit for everything (owner, 07.10): A0 27.5 Hz alone is no note and is never named one;
+        // B0 30.87 Hz is both.
+        const auto a0 = measure (Mix (20).tone (27.5, 0.3));
+        const auto line = loudestLowLine (a0).first;
+        ok (a0.plan.hpf.cut == HpfCut::Unsure && ! a0.plan.hpf.noteMidi && line == "Loudest in the low end: low-frequency energy at 27.5\u00A0Hz",
+            "A0 27.5 Hz alone: no note — the floor — and the loudest of the low end is low-frequency energy: \"" + line + "\"");
+        const auto b0 = measure (Mix (20).tone (30.87, 0.3));
+        const auto said = text::Text::text (PlanText::hpf (b0.plan.hpf), text::Lang::En), loudest = loudestLowLine (b0).first;
+        ok (b0.plan.hpf.cut == HpfCut::BelowFloor && b0.plan.hpf.noteMidi == 23 && said.find ("B0") != std::string::npos
+            && loudest == "Loudest bass note: B0", "B0 30.87 Hz alone, a five-string's lowest: its note, named: \"" + said + "\" / \"" + loudest + "\"");
     }
 }
 
-// A MIX WITH NO BASS SAYS "UNSURE" (owner, 07.10): the lowest band from 25 Hz up that only a high tone's leakage, a dither
-// or a rumble lights stands within a few dB of the note range's background, and [lowEnd] occupiedAboveBackgroundDb vetoes
-// it — never skipping to the band above it. A played bass stands far over the background and is found as before, also
-// 40 dB under a loud 1 kHz tone.
+// A MIX WITH NO BASS SAYS "UNSURE" (owner, 07.10): a high tone's leakage, a dither, a noise or a rumble lights the bands on
+// both sides of 30 Hz alike, so the lowest band from 30 Hz up is not where the low end starts — the band under it was on —
+// and it is no note, never a skip to the band above it. A played bass has nothing on under it and is found as before,
+// also 40 dB under a loud 1 kHz tone.
 void aMixWithNoBassIsUnsure()
 {
-    felitronics::test::group ("a mix with no bass is unsure: a band lit by leakage, dither or rumble is vetoed by the background");
+    felitronics::test::group ("a mix with no bass is unsure: a band lit by leakage, dither or rumble is not where the low end starts");
     const auto said = [] (const Measured& m)
     {
         const auto sure = lowNumber (m, "lowestOccupiedSure"), midi = lowNumber (m, "lowestOccupiedMidi");
@@ -890,6 +936,86 @@ void aMixWithNoBassIsUnsure()
     found (measure (Mix (20).tone (41.2, 0.3).dither (16).pink (0.001)), 28, "E1 over a dither and a rumble: its note");
 }
 
+// REAL MIXES KEEP THEIR NOTES (owner, 07.10): v0.19.0's background veto took the lowest note from real mixes — a dense mix's
+// lowest note stands −6 to +0.4 dB over the note range's median density — so the planner reads the recorded low end of
+// the two demo songs (RealMixLowEnd.h) and names v0.18.0's note on each: D♯1 in Cold Gaze of Eternity (the owner's
+// answer of 07.10: kept for now, though the song never goes under E), unsure in Cat in Space.
+void realMixesKeepTheirNotes()
+{
+    felitronics::test::group ("real mixes keep their notes: the two demo songs name v0.18.0's lowest note");
+    int same18 = 0, notes = 0;
+    std::string wrong;
+    for (const auto& mix : kRealMixes)
+    {
+        Readings r; r.rate = mix.rate; r.hop = mix.hop; r.rangeShare = mix.rangeShare; r.background = mix.background;
+        for (auto& v : r.bands) v = 0;
+        for (int b = 0; b < kBandCount; ++b) { double* row = r.bands.data() + b * 16; row[0] = kFirstMidi + b; row[1] = midiHz (kFirstMidi + b); row[15] = 1; }
+        for (int i = 0; i < mix.bandCount; ++i)
+        {
+            const auto& band = mix.bands[i];
+            double* row = r.bands.data() + (band.midi - kFirstMidi) * 16;
+            row[11] = band.count; row[12] = band.duty; row[14] = band.marginDb; row[7] = band.density; row[15] = band.resolved;
+        }
+        const auto f = plan (r.inputs ("allStreaming", double (mix.frames) / mix.rate)).found.hpf;
+        const int named = f.noteMidi.value_or (-1);
+        const int expected = mix.v018Note;
+        if (named == expected) ++same18;
+        else if (wrong.size() < 300) wrong += std::string (" ") + mix.name + ": " + std::to_string (named) + " not " + std::to_string (expected) + ";";
+        notes += named >= 0 ? 1 : 0;
+    }
+    ok (same18 == int (std::size (kRealMixes)), "every real mix names v0.18.0's note (" + std::to_string (same18) + " of "
+        + std::to_string (std::size (kRealMixes)) + ", " + std::to_string (notes) + " notes)" + wrong);
+    const auto one = [] (std::string_view name)
+    {
+        for (const auto& mix : kRealMixes) if (std::string_view (mix.name) == name) return &mix;
+        return static_cast<const RealMix*> (nullptr);
+    };
+    const auto* gaze = one ("cold-gaze-of-eternity");
+    ok (gaze && gaze->v018Note == 27, "PRECONDITION: Cold Gaze of Eternity, the demo, had D♯1 at v0.18.0");
+}
+
+// EVERY RATE RESOLVES AS 48 kHz DOES (owner, 07.10): the low-end run's order is the one whose bin is no wider than the
+// configured order's at [lowEnd.run] fftOrderUpToHz — 17 up to 48 kHz, as before, one more per doubling above it — so a bass
+// at 88.2, 96 or 192 kHz is found as at 48 kHz, with the same window and hop in seconds, and nothing at 48 kHz and under moves.
+void everyRateResolvesAsFortyEight()
+{
+    felitronics::test::group ("every rate resolves as 48 kHz does: the order rises above 48 kHz, and nothing at 48 kHz and under moves");
+    {
+        bool each = true;
+        std::string worst;
+        const std::pair<std::uint32_t, int> orders[] = { { 8000, 17 }, { 11025, 17 }, { 16000, 17 }, { 22050, 17 }, { 32000, 17 },
+                                                         { 44100, 17 }, { 48000, 17 }, { 48001, 18 }, { 88200, 18 }, { 96000, 18 },
+                                                         { 96001, 19 }, { 176400, 19 }, { 192000, 19 }, { 384000, 20 }, { 768000, 21 } };
+        for (const auto& [rate, order] : orders)
+        {
+            const Pcm pcm { nullptr, 2, std::uint64_t (rate) * 20u, rate };
+            const auto p = detail::MeasurementPlan::parametersFor (pcm);
+            const bool all = p.lowEnd.fftOrder == order && p.lowEnd150.fftOrder == order && p.infraLow.fftOrder == order;
+            const auto plan = detail::MeasurementPlan::storageFor (pcm, p);
+            const bool available = plan.analyzers[std::size_t (Analyzer::LowEnd)].available;
+            if (! (all && available) && worst.empty()) worst = std::to_string (rate) + " Hz: order " + std::to_string (p.lowEnd.fftOrder);
+            each = each && all && available;
+        }
+        ok (each, "the order of all three low-end runs: 17 from 8 to 48 kHz, 18 to 96, 19 to 192, 20 at 384, 21 at 768 — and "
+                  "the run is available at each" + (worst.empty() ? "" : " — not " + worst));
+    }
+    for (const std::uint32_t rate : { 88200u, 96000u, 192000u })
+    {
+        const std::string at = " at " + std::to_string (rate) + " Hz";
+        const auto e1 = measure (Mix (20, rate).tone (41.2, 0.3));
+        const auto resolved = lowNumber (e1, "lowestOccupiedResolved"), hop = lowNumber (e1, "hopSamples");
+        ok (e1.plan.hpf.cut == HpfCut::Note && e1.plan.hpf.noteMidi == 28 && resolved && same (*resolved, 1.0),
+            "E1 41.2 Hz alone" + at + ": its note, resolved (cut " + std::to_string (int (e1.plan.hpf.cut)) + ")");
+        const double window = rate > 96000 ? 524288.0 : 262144.0;
+        ok (hop && same (*hop, window / 2) && std::abs (window / rate - 131072.0 / (rate == 88200 ? 44100 : 48000)) < 1e-12,
+            "and the run's window and hop" + at + " last as at " + (rate == 88200 ? "44.1" : "48") + " kHz: hop " + std::to_string (hop.value_or (0)));
+        const auto b0 = measure (Mix (20, rate).tone (30.87, 0.3).tone (1000.0, 0.1));
+        ok (b0.plan.hpf.noteMidi == 23 && b0.plan.hpf.cut == HpfCut::BelowFloor, "B0 30.87 Hz under a 1 kHz tone" + at + ": its note, under the floor");
+        const auto none = measure (Mix (20, rate).tone (1000.0, 0.3));
+        ok (none.plan.hpf.cut == HpfCut::Unsure && same (none.plan.hpf.cutoffHz, 32.0), "a 1 kHz tone alone" + at + ": unsure, the floor");
+    }
+}
+
 //==============================================================================
 // MASTER AS SOON AS THE LOUDNESS AND THE TRUE PEAK ARE KNOWN (owner, 02.10): the devices are placed then; a field whose
 // measurement has not ended is the machine's "not measured yet"; a person may edit it; a hidden panel's master waits in
@@ -901,7 +1027,7 @@ Early loadMix (const Mix& m, const char* target)
     Early out { Session::create().session };
     const float* planes[] { m.left.data(), m.right.data() };
     (void) out.s->apply (command::SetTarget { 1, target });
-    ok (out.s->apply (command::Load { 2, { planes, 2, m.left.size(), Mix::rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
+    ok (out.s->apply (command::Load { 2, { planes, 2, m.left.size(), m.rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
     return out;
 }
 template <class P> bool pumpUntil (Session& s, P&& done, unsigned limit = 4000000)
@@ -1072,7 +1198,7 @@ void noFileCarriesAPlaceholder()
 int main()
 {
     theSureLowestNote();
-    theLowestNoteFromTwentyFiveHz();
+    theLowestNoteFromThirtyHz();
     theCutoffOnTheChainsResponse();
     quietAndUnmeasured();
     theLossOfTheLowEnd();
@@ -1084,8 +1210,10 @@ int main()
     aSentenceStatesWhatSounds();
     everyTargetFromOneMeasurement();
     theLowestBandWithItsSureness();
-    underTwentyFiveHzIsTheSpectrumsNotTheNotes();
+    underThirtyHzIsTheSpectrumsNotTheNotes();
     aMixWithNoBassIsUnsure();
+    realMixesKeepTheirNotes();
+    everyRateResolvesAsFortyEight();
     masterAtLoudnessAndPeak();
     aHiddenMasterAtLoudnessAndPeakSoundsAsLate();
     theDeviceRunsGoFirst();
