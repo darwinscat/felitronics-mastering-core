@@ -1399,8 +1399,8 @@ EQ curve a set of knob values would draw, a low-end curve from band energies. `f
 each delegating to the code the session itself uses — `Text::write` behind the codec's own fact reader, `Text::parse` on
 the commands' domains (`Knob::accepts`, `Rules::slope`) and the config's grid — step 0 is no grid (owner, 07.10: every
 manual knob but mono bass's width): a typed value is kept as typed, and `Kit::valueAt` maps a position linearly onto the
-travel — the config's travels, green windows (`[edit] lufs/tp green`), comfort (`[hpf] comfort`) and normal ranges
-(`[tilt]`/`[low] normal`, out to `hard`), the
+travel — the config's travels, green windows (`[edit] lufs/tp green`), comfort (`[hpf] comfort`; since 07.10 also
+`[monoBass] comfort`, `[glue] comfort` and `mixComfort`, `[saturation] driveComfort`) and normal ranges (`[tilt]`/`[low] normal`, out to `hard`), the
 zones (`[monoBass.zones]`), the EQ stage's `writeEq` / `eqCurve` / `eqFinding`, det-math's `log10`. The plan's comfort and
 zones advice reads its comparison from `Kit::heat` and `Kit::monoZonesAt`, so a knob's colour and the advice beside it
 cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLowDb`), the id a refusal already names it by.

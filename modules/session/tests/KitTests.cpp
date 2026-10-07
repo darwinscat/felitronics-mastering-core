@@ -323,8 +323,25 @@ void travelAndHeat()
         "the bands body, forward, brightness and air: normal within ±1.5 dB, out to ±3");
     ok (heat (Term::FieldBandsMud, 0, 0, 0) && heat (Term::FieldBandsMud, -2.25, 0.5, -1) && heat (Term::FieldBandsMud, -3, 1, -1),
         "the mud band, a cut alone: normal down to −1.5 dB, out to −3");
-    const auto none = Kit::heat (Term::FieldGlueUpToDb, 1.2);
-    ok (none.status == CodecStatus::Ok && ! none.window && sameBits (none.heat, 0) && none.side == 0, "the glue has no window");
+    const auto none = Kit::heat (Term::FieldMonoBassWidth, 0.5);
+    ok (none.status == CodecStatus::Ok && ! none.window && sameBits (none.heat, 0) && none.side == 0, "the mono-bass width has no window");
+    // THE NEW WINDOWS (owner, 07.10): mono bass's crossover, the glue's amount and mix, the saturation's drive.
+    ok (heat (Term::FieldMonoBassFq, 140, 0, 0) && heat (Term::FieldMonoBassFq, 100, 0, 0) && heat (Term::FieldMonoBassFq, 180, 0, 0)
+        && heat (Term::FieldMonoBassFq, 87.5, 0.5, -1) && heat (Term::FieldMonoBassFq, 75, 1, -1) && heat (Term::FieldMonoBassFq, 60, 1, -1)
+        && heat (Term::FieldMonoBassFq, 215, 0.5, 1) && heat (Term::FieldMonoBassFq, 250, 1, 1) && heat (Term::FieldMonoBassFq, 300, 1, 1),
+        "mono bass's crossover: neutral 100–180 Hz, half way at 87.5 and 215, red from 75 and 250");
+    ok (heat (Term::FieldGlueUpToDb, 0, 0, 0) && heat (Term::FieldGlueUpToDb, 1.5, 0, 0) && heat (Term::FieldGlueUpToDb, 3.75, 0.5, 1)
+        && heat (Term::FieldGlueUpToDb, 3, 1.5 / 4.5, 1) && heat (Term::FieldGlueUpToDb, 6, 1, 1),
+        "the glue: neutral 0–1.5 dB, a third of the way to red at the travel's 3 dB, red at 6");
+    {
+        const auto half = Kit::heat (Term::FieldGlueMix, 0.15);
+        ok (heat (Term::FieldGlueMix, 0.3, 0, 0) && heat (Term::FieldGlueMix, 1, 0, 0) && heat (Term::FieldGlueMix, 0, 1, -1)
+            && half.status == CodecStatus::Ok && half.window && half.side == -1 && std::abs (half.heat - 0.5) < 1e-12,
+            "the glue's mix: neutral 30–100 %, half way at 15 %, red at 0");
+    }
+    ok (heat (Term::FieldSaturationDrive, 0, 0, 0) && heat (Term::FieldSaturationDrive, 1.5, 0, 0) && heat (Term::FieldSaturationDrive, 4.75, 0.5, 1)
+        && heat (Term::FieldSaturationDrive, 8, 1, 1) && heat (Term::FieldSaturationDrive, 12, 1, 1),
+        "the saturation's drive: neutral 0–1.5 dB, half way at 4.75, red from 8");
 }
 
 void zonesAndAdvice()
