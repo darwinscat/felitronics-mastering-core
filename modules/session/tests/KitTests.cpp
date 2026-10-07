@@ -283,9 +283,9 @@ void travelAndHeat()
     ok (heat (Term::FieldHpfFq, 30, 0, 0) && heat (Term::FieldHpfFq, 46, 0.5, 1) && heat (Term::FieldHpfFq, 60, 1, 1)
         && heat (Term::FieldHpfFq, 50, 1, 1) && heat (Term::FieldHpfFq, 70, 1, 1) && heat (Term::FieldHpfFq, 80, 1, 1),
         "the high-pass's comfort window, out to its warnings; red from 50 Hz to the travel's 80 (owner, 01.10)");
-    ok (heat (Term::FieldHpfFq, 27, 0, 0) && heat (Term::FieldHpfFq, 25, 0.5, -1) && heat (Term::FieldHpfFq, 23, 1, -1)
+    ok (heat (Term::FieldHpfFq, 30, 0, 0) && heat (Term::FieldHpfFq, 28, 0.5, -1) && heat (Term::FieldHpfFq, 26, 1, -1)
         && heat (Term::FieldHpfFq, 15, 1, -1),
-        "it yellows from 27 Hz down, half way at 25, red from 23 (owner, 06.10: the ramp as long as before)");
+        "it yellows from 30 Hz down, half way at 28, red from 26 (owner, 06.10: the ramp as long as before)");
     ok (heat (Term::FieldTiltDb, 0, 0, 0) && heat (Term::FieldTiltDb, 2.25, 0.5, 1) && heat (Term::FieldLowDb, -3, 1, -1), "tilt and low: normal, out to hard");
     // The five EQ bands are coloured as tilt and low are (owner, 02.10): ±1.5 dB normal, out to their travel's ends.
     ok (heat (Term::FieldBandsBody, 0, 0, 0) && heat (Term::FieldBandsBody, 2.25, 0.5, 1) && heat (Term::FieldBandsBody, -3, 1, -1)

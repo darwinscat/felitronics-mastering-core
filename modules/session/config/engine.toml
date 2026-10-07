@@ -230,7 +230,7 @@ skipBlocks = 0
 #   default, named as a number so that the order of the list cannot change the sound.
 # comfort: the knob's field is neutral from lowHz to highHz and shades through a warning towards warningLowHz below and
 #   warningHighHz above, red past them (50 to 80 Hz of the travel is red) — one window, a hint to the knob, changing
-#   neither the machine nor the travel. Below 27 Hz the field yellows (owner, 06.10), red from 23 — the ramp as long as
+#   neither the machine nor the travel. Below 30 Hz the field yellows (owner, 06.10), red from 26 — the ramp as long as
 #   before; above 42 Hz the cutoff takes music, not rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
