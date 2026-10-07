@@ -16,5 +16,9 @@
   `[lowEnd] occupiedAboveBackgroundDb = 6`: the lowest band's density must also stand 6 dB above the note range's
   background (`backgroundDensity`, the median density of the other bands), or it is no note — a veto, never a skip to the
   band above. The planner's sure note and `lowestOccupiedSure` apply it alike. A band lit by leakage, dither or rumble
-  reads within 2 dB of the background; a played bass reads 17 dB over it and more. Schema range 0…60 dB; it is a sound
-  number, so the `2026-10` sound version moves with it.
+  reads within 2 dB of the background; a played bass reads 17 dB over it and more. Schema range 0…60 dB.
+- New `[lowEnd] noteRangeShareAtLeastDb = -140`, a second veto of the same kind: the note range must hold −140 dB of the
+  programme's energy (`bandRangeShare`), or there is no note. A float 997 Hz tone that is not periodic in the sample grid
+  rounds into real lines in the low bands, 6.3 dB over the background in a range holding −172 dB; the least share a sure
+  note held in the tests is −107 dB. Schema range −240…0 dB. Both keys are sound numbers, so the `2026-10` sound version
+  moves with them.

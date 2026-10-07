@@ -60,7 +60,7 @@ struct SourceWarnings
 struct SourceResults
 {
     static void lowEnd (MeasurementStore& out, const analysis::LowEnd& instrument, double duty, double margin, double fromHz,
-                        double aboveBackgroundDb) noexcept;
+                        double aboveBackgroundDb, double rangeShareDb) noexcept;
     static void forensics (MeasurementStore& out, const analysis::SourceForensics& instrument, int bitDepth) noexcept;
     [[nodiscard]] static int forensicsMetadata (MeasurementStore& out, int bitDepth) noexcept;
     static void hum (MeasurementStore& out, const analysis::HumDetector& instrument) noexcept;

@@ -329,7 +329,8 @@ void pump()
         // background's veto.
         replace (engine, "\nlowNoteHz = 10\n", "\nlowNoteHz = 20\n");
         replace (engine, "\nhighNoteHz = 500\n", "\nhighNoteHz = 300\n");
-        for (const std::string_view key : { "\nlowestNoteFromHz = ", "\noccupiedAboveBackgroundDb = ", "\nnoteTopHz = " }) erase (engine, key);
+        for (const std::string_view key : { "\nlowestNoteFromHz = ", "\noccupiedAboveBackgroundDb = ", "\nnoteRangeShareAtLeastDb = ",
+                                            "\nnoteTopHz = " }) erase (engine, key);
         // The high-pass curve's marks: the piano's back to the 808's, the guitar's and speech's out; its comfort window from
         // 30 Hz, red from 26, back to 24 and 20.
         replace (engine, "{ key = \"piano\", hz = 27.5 }", "{ key = \"sub808\", hz = 28 }");
@@ -538,8 +539,9 @@ void pump()
     // 68ca2efc7cbe6d1d before them).
     // The rest of v0.19.0 (07.10) — the stepless knobs, the comfort windows of mono bass, the glue and the saturation, the
     // low-end table to 500 Hz with the note's readings to 300 Hz, and the background's veto on the lowest note — moves the
-    // config's version alone, restated above by withoutV019 (6be3d618efebc6d8 / 4c09489f3d62dc95 before it).
-    ok (eventsHash (one) == 0xaf796027fbc2d96dull && eventsHash (cancelled) == 0x63e0b5042dc6966dull,
+    // config's version alone, restated above by withoutV019 (6be3d618efebc6d8 / 4c09489f3d62dc95 before it); the range's
+    // share veto (07.10) once more (af796027fbc2d96d / 63e0b5042dc6966d before it).
+    ok (eventsHash (one) == 0x6c3491a8b997b879ull && eventsHash (cancelled) == 0x69b29177d62337adull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

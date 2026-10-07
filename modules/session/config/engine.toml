@@ -170,6 +170,10 @@ manualStepDb = 0
 #   range — or it is no note: a veto, never a skip to the band above it, which would make a harmonic the note. A band
 #   that only the leakage of a high tone, a dither or a rumble lights reads within 2 dB of the background; a played
 #   note reads 17 dB over it and more (a 0.5 s B0) — up to 100 dB on a held bass.
+# noteRangeShareAtLeastDb (owner, 07.10, the same decision): the note's range must also hold this share of the programme's
+#   energy (`bandRangeShare`), or there is no note — a second veto on the decision alone, for a tone whose rounding draws
+#   real lines into an otherwise empty range (a float 997 Hz tone: −172 dB, its lines 6.3 dB over the background). The
+#   least share a sure note in the tests holds is −107 dB; a mix holds −30 dB and more.
 # lowestNoteFromHz (owner, 06.10: «the spectrum from 10 Hz, the lowest note from 25 Hz — not 20, 25»): the lowest note is
 #   sought from the first band whose centre lies at or above it, G#0 at 25.96 Hz. The run measures from 10 Hz for the
 #   spectrum, and a band under this one is skipped — it is never the note and never stands in the way of the bands above.
@@ -181,6 +185,7 @@ manualStepDb = 0
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2
 occupiedAboveBackgroundDb = 6
+noteRangeShareAtLeastDb = -140
 lowestNoteFromHz = 25
 infraLowCrossoverHz = 30
 
@@ -217,7 +222,7 @@ skipBlocks = 0
 # note (owner decision 3.2): the lowest note — the lowest band on at all from [lowEnd] lowestNoteFromHz up — is sure when its
 #   band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
 #   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line and [lowEnd] occupiedAboveBackgroundDb (6 dB) above the
-#   background, lies above aboveHz (not DC, not rumble) and sounds at least
+#   background, the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, lies above aboveHz (not DC, not rumble) and sounds at least
 #   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.

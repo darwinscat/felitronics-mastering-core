@@ -292,6 +292,11 @@ void theSchemaRefuses()
     mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 61", "61", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
     mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = -1", "-1", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
     mustAccept (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 0");
+    // The note range's share of the programme (owner, 07.10): −240…0 dB, required.
+    mustRefuse (E, "noteRangeShareAtLeastDb = -140\n", "", "[lowEnd]", Fault::Missing, "lowEnd.noteRangeShareAtLeastDb");
+    mustRefuse (E, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = 1", "1", Fault::OutOfRange, "lowEnd.noteRangeShareAtLeastDb");
+    mustRefuse (E, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -241", "-241", Fault::OutOfRange,
+                "lowEnd.noteRangeShareAtLeastDb");
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "[stereoBursts]", Fault::Refused,
                 "stereoBursts", Refusal::AnalyzerRefuses);
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000.0001", "[stereoBursts]",

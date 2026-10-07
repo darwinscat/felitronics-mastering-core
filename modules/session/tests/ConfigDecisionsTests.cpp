@@ -91,7 +91,9 @@ constexpr Golden kGolden[] = {
     // ...and every manual knob stepless (owner, 07.10: step 0, a typed value kept as typed — no machine value moves), the
     // low-end table to 500 Hz with the note's readings kept to 300 Hz (noteTopHz, 07.10: the drawings), and [lowEnd]
     // occupiedAboveBackgroundDb 6 (07.10: a mix with no bass is unsure); it was e16b73aead43a728; updated in place, as above.
-    { "2026-10", 0x4fab20b29ed728bbull },
+    // ...and [lowEnd] noteRangeShareAtLeastDb −140 (07.10, the same decision: a float tone's rounding lines are no note); it
+    // was 4fab20b29ed728bb; updated in place, as above.
+    { "2026-10", 0x702dd4d0cbf8d059ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -256,6 +258,8 @@ std::vector<std::string> departures (const config::Config& c)
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
     need (same (e.lowEnd.occupiedAboveBackgroundDb, 6.0),
           "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)");
+    need (same (e.lowEnd.noteRangeShareAtLeastDb, -140.0),
+          "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
     need (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
     need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].upToDb, 2.6),
@@ -432,6 +436,8 @@ void aDepartureIsNamed()
         { false, "noteTopHz = 300", "noteTopHz = 0",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
+        { false, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -160",
+          "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)" },
         { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
           "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
         { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",
