@@ -403,7 +403,7 @@ void readLimiter (Doc& d, Reader& in, Limiter& o)
 }
 
 // The low end (analysis::LowEnd): the main run and the infra-low run — the same geometry, split at infraLowCrossoverHz —
-// each admitted by LowEnd::storageFor at every source rate, or refused whole.
+// each admitted by LowEnd::storageFor at every source rate — at the order that rate takes — or refused whole.
 bool lowEndAdmits (const LowEndRun& r, double crossoverHz)
 {
     analysis::LowEndParams p;
@@ -411,11 +411,13 @@ bool lowEndAdmits (const LowEndRun& r, double crossoverHz)
     p.lowNoteHz = r.lowNoteHz;
     p.highNoteHz = r.highNoteHz;
     p.noteTopHz = r.noteTopHz;
-    p.fftOrder = r.fftOrder;
     p.dutyThresholdDb = r.dutyThresholdDb;
     p.skipBlocks = r.skipBlocks;
-    return std::all_of (std::begin (kSourceRates), std::end (kSourceRates),
-                        [&] (double rate) { return analysis::LowEnd::storageFor (rate, kChannels, p).ok; });
+    return std::all_of (std::begin (kSourceRates), std::end (kSourceRates), [&] (double rate)
+    {
+        p.fftOrder = analysis::LowEnd::fftOrderFor (rate, r.fftOrder, r.fftOrderUpToHz);
+        return analysis::LowEnd::storageFor (rate, kChannels, p).ok;
+    });
 }
 
 void readLowEnd (Doc& d, Reader& in, LowEnd& o)
@@ -434,6 +436,7 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
                               t.required ("highNoteHz", r.highNoteHz, R { 0.0, 1.0e6 }),
                               t.required ("noteTopHz", r.noteTopHz, R { 0.0, 1.0e6 }),
                               t.required ("fftOrder", r.fftOrder, I { 0, 30 }),
+                              t.required ("fftOrderUpToHz", r.fftOrderUpToHz, R { 1.0, 1.0e7 }),
                               t.required ("dutyThresholdDb", r.dutyThresholdDb, R { -1.0e6, 1.0e6 }),
                               t.required ("skipBlocks", r.skipBlocks) };
         run = std::all_of (std::begin (read), std::end (read), [] (bool x) { return x; });

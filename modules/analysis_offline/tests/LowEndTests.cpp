@@ -2292,5 +2292,42 @@ int main()
         ok (whole->peakMidi() != narrow->peakMidi() && b64 (whole->backgroundDensity()) != b64 (narrow->backgroundDensity()),
             "CONTROL: the whole 500 Hz table without the note's top reads another note (MIDI " + std::to_string (whole->peakMidi()) + ")");
     }
+
+    //==========================================================================
+    test::group ("fftOrderFor — the order that resolves at a rate as the given order does at upToHz (owner, 07.10: 96 kHz as 48)");
+    {
+        bool each = true;
+        std::string worst;
+        for (const double fs : { 8000.0, 11025.0, 16000.0, 22050.0, 32000.0, 44100.0, 48000.0, 48001.0, 88200.0, 96000.0, 96001.0,
+                                 176400.0, 192000.0, 352800.0, 384000.0, 705600.0, 768000.0 })
+        {
+            const int order = LowEnd::fftOrderFor (fs, 17, 48000.0);
+            const double bin = fs / std::ldexp (1.0, order), coarser = fs / std::ldexp (1.0, order - 1);
+            // No wider than 48 kHz's bin at 17; one order less would be wider — unless that is under 17, which it never takes.
+            const bool fits = bin <= 48000.0 / 131072.0 && (order == 17 || coarser > 48000.0 / 131072.0) && order >= 17;
+            if (! fits && worst.empty()) worst = std::to_string (fs) + " Hz: order " + std::to_string (order);
+            each = each && fits;
+        }
+        ok (each, "every rate: the smallest order at or above 17 whose bin is no wider than 48 kHz's at 17" + (worst.empty() ? "" : " — not " + worst));
+        ok (LowEnd::fftOrderFor (44100.0, 17, 48000.0) == 17 && LowEnd::fftOrderFor (48000.0, 17, 48000.0) == 17
+            && LowEnd::fftOrderFor (88200.0, 17, 48000.0) == 18 && LowEnd::fftOrderFor (96000.0, 17, 48000.0) == 18
+            && LowEnd::fftOrderFor (192000.0, 17, 48000.0) == 19 && LowEnd::fftOrderFor (8000.0, 17, 48000.0) == 17,
+            "17 at 44.1 and 48 kHz, 18 at 88.2 and 96, 19 at 192 — and 17, never lower, at 8 kHz");
+        const double nan = std::numeric_limits<double>::quiet_NaN(), inf = std::numeric_limits<double>::infinity();
+        ok (LowEnd::fftOrderFor (nan, 17, 48000.0) == 17 && LowEnd::fftOrderFor (96000.0, 17, nan) == 17
+            && LowEnd::fftOrderFor (inf, 17, 48000.0) == 17 && LowEnd::fftOrderFor (96000.0, 17, 0.0) == 17
+            && LowEnd::fftOrderFor (-96000.0, 17, 48000.0) == 17 && LowEnd::fftOrderFor (1.0e300, 17, 1.0e-300) == 17 + 32,
+            "a non-finite or non-positive rate or upToHz gives the order itself; the rise stops 32 above it");
+        const auto b64 = [] (double v) { return std::bit_cast<std::uint64_t> (v); };
+        LowEndParams p = base; p.fftOrder = LowEnd::fftOrderFor (96000.0, 17, 48000.0);
+        LowEnd at96, at48;
+        LowEndParams q = base; q.fftOrder = 17;
+        at96.setParams (p); at48.setParams (q);
+        ok (at96.prepare (96000.0, 512, 2) && at48.prepare (48000.0, 512, 2)
+            && b64 (at96.resolvedAboveHz()) == b64 (at48.resolvedAboveHz()) && at96.windowSamples() == 2 * at48.windowSamples()
+            && at96.hopSamples() == 2 * at48.hopSamples(),
+            "at 96 kHz the bands resolve from the same centre as at 48 kHz (" + std::to_string (at96.resolvedAboveHz())
+            + " Hz), the window and the hop as long in seconds");
+    }
     return test::report();
 }

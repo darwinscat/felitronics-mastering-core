@@ -325,8 +325,9 @@ void pump()
         {
             if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
         };
-        // v0.20.0 (owner, 07.10), after v0.19.0: [hpf] note.aboveHz back (20 Hz).
+        // v0.20.0 (owner, 07.10), after v0.19.0: [hpf] note.aboveHz back (20 Hz), [lowEnd.run] fftOrderUpToHz out.
         replace (engine, "note = { soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 3 }");
+        erase (engine, "\nfftOrderUpToHz = ");
         // The low end from 10 Hz, its table to 500 Hz with the note's readings to 300, the lowest note from 25 Hz and the
         // range's veto.
         replace (engine, "\nlowNoteHz = 10\n", "\nlowNoteHz = 20\n");
@@ -544,8 +545,9 @@ void pump()
     // config's version alone, restated above by withoutV019 (6be3d618efebc6d8 / 4c09489f3d62dc95 before it); the range's
     // share veto (07.10) once more (af796027fbc2d96d / 63e0b5042dc6966d before it); the background's veto replaced by the
     // bottom of the low end (07.10, v0.20.0) once more (6c3491a8b997b879 / 69b29177d62337ad before it); [hpf] note.aboveHz
-    // removed (07.10, v0.20.0) once more (368c55877f9bb7fe / 16eb2ed2f0970d35 before it).
-    ok (eventsHash (one) == 0x150088df2017d43aull && eventsHash (cancelled) == 0xbd3c2671c8004c1dull,
+    // removed (07.10, v0.20.0) once more (368c55877f9bb7fe / 16eb2ed2f0970d35 before it); [lowEnd.run] fftOrderUpToHz (07.10,
+    // v0.20.0) once more (150088df2017d43a / bd3c2671c8004c1d before it).
+    ok (eventsHash (one) == 0x9610c2a7fc971f3full && eventsHash (cancelled) == 0x0a28dfdf08da9a7dull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
