@@ -445,11 +445,24 @@ mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
 #   is a jerk. mix 0…1. No output knob: the landing sets the level before the limiter, so a trim would be undone.
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
 # shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
-#   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer and tape;
-#   atan, cubic and asym stay here, for research. tape is the default (owner, 01.10): the machine never raises the drive,
+#   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer, tape, cubic —
+#   the symmetric diode, a hard knee and flat past |x| = 1/k, odd harmonics — and asym — the asymmetric diode, a second
+#   even-harmonic colour beside tube (owner, 07.10, both); atan stays here, for research. Under autoComp 0 every type is
+#   normalised to its own peak, and its small-signal gain at 1.5 / 3.3 / 6 / 9 dB of drive is: cubic 1.012 / 1.077 /
+#   1.493 / 2.728, tanh 1.012 / 1.070 / 1.310 / 1.917, tube 0.957 / 0.936 / 1.020 / 1.387, asym 1.008 / 1.028 / 1.115 /
+#   1.283 — cubic lifts the quiet parts most past 6 dB. tape is the default (owner, 01.10): the machine never raises the drive,
 #   so the type is heard once a person does.
-# bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
-# value is one setting.
+# bias and dcBlockHz: the asymmetric diode's fixed bias and its DC blocker's corner, written to the stage for asym alone
+#   (every other type runs at bias 0 and no blocker, tube included, as before). bias 0.2 (07.10, measured on the static
+#   curve with a sine): the diode is tube's curve where the drive k·0.2 reaches tube's fixed 0.3, at 8 dB of drive — the
+#   red line — and cleaner under it, rougher past it. At 3.3 dB of drive (a knob of 3 on a −1 dBTP mix) H2 stands −35 dBc
+#   at −0.9 dBFS (H3 −37) and −40 dBc at −6 dBFS (H3 −47) — tube −25 and −30; its small-signal gain 1.005…1.115 up to 6 dB,
+#   between tanh's 1.012…1.310 and tube's 0.936…1.020 (0.3 would be tube's twin at 6 dB, 0.5 loses level as it drives:
+#   0.85 at 6 dB). Its mean shifts by up to −0.016 of full scale at 3.3 dB — the blocker at 10 Hz (the core's own
+#   default) takes it off before the limiter. The blocker is a one-pole high-pass on the wet path: at mix 1 it takes
+#   0.97 dB at 20 Hz, 0.43 dB at B0 (30.87 Hz) and 0.25 dB at E1 (41.2 Hz). Both are written by the type, so a research
+#   config with shape = "asym" runs as the diode too: bias 0.2 and the blocker. Below a drive of 0.00087 dB (the core's
+#   number) every value is one setting.
 # cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the
 #   peak of its output, quantum by quantum, after its mix — never the fall of the whole chain's true
 #   peak (that is the limiter's and the peak clipper's work). A peak-normalised shaper lifts everything under full scale,
@@ -466,12 +479,12 @@ driveDb = 0
 driveRange = [0, 12]
 driveStep = 0
 driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }
-bias = 0
+bias = 0.2
 mix = 1
 mixRange = [0, 1]
 mixStep = 0.05
 autoComp = 0
-dcBlockHz = 0
+dcBlockHz = 10
 cut = { loudShare = 0.05 }
 
 # TILT — a manual device with one knob, in dB, and its tick: the machine does not touch timbre (a tilt taken from a

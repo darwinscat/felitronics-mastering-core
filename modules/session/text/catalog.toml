@@ -86,6 +86,10 @@ transformer.ru = "Трансформаторная"
 transformer.en = "Transformer"
 tape.ru = "Ленточная"
 tape.en = "Tape"
+asym.ru = "Диод (асимметричный)"
+asym.en = "Diode (asymmetric)"
+cubic.ru = "Диод (симметричный)"
+cubic.en = "Diode (symmetric)"
 
 # The BS.1116 impairment scale, as the damage's line names the worst window's grade (5 down to 1).
 [terms.damageGrade]

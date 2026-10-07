@@ -185,7 +185,7 @@ public:
     // drive: the plan's saturation.driveDb where the device sounds; the knob's value is the drive for an input that peaks
     // at 0 dBTP. The transformer and tape are drawn as their static cores: the transformer's flux follows the signal's
     // history and the tape's emphasis its frequency, not the level alone (at a held level tape is its core). A type a
-    // person may pick — tanh, tube, transistor, transformer, tape; driveDb finite and not negative, its gain finite as a
+    // person may pick — tanh, tube, transistor, transformer, tape, cubic, asym (at [saturation] bias); driveDb finite and not negative, its gain finite as a
     // float; mix inside the knob's domain. The kernel's tanh is the system's, as the chain's is: a drawing, platform-bound
     // like the sound it draws.
     [[nodiscard]] static KitCount saturationCurve (SaturationType type, double driveDb, double mix, std::span<double> out) noexcept;

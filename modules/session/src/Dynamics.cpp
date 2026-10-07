@@ -234,11 +234,13 @@ saturation::Saturator::Params clipperParams (const Rules& rules, SaturationType 
     saturation::Saturator::Params s {};
     s.shape = saturation::WaveShaper::Shape (type);
     s.driveDb = float (driveDb);
-    s.bias = float (number (saturation.find ("bias")));
+    // The asymmetric diode's bias and its DC blocker (owner, 07.10): asym alone; every other type at 0, as before.
+    const bool asym = type == SaturationType::Asym;
+    s.bias = asym ? float (number (saturation.find ("bias"))) : 0.0f;
     s.mix = float (mix);
     s.outputDb = 0.0f;   // neutral: the landing sets the level before the limiter, so a trim here would be undone
     s.autoComp = float (number (saturation.find ("autoComp")));
-    s.dcBlockHz = float (number (saturation.find ("dcBlockHz")));
+    s.dcBlockHz = asym ? float (number (saturation.find ("dcBlockHz"))) : 0.0f;
     return s;
 }
 

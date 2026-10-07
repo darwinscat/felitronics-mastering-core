@@ -406,8 +406,8 @@ enum class Term : std::uint16_t
     // Why the machine's peak clipper does not cut (NeedlesWhy, Session.h), for the warning beside a manual threshold.
     NeedlesWhyShell, NeedlesWhyTarget, NeedlesWhyQuiet, NeedlesWhyNoReadings, NeedlesWhyLittleNeed, NeedlesWhyUnmeasured,
     NeedlesWhyNoExcursions, NeedlesWhyClipped, NeedlesWhyLowPlr, NeedlesWhyBass, NeedlesWhyLong,
-    // The saturation's type, a person's choice: the field a refusal names, and the five types the page offers
-    // (SaturationType, Project.h — Atan, Cubic and Asym are the config's only and have no words).
+    // The saturation's type, a person's choice: the field a refusal names, and the types the page offers (SaturationType,
+    // Project.h — Atan is the config's only and has no word; the two diodes' words are appended at the end).
     FieldSaturationType,
     SaturationTypeTanh, SaturationTypeTube, SaturationTypeTransistor, SaturationTypeTransformer, SaturationTypeTape,
     // The observations by name, in the order of ObservationKind (Session.h); what deals with one, in the order of
@@ -446,7 +446,8 @@ enum class Term : std::uint16_t
     ReasonMasterForgotten,
     // The glue's mix (v0.17.0) as the field a refusal names: its third field, in the order Project.h writes them.
     FieldGlueMix,
-
+    // The two diodes, types a person may pick (v0.20.0, owner 07.10): the asymmetric (Asym), the symmetric (Cubic).
+    SaturationTypeAsym, SaturationTypeCubic,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };

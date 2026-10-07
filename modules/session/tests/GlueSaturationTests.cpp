@@ -848,11 +848,11 @@ void theType()
         detail::writeDynamics (inputsOf (s, snapshot), s.project().devices, unpicked);
     }
 
-    // REFUSED: atan, cubic and asym are the config's only (research), and past tape is no type — the command is refused
-    // whole, at the type's place, and the drive it carried is not taken either.
+    // REFUSED: atan is the config's only (research), and past tape is no type — the command is refused whole, at the type's
+    // place, and the drive it carried is not taken either.
     bool refused = true;
     std::string said;
-    for (const auto t : { SaturationType::Atan, SaturationType::Cubic, SaturationType::Asym, SaturationType (8) })
+    for (const auto t : { SaturationType::Atan, SaturationType (8) })
     {
         const auto revision = s.revision();
         SaturationFields<Touched> pick; pick.type = t; pick.drive = 3.0;
@@ -863,7 +863,7 @@ void theType()
         if (const auto fact = text::Text::rejected (answer, request)) said = text::Text::text (*fact, text::Lang::Ru);
     }
     ok (refused && said.find ("Тип сатурации") != std::string::npos,
-        "atan, cubic, asym and one past tape: NotOneOf at field 4, the revision and the drive unmoved — " + said);
+        "atan and one past tape: NotOneOf at field 4, the revision and the drive unmoved — " + said);
 
     // PICKED: the type is the stage the chain runs, and what the report says it cut is measured on THAT stage.
     const auto pick = [&] (SaturationType t)
@@ -882,6 +882,53 @@ void theType()
     bool each = tanh.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tanh;
     for (const auto t : { SaturationType::Tube, SaturationType::Transistor, SaturationType::Transformer })
         each = each && int (pick (t).clipper.shape) == int (t) && sat.hand.type == t;
+    // THE TWO DIODES (owner, 07.10): a person's picks. The symmetric is cubic; the asymmetric is asym, at [saturation] bias
+    // with its DC blocker — written for it alone, every other type at bias 0 and no blocker as before. The machine's type
+    // stays tape.
+    const auto cubic = pick (SaturationType::Cubic);
+    ok (int (cubic.clipper.shape) == int (SaturationType::Cubic) && sat.hand.type == SaturationType::Cubic
+        && sat.machine.type == SaturationType::Tape && same (cubic.clipper.bias, 0.0f) && same (cubic.clipper.dcBlockHz, 0.0f),
+        "cubic by hand: the clipper's shape, no bias, no blocker; the machine's type stays tape");
+    const auto asym = pick (SaturationType::Asym);
+    const auto rules = detail::rules();
+    const auto tubeParams = detail::clipperParams (rules, SaturationType::Tube, 3.3, 1.0);
+    ok (int (asym.clipper.shape) == int (SaturationType::Asym) && sat.hand.type == SaturationType::Asym
+        && sat.machine.type == SaturationType::Tape && same (asym.clipper.bias, 0.2f) && same (asym.clipper.dcBlockHz, 10.0f)
+        && same (tubeParams.bias, 0.0f) && same (tubeParams.dcBlockHz, 0.0f) && same (tanh.clipper.bias, 0.0f),
+        "asym by hand: the clipper's shape, bias 0.2 and its blocker at 10 Hz; tube and tanh at bias 0 and no blocker, as before; "
+        "the machine's type stays tape");
+    {
+        // A 1 kHz sine at −0.9 dBFS through the stage at 3.3 dB of drive (a knob of 3 on a −1 dBTP mix): the second harmonic
+        // stands, and the blocker takes the mean the asymmetric curve shifts.
+        const auto harmonics = [&] (SaturationType t)
+        {
+            felitronics::saturation::Saturator stageAt;
+            felitronics::test::run (stageAt.prepare (48000, 4800, 1, 4, 64));
+            stageAt.setParams (detail::clipperParams (rules, t, 3.3, 1.0));
+            std::vector<float> x (96000);
+            for (std::size_t i = 0; i < x.size(); ++i) x[i] = float (0.9 * felitronics::core::det::sin (2 * kPi * 1000.0 * double (i) / 48000));
+            float* io[] { x.data() };
+            for (std::size_t at = 0; at < x.size(); at += 4800) { float* p[] { x.data() + at }; felitronics::test::run (stageAt.process (p, 1, 4800)); }
+            double re1 = 0, im1 = 0, re2 = 0, im2 = 0, mean = 0;
+            const std::size_t from = 48000, n = 48000;   // the second second: settled
+            for (std::size_t i = from; i < from + n; ++i)
+            {
+                const double ph = 2 * kPi * 1000.0 * double (i) / 48000, y = x[i];
+                re1 += y * std::cos (ph); im1 += y * std::sin (ph); re2 += y * std::cos (2 * ph); im2 += y * std::sin (2 * ph); mean += y;
+            }
+            (void) io;
+            return std::pair { 20 * std::log10 (std::hypot (re2, im2) / std::hypot (re1, im1)), mean / double (n) };
+        };
+        const auto [asymH2, asymMean] = harmonics (SaturationType::Asym);
+        const auto [tanhH2, tanhMean] = harmonics (SaturationType::Tanh);
+        const auto [cubicH2, cubicMean] = harmonics (SaturationType::Cubic);
+        ok (asymH2 > -40.0 && tanhH2 < -80.0 && std::fabs (asymMean) < 1.0e-4,
+            "the asymmetric diode's second harmonic stands at " + std::to_string (asymH2) + " dBc (tanh's " + std::to_string (tanhH2)
+            + "), and its mean is " + std::to_string (asymMean) + " after the blocker");
+        ok (cubicH2 < -80.0 && std::fabs (cubicMean) < 1.0e-4, "the symmetric diode makes no second harmonic: "
+            + std::to_string (cubicH2) + " dBc");
+        (void) tanhMean;
+    }
     const auto tape = pick (SaturationType::Tape);
     const auto tapeStage = stage (mix, tape, gainOf(), share);
     const auto unpickedStage = stage (mix, unpicked, gainOf(), share);

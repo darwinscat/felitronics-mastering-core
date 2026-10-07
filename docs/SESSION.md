@@ -632,8 +632,9 @@ the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(kno
 normalised true peak — no trial render; the compensation is 0, the mix as set, the shaper's output at 0 dB (`plan.saturation`). Its TYPE is
 the shaper's curve (`SaturationFields::type`, felitronics-core's `WaveShaper::Shape`): the machine's layer holds the
 config's `[saturation] shape`, tape (owner, 01.10; tanh before), and never another — so a hand drive with no type
-picked sounds tape; a person picks tanh, tube, transistor, transformer or tape, and
-an edit or a file that gives atan, cubic or asym by hand is refused `NotOneOf` (those stay the config's, for research).
+picked sounds tape; a person picks tanh, tube, transistor, transformer, tape, or one of the two diodes (owner 07.10):
+cubic, the symmetric, and asym, the asymmetric (at `[saturation] bias` 0.2 with its DC blocker at `dcBlockHz` 10, written
+for asym alone) — and an edit or a file that gives atan by hand is refused `NotOneOf` (it stays the config's, for research).
 WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
 compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and
 `saturationCutUsualDb`, the soft clipper's cut of peaks — `MasteringChain::clipperPeaks`: the peak of the stage's
@@ -1417,7 +1418,7 @@ cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLow
 of full scale a 64th apart, each with what the chain's saturator settled on a held level gives for it — the stage's own
 design arithmetic, `mastering::MasteringChain::clipperDesign` (the one `clipperQuietGain` reads), on the parameters the
 session writes the stage with (`detail::clipperParams`, writeDynamics's): the core's WaveShaper at the type and
-k = 10^(drive/20) − 1, the config's bias, its drive compensation, the dry/wet blend, no trim. For the five types a person may
+k = 10^(drive/20) − 1, the config's bias, its drive compensation, the dry/wet blend, no trim. For the seven types a person may
 pick; the transformer and tape as their static cores (the flux follows history, the emphasis frequency; at a held level
 tape is its core). The drive is the shaper's own — the plan's `saturation.driveDb`, or the knob for an input peaking at
 0 dBTP. Its tanh is the platform's, as the chain's is, so the curve is not in the pinned corpus: the kit suite holds it to
@@ -1459,7 +1460,7 @@ a file's machine layer is retained, and any defaults label but the current one i
 | Glue | 0–6 dB | Product |
 | Glue mix | 0–1 | Product |
 | Saturation drive / mix | 0–12 dB / 0–1 | Product / device |
-| Saturation type (by hand) | tanh, tube, transistor, transformer, tape | Product |
+| Saturation type (by hand) | tanh, tube, transistor, transformer, tape, cubic and asym (the symmetric and asymmetric diodes) | Product |
 | Tilt / low | −6–6 dB | Product |
 | Needles above ceiling | 0–6 dB | Product |
 
