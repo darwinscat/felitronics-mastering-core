@@ -595,8 +595,10 @@ template <class F> void knobsOf (Session& s, const std::string& device)
             ok (a.rejection == Rejection::None, what + " = " + std::to_string (v) + ": taken (" + nameOf (a.rejection) + ")");
         }
         const bool nyquist = rule.knob.domain == detail::Knob::Domain::SourceNyquist;
-        const double lower = nyquist ? 0 : rule.knob.minimum.toDouble() - rule.knob.step.toDouble();
-        const double upper = nyquist ? double (s.source().sampleRate) / 2 : rule.knob.maximum.toDouble() + rule.knob.step.toDouble();
+        // A step past the domain's end, or a tenth for a stepless knob (owner, 07.10: step 0).
+        const double past = rule.knob.step.mantissa != 0 ? rule.knob.step.toDouble() : 0.1;
+        const double lower = nyquist ? 0 : rule.knob.minimum.toDouble() - past;
+        const double upper = nyquist ? double (s.source().sampleRate) / 2 : rule.knob.maximum.toDouble() + past;
         rejectedWhole (s, edit (lower), Rejection::OutOfDomain, i, what + " below domain");
         rejectedWhole (s, edit (upper), Rejection::OutOfDomain, i, what + " above domain");
         if (! nyquist)
@@ -1000,7 +1002,7 @@ void theRulesAreTheSchemas()
     ok (knob (r.lufs, c.targets.editLufs.from, c.targets.editLufs.to, c.targets.editLufs.step)
             && knob (r.tp, c.targets.editTp.from, c.targets.editTp.to, c.targets.editTp.step), "[edit] lufs, tp");
     const auto& e = c.engine;
-    ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, 1.0), "[hpf]: whole hertz from hzMin to hzMax");
+    ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, e.hpf.hzStep) && same (e.hpf.hzStep, 0.0), "[hpf]: from hzMin to hzMax, stepless (owner, 06.10)");
     for (std::int32_t slope = -6; slope <= 96; ++slope)
         if (r.slope (slope) != (slope >= 6 && slope <= 96 && slope % 6 == 0))
             ok (false, "[hpf] slopes: " + std::to_string (slope));
@@ -1066,7 +1068,7 @@ void theMachinePlacesWhatAPersonCouldSet()
                     {
                         const auto x = detail::decimalOf (v);
                         good = x && detail::compare (*x, rule.knob.from) >= 0 && detail::compare (*x, rule.knob.to) <= 0
-                            && detail::onGrid (*x, rule.knob.from, rule.knob.step)
+                            && (rule.knob.step.mantissa == 0 || detail::onGrid (*x, rule.knob.from, rule.knob.step))
                             && std::bit_cast<std::uint64_t> (v) != std::bit_cast<std::uint64_t> (-0.0);
                     }
                     else if constexpr (std::is_same_v<T, std::int32_t>)

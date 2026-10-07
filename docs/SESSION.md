@@ -591,7 +591,7 @@ that report reads its percentiles off bins of the file's level).
 THE GLUE IS A PARALLEL COMPRESSOR (owner, 05.10; v0.17.0): its `mix` is the compressed share of its output, the dry
 signal under it — `[glue] mix` 0.4 wherever the glue is on, the machine's cd glue and a person's tick alike, so a
 glue of N dB takes less than N dB off the loud places of the master. A person moves it 0…1 (`[glue] mixDomain`); the
-page's slider runs 0…1 by 0.2 (0, 20, … 100 %; `mixRange`, `mixStep` — the owner: a finer step is placebo), the core
+page's slider runs 0…1 (`mixRange`; `mixStep` 0 — no step since 07.10, owner: «все ручки недискретные»), the core
 takes any share in the domain as written, the project keeps it (`[glue] mix.hand`), a change of target resets it. At 1 the
 glue is the downward compressor it was before, to the bit (`felitronics_session_glue_saturation_tests` pins v0.16.0's
 cd master); `[compressor] mix`, which wrote that 1, is removed (owner, 05.10). The knob below, and every number of it, is the compressor's
@@ -1397,8 +1397,10 @@ value stands along the knob's travel and how far it is from the knob's comfortab
 EQ curve a set of knob values would draw, a low-end curve from band energies. `felitronics::session::Kit`
 (`include/felitronics/session/Kit.h`) answers them: static, stateless, allocation-free functions over the caller's spans,
 each delegating to the code the session itself uses — `Text::write` behind the codec's own fact reader, `Text::parse` on
-the commands' domains (`Knob::accepts`, `Rules::slope`) and the config's grid, the config's travels, green windows
-(`[edit] lufs/tp green`), comfort (`[hpf] comfort`) and normal ranges (`[tilt]`/`[low] normal`, out to `hard`), the
+the commands' domains (`Knob::accepts`, `Rules::slope`) and the config's grid — step 0 is no grid (owner, 07.10: every
+manual knob but mono bass's width): a typed value is kept as typed, and `Kit::valueAt` maps a position linearly onto the
+travel — the config's travels, green windows (`[edit] lufs/tp green`), comfort (`[hpf] comfort`) and normal ranges
+(`[tilt]`/`[low] normal`, out to `hard`), the
 zones (`[monoBass.zones]`), the EQ stage's `writeEq` / `eqCurve` / `eqFinding`, det-math's `log10`. The plan's comfort and
 zones advice reads its comparison from `Kit::heat` and `Kit::monoZonesAt`, so a knob's colour and the advice beside it
 cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLowDb`), the id a refusal already names it by.

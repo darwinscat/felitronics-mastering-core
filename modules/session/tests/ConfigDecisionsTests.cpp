@@ -255,20 +255,27 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
     need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].upToDb, 2.6),
           "the machine glues on cd alone, up to 2.6 dB");
-    need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.1),
-          "the glue knob runs 0…3 dB in steps of 0.1");
+    need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.0),
+          "the glue knob runs 0…3 dB, stepless (owner, 07.10)");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
     need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
-    need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.2) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
+    need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.0) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
           && same (e.glue.mixDomain.min, 0.0) && same (e.glue.mixDomain.max, 1.0),
-          "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)");
+          "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)");
     need (same (e.glue.detectorOverP95Db, 1.5), "the glue's threshold is calibrated 1.5 dB over the P95: the knob is the reduction the loud places really get");
     const config::MonoBass& m = e.monoBass;
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
     need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),
           "the mono-bass width knob runs 0…1 in steps of 0.05");
-    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 5.0),
-          "the mono-bass crossover knob runs 60…300 Hz in steps of 5 (owner, 02.10)");
+    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 0.0),
+          "the mono-bass crossover knob runs 60…300 Hz, stepless (owner, 07.10)");
+    // EVERY OTHER MANUAL KNOB IS STEPLESS (owner, 06.10 and 07.10: «все ручки недискретные»): step 0 keeps a typed value.
+    need (same (e.hpf.hzStep, 0.0) && same (e.tilt.step, 0.0) && same (e.low.step, 0.0) && same (e.bands.body.step, 0.0)
+          && same (e.bands.mud.step, 0.0) && same (e.bands.forward.step, 0.0) && same (e.bands.brightness.step, 0.0)
+          && same (e.bands.air.step, 0.0) && same (e.saturation.driveStep, 0.0) && same (c.targets.editLufs.step, 0.0)
+          && same (c.targets.editTp.step, 0.0),
+          "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
+          "and ceiling (owner, 06.10 and 07.10)");
     const auto& b = e.bands;
     need (same (b.body.normal.min, -1.5) && same (b.body.normal.max, 1.5) && same (b.forward.normal.min, -1.5) && same (b.forward.normal.max, 1.5)
           && same (b.brightness.normal.min, -1.5) && same (b.brightness.normal.max, 1.5) && same (b.air.normal.min, -1.5) && same (b.air.normal.max, 1.5)
@@ -282,8 +289,8 @@ std::vector<std::string> departures (const config::Config& c)
           "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");
     need (same (p.clippedPerMinute, 10.0), "a source is clipped from 10 confirmed clips a minute");
     need (same (p.kneeDb, 0.0), "the peak clipper is a hard clip");
-    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 6.0) && same (p.manualStepDb, 0.1),
-          "the manual cut off the peaks runs 0…6 dB in steps of 0.1 (owner, 02.10)");
+    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 6.0) && same (p.manualStepDb, 0.0),
+          "the manual cut off the peaks runs 0…6 dB, stepless (owner, 02.10 and 07.10)");
     need (e.dither.seed == 0x853c49e6748fea9bull && e.dither.autoBlank && e.dither.autoBlankSamples == 4096
           && e.dither.shaping == config::NoiseShaping::Weighted,
           "the dither: weighted TPDF from the fixed seed, blanked after 4096 zero samples");
@@ -405,6 +412,12 @@ void aDepartureIsNamed()
           "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
         { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
           "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
+        { false, "hzStep = 0", "hzStep = 1",
+          "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
+          "and ceiling (owner, 06.10 and 07.10)" },
+        { true, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.1 }",
+          "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
+          "and ceiling (owner, 06.10 and 07.10)" },
         { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
           "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
@@ -423,8 +436,8 @@ void aDepartureIsNamed()
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
         { false, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0.4",
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
-        { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
-        { false, "mixStep = 0.2", "mixStep = 0.05", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
+        { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)" },
+        { false, "mixStep = 0\n", "mixStep = 0.2\n", "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)" },
         { false, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.5 }", "the machine glues on cd alone, up to 2.6 dB" },
         { false, "lowWidth = 0\n", "lowWidth = 0.2\n", "mono bass is full mono below its crossover" },
         { false, "hzMin = 15", "hzMin = 16", "the high-pass knob starts at 15 Hz" },
