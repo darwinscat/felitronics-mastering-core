@@ -175,6 +175,9 @@ void theSchemaRefuses()
     mustRefuse (E, "driveStep = 0", "driveStep = -0.5", "-0.5", Fault::OutOfRange, "saturation.driveStep");
     mustRefuse (E, "manualStepDb = 0", "manualStepDb = -0.1", "-0.1", Fault::OutOfRange, "limiter.peakClipper.manualStepDb");
     mustRefuse (T, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = -0.1 }", "-0.1", Fault::OutOfRange, "edit.lufs.step");
+    // ...and the two knobs that keep their step refuse 0: mono bass's width and the saturation's mix.
+    mustRefuse (E, "lowWidthStep = 0.05", "lowWidthStep = 0", "0", Fault::OutOfRange, "monoBass.lowWidthStep");
+    mustRefuse (E, "mixStep = 0.05", "mixStep = 0", "0", Fault::OutOfRange, "saturation.mixStep");
     // A comfort window lies inside its knob's domain, in order, and is required (owner, 07.10).
     mustRefuse (E, "warningHighHz = 250 }", "warningHighHz = 170 }", "170", Fault::Refused, "monoBass.comfort.warningHighHz",
                 Refusal::OutOfOrder);

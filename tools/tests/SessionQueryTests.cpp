@@ -82,6 +82,16 @@ void nativeQueries()
     const auto spent = declared::spend ([&] { ok (s.apply (load).rejection == Rejection::None, "load"); });
     ok (declared::covers (allocation.bytes, spent), "load is declared including waveform controls");
     MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.columns = 17; q.requestId = 9007199254740993ull;
+    {
+        // The delivery's settings do not exist before the plan places the devices: DitherFloor is Pending, with nothing
+        // allocated for it (review, 07.10: it read NoSignal on every row, the dither's depth still 0).
+        auto early = q; early.kind = QueryKind::DitherFloor; early.fromHz = 20; early.toHz = 20000; early.columns = 8;
+        const auto demand = s.queryStorage (early);
+        const auto pendingFloor = ask (s, early);
+        ok (demand.status == QueryStatus::Pending && demand.bytes == 0 && pendingFloor.view().status == QueryStatus::Pending
+            && pendingFloor.view().reason == MeasurementReason::Pending && pendingFloor.view().values.empty(),
+            "DitherFloor before the plan: Pending, allocation-free");
+    }
     ok (s.queryStorage (q).bytes == 0, "unbuilt waveform demand is allocation free");
     auto pending = ask (s, q); ok (pending.view().status == QueryStatus::Pending && pending.view().values.empty(), "overview explicitly pending before construction");
     // Readings now precede waveform construction. Advance to the first indexed block without assuming how many
@@ -199,6 +209,11 @@ void nativeQueries()
             && floor.view().stored == 64 && floor.view().stride == 3 && identical (floor.view().values, want)
             && floor.view().pcmFramesRead == 0,
             "DitherFloor: the cd delivery's floor, at its rate, named at the source's — answered without a measurement");
+        // The grid's ends are the request's exactly (review, 07.10: the last point read 22050.000000000004, past the cd
+        // delivery's Nyquist, and so Unsupported).
+        const auto& f = floor.view().values;
+        ok (same (f[0], 20.0) && same (f[63u * 3u], 22050.0) && same (f[63u * 3u + 2u], double (MeasurementReason::None))
+            && std::isfinite (f[63u * 3u + 1u]), "DitherFloor's last point is 22050 Hz exactly, the delivery's Nyquist, and has its floor");
         auto past = dq; past.fromHz = past.toHz = 22050.5; past.columns = 1;
         const auto above = ask (s, past);
         ok (above.view().status == QueryStatus::Ready && same (above.view().values[2], double (MeasurementReason::Unsupported)),
@@ -494,6 +509,15 @@ void ditherFloorRows()
     const auto above = rows (weighted, 24000.5, 24000.5, 1), none = rows (wide, 1000.0, 1000.0, 1);
     ok (same (above[2], double (MeasurementReason::Unsupported)) && std::isnan (above[1]) && same (none[2], double (MeasurementReason::NoSignal))
         && std::isnan (none[1]), "above the delivery's Nyquist: Unsupported; 32 bits, no quantiser: NoSignal");
+    // A first point near 0 (review, 07.10: 1e-308 Hz to 22050 Hz overflowed the ends' ratio into NaN and infinite
+    // frequencies): the ends exactly as asked, every point finite and inside them.
+    const auto tiny = rows (weighted, 1e-308, 22050.0, 2, 44100, 44100), wideGrid = rows (weighted, 1e-308, 22050.0, 7, 44100, 44100);
+    bool inside = same (tiny[0], 1e-308) && same (tiny[3], 22050.0) && same (wideGrid[18], 22050.0);
+    for (std::size_t i = 0; i < 7; ++i)
+        inside = inside && std::isfinite (wideGrid[3 * i]) && wideGrid[3 * i] >= 1e-308 && wideGrid[3 * i] <= 22050.0
+              && (i == 0 || wideGrid[3 * i] > wideGrid[3 * (i - 1)]) && (std::isfinite (wideGrid[3 * i + 1])
+                  || same (wideGrid[3 * i + 2], double (MeasurementReason::NoSignal)));
+    ok (inside, "a grid from 1e-308 Hz: its ends exactly, every frequency finite, rising and inside them");
     DitherFinding psycho = tpdf; psycho.shaping = DitherShaping::Psychoacoustic;
     const auto p = rows (psycho, 3000.0, 3000.0, 1);
     ok (same (p[2], double (MeasurementReason::None)) && p[1] < flat[1], "Psychoacoustic: below the flat floor where the ear is keenest, 3 kHz");
