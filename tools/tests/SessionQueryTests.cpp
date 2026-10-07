@@ -159,6 +159,17 @@ void nativeQueries()
                 ok (std::fabs (band.view().values[1] - expected) < 1e-12, "frequency grid reads retained spectrum and Side evidence");
                 rq.crossoverHz = 150;
                 ok (! ask (s, rq).view().cacheHit, "120 and 150 Hz do not collide");
+                // A band narrower than a Hann main lobe (owner, 06.10 and 07.10): its value as measured, no TooShort — the
+                // unresolved flag stays on the bands array, and no decision reads these queries.
+                const auto* first = a.values.data();
+                auto lowest = q; lowest.kind = kind; lowest.fromHz = lowest.toHz = first[1]; lowest.columns = 1;
+                const auto unresolved = ask (s, lowest);
+                const double want = kind == QueryKind::LowSpectrum ? first[7] : first[5] / (first[4] + first[5]);
+                const auto& got = unresolved.view().values;
+                ok (first[15] < 0.5 && got.size() == 3 && same (got[2], double (MeasurementReason::None)) && std::isfinite (got[1])
+                    && std::fabs (got[1] - want) <= 1e-9 * std::fabs (want),
+                    std::string (kind == QueryKind::LowSpectrum ? "LowSpectrum" : "LowSide") + " at the unresolved first band ("
+                    + std::to_string (first[1]) + " Hz): its measured value");
             }
         }
         if (kind == QueryKind::Clipping)
