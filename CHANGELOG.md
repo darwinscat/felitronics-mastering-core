@@ -2,6 +2,75 @@
 
 # Changelog
 
+## v0.20.0 — 2026-10-07
+
+### session — `[hpf] note.aboveHz` is removed
+
+- It was 20 Hz, below where the lowest note is searched, so it did nothing (owner, 07.10). The note's lower bound is
+  `[lowEnd] lowestNoteFromHz` alone. A config that still carries the key is refused as an unknown key. No master changes.
+
+### session · analysis_offline — 88.2, 96 and 192 kHz resolve the low end as 48 kHz does
+
+- At fftOrder 17 a 96 kHz run resolved the semitone bands only from 50.7 Hz, so even an E1 bass (41.2 Hz) was "unsure"
+  at 96 kHz. The run's FFT order now rises with the rate: `[lowEnd.run] fftOrderUpToHz = 48000` (new) — fftOrder holds
+  up to 48 kHz, and above it the order is the smallest whose bin is no wider than at 48 kHz (18 at 88.2 and 96 kHz, 19 up
+  to 192 kHz). `LowEnd::fftOrderFor` computes it.
+- The bands resolve from the same 25.36 Hz, and the window and the hop last as long as at 48 kHz. At 96 kHz the run takes
+  0.67 s per minute of programme instead of 0.83, and 10.7 MiB instead of 5.4; the declared work peak of a 10-minute
+  stereo source rises by 15.8 MiB, its declared peak does not move.
+- At every rate up to 48 kHz, 44.1 and 48 kHz included, the order and the band geometry are as before. The occupancy
+  columns still move wherever a band under 30 Hz was a frame's loudest: that is the reference from 30 Hz (below).
+
+### session — real mixes keep their lowest note; a mix with no bass still says "unsure"
+
+- v0.19.0's background veto took the lowest note from real mixes. In a dense mix the lowest note stands only −6 to
+  +0.4 dB over the median band of the note range, so the 6 dB veto said "unsure" (Cold Gaze of Eternity: D♯1 in v0.18.0,
+  unsure in v0.19.0). `[lowEnd] occupiedAboveBackgroundDb` is removed (owner, 07.10).
+- In its place, the bottom of the low end: the lowest band that was on at all is a note only if the band under it was
+  never on, a band under the search start included. Noise, dither, a high tone's leakage and rumble light the bands on
+  both sides of the search start alike; a played lowest note has nothing on under it. On real mixes it gives the notes
+  v0.18.0 gave, and every no-bass case of the tests stays unsure. It has no number of its own. It bites only at B0, the
+  first band of the search, where A♯0 vetoes it: above B0 the band under the lowest band on is silent by construction,
+  and the no-bass guard there is the range's share (`[lowEnd] noteRangeShareAtLeastDb = -140`).
+- The planner's sure note and the report's `lowestOccupiedSure` use it. A regression guard in the tests holds the
+  recorded low end of the two demo songs.
+- The `2026-10` sound version moves (updated in place; no saved project exists).
+
+### analysis_offline · session — a rumble under 30 Hz no longer hides the bass
+
+- Each frame's loudest band, which every band's occupancy is measured against, is now sought from 30 Hz up
+  (`LowEndParams::noteFromHz`, fed from `[lowEnd] lowestNoteFromHz`; owner, 07.10). Before, a rumble under the search
+  start more than about 18 dB louder than the bass kept the bass from counting as "on", and the planner said "unsure". Now
+  E1 under a 15 Hz rumble 26 dB louder is found.
+- Only that reference moves: the band energies, the peak, the background, the range's share and the frame gate are bit for
+  bit as before, and a band under 30 Hz is still measured against the new reference.
+- With a rumble alone, its leakage is the loudest band from 30 Hz up, so the report may name B0 as the lowest occupied
+  band, unsure; the plan stays at the floor.
+
+### session — the lowest note is searched from 30 Hz, and nothing under 30 Hz is named a note
+
+- `[lowEnd] lowestNoteFromHz = 30` (was 25; owner, 07.10: the bass's fifth string as the limit for everything). The search
+  starts at B0 30.87 Hz, a five-string bass's lowest note. The spectrum and the drawings still start at 10 Hz.
+- Under 30 Hz no fact names a note: the loudest band of the low end there is reported as low-frequency energy at its
+  frequency (new fact `LoudestLowEnergy`, 458; the `loudestLowNote` observation's `third` is 1). The decisions do not use
+  the name.
+- `FC_SESSION_ABI_VERSION` moves to 15. The `2026-10` sound version moves (updated in place).
+
+### session — two diode types for the saturation, picked by hand
+
+- A person may now pick two more saturation types (owner, 07.10): "Diode (symmetric)" — the core's cubic soft clipper,
+  odd harmonics only — and "Diode (asymmetric)" — the core's asym shape, a second even-harmonic colour beside tube. Their
+  words are new terms (`SaturationTypeAsym` 152, `SaturationTypeCubic` 153). The machine never picks either; atan stays
+  the config's.
+- The asymmetric diode runs at a fixed bias, `[saturation] bias = 0.2`, with its DC blocker at `dcBlockHz = 10`, written
+  for it alone; every other type keeps bias 0 and no blocker, so no existing master changes. Measured: at 3.3 dB of drive
+  its second harmonic stands at −35 dBc (−0.9 dBFS sine), against tube's −25; it equals tube's curve only at 8 dB of
+  drive, the knob's red line. The blocker is a one-pole high-pass on the wet path: at mix 1 it takes 0.97 dB at 20 Hz,
+  0.43 dB at B0 and 0.25 dB at E1.
+- Bias and blocker are written by the type, so a research config with `shape = "asym"` now runs as the diode too.
+- The kit draws both curves (`Kit::saturationCurve`, `fc_kit_saturation_curve`).
+- The `2026-10` sound version moves (updated in place).
+
 ## v0.19.0 — 2026-10-07
 
 ### session · analysis_offline — the low end measured from 10 Hz, the lowest note searched from 25 Hz, and a mix with no bass says "unsure"
