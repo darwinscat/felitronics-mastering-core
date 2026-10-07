@@ -175,6 +175,15 @@ void theSchemaRefuses()
     mustRefuse (E, "driveStep = 0", "driveStep = -0.5", "-0.5", Fault::OutOfRange, "saturation.driveStep");
     mustRefuse (E, "manualStepDb = 0", "manualStepDb = -0.1", "-0.1", Fault::OutOfRange, "limiter.peakClipper.manualStepDb");
     mustRefuse (T, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = -0.1 }", "-0.1", Fault::OutOfRange, "edit.lufs.step");
+    // A comfort window lies inside its knob's domain, in order, and is required (owner, 07.10).
+    mustRefuse (E, "warningHighHz = 250 }", "warningHighHz = 170 }", "170", Fault::Refused, "monoBass.comfort.warningHighHz",
+                Refusal::OutOfOrder);
+    mustRefuse (E, "comfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 6 }",
+                "comfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 7 }", "7", Fault::OutOfRange, "glue.comfort.warningHigh");
+    mustRefuse (E, "mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }\n", "", "[glue]", Fault::Missing, "glue.mixComfort");
+    mustRefuse (E, "driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }",
+                "driveComfort = { low = 2, high = 1.5, warningLow = 0, warningHigh = 8 }", "1.5", Fault::Refused,
+                "saturation.driveComfort.high", Refusal::OutOfOrder);
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
     // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
@@ -373,7 +382,8 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "saturation.cut", "tilt.normal", "low.normal",
+    "monoBass.zones", "monoBass.comfort", "glue.comfort", "glue.mixComfort", "saturation.driveComfort", "saturation.cut",
+    "tilt.normal", "low.normal",
     "bands.body.normal", "bands.mud.normal", "bands.forward.normal", "bands.brightness.normal", "bands.air.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
 constexpr std::string_view kWhileNoDeEsser[] = { "deEsser", "stereoBursts" };

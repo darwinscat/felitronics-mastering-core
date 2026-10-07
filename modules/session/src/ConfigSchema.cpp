@@ -588,7 +588,6 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
     });
 }
 
-// `targets`: the row keys of the targets document, or null when it did not parse (nothing to check a name against).
 // A knob's coloured window inside its domain: warningLow <= low < high <= warningHigh.
 void readComfort (Doc& d, Reader& in, std::string_view key, Comfort& c, const R& domain)
 {
@@ -604,6 +603,7 @@ void readComfort (Doc& d, Reader& in, std::string_view key, Comfort& c, const R&
     });
 }
 
+// `targets`: the row keys of the targets document, or null when it did not parse (nothing to check a name against).
 void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targets)
 {
     // THE KNOB, "up to N dB", first: every glue number of the document is written on it.

@@ -269,6 +269,16 @@ std::vector<std::string> departures (const config::Config& c)
           "the mono-bass width knob runs 0…1 in steps of 0.05");
     need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 0.0),
           "the mono-bass crossover knob runs 60…300 Hz, stepless (owner, 07.10)");
+    // THE COMFORT WINDOWS (owner, 07.10): low, high, warningLow, warningHigh — where a knob's field is neutral, out to red.
+    const auto window = [] (double low, double high, double warningLow, double warningHigh, double l, double h, double wl, double wh)
+    { return same (low, l) && same (high, h) && same (warningLow, wl) && same (warningHigh, wh); };
+    need (window (m.comfort.lowHz, m.comfort.highHz, m.comfort.warningLowHz, m.comfort.warningHighHz, 100, 180, 75, 250)
+          && window (e.glue.comfort.low, e.glue.comfort.high, e.glue.comfort.warningLow, e.glue.comfort.warningHigh, 0, 1.5, 0, 6)
+          && window (e.glue.mixComfort.low, e.glue.mixComfort.high, e.glue.mixComfort.warningLow, e.glue.mixComfort.warningHigh, 0.3, 1, 0, 1)
+          && window (e.saturation.driveComfort.low, e.saturation.driveComfort.high, e.saturation.driveComfort.warningLow,
+                     e.saturation.driveComfort.warningHigh, 0, 1.5, 0, 8),
+          "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
+          "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)");
     // EVERY OTHER MANUAL KNOB IS STEPLESS (owner, 06.10 and 07.10: «все ручки недискретные»): step 0 keeps a typed value.
     need (same (e.hpf.hzStep, 0.0) && same (e.tilt.step, 0.0) && same (e.low.step, 0.0) && same (e.bands.body.step, 0.0)
           && same (e.bands.mud.step, 0.0) && same (e.bands.forward.step, 0.0) && same (e.bands.brightness.step, 0.0)
@@ -412,6 +422,13 @@ void aDepartureIsNamed()
           "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
         { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
           "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
+        { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",
+          "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
+          "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)" },
+        { false, "driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }",
+          "driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 6 }",
+          "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
+          "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)" },
         { false, "hzStep = 0", "hzStep = 1",
           "stepless knobs: the high-pass cutoff, tilt, low, the five EQ bands, the saturation's drive, the target's loudness "
           "and ceiling (owner, 06.10 and 07.10)" },
