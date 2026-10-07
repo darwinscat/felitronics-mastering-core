@@ -166,11 +166,19 @@ struct Limiter
     PeakClipper peakClipper;
 };
 
+// A knob's coloured window (owner, 07.10): neutral from low to high, shading out to warningLow / warningHigh. A side that
+// does not exist is an edge at the domain's end.
+struct Comfort
+{
+    double low = 0.0, high = 0.0, warningLow = 0.0, warningHigh = 0.0;
+};
+
 struct LowEndRun
 {
     double crossoverHz = 0.0;
     double lowNoteHz = 0.0;
     double highNoteHz = 0.0;
+    double noteTopHz = 0.0;                    // the note's readings see the bands up to here; above, drawings alone
     std::int32_t fftOrder = 0;
     double dutyThresholdDb = 0.0;
     std::int32_t skipBlocks = 0;
@@ -180,6 +188,9 @@ struct LowEnd
 {
     double occupiedFromDuty = 0.0;
     double occupiedMarginWhenOnDb = 0.0;
+    double occupiedAboveBackgroundDb = 0.0;    // the lowest band's density over the note range's background
+    double noteRangeShareAtLeastDb = 0.0;      // the note range's share of the programme's energy, at least
+    double lowestNoteFromHz = 0.0;             // the lowest note is sought from this band centre up
     double infraLowCrossoverHz = 0.0;
     LowEndRun run;
 };
@@ -236,6 +247,7 @@ struct MonoBass
     double lossSoundingWithinDb = 0.0, lossSoundingAtLeastS = 0.0;  // loss.soundingWithinDb, loss.soundingAtLeastS
     Zone clubZone;                             // zones.club
     Zone vinylZone;                            // zones.vinyl
+    HpfComfort comfort;                        // comfort: the crossover knob's field, read as [hpf] comfort is
 };
 
 enum class Detector : std::uint8_t { Peak, Rms };
@@ -291,6 +303,7 @@ struct Glue
     // `mixStep` inside `mixDomain`.
     Span mixDomain, mixRange;
     double mix = 0.0, mixStep = 0.0;
+    Comfort comfort, mixComfort;               // the amount's and the mix's fields
 };
 
 // felitronics-core's WaveShaper::Shape, in its order and values (Tube … Tape since v0.57.0). The machine's type; a person
@@ -304,6 +317,7 @@ struct Saturation
     double driveDb = 0.0;
     Span driveRange;
     double driveStep = 0.0;
+    Comfort driveComfort;                      // the drive's field
     double bias = 0.0;
     double mix = 0.0;
     Span mixRange;

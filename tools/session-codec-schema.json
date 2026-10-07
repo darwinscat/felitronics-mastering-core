@@ -166,7 +166,8 @@
       "MasterAxes",
       "MasterReport",
       "GlueGr",
-      "SaturationShave"
+      "SaturationShave",
+      "DitherFloor"
     ],
     "SpectrumQuantity": [
       "Density",
@@ -1977,6 +1978,11 @@
     "LowSide": [
       "hz",
       "sideFraction",
+      "reason"
+    ],
+    "DitherFloor": [
+      "hz",
+      "dbPerBin",
       "reason"
     ],
     "Loudness": [

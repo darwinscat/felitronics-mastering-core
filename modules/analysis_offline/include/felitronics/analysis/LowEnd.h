@@ -175,6 +175,11 @@ struct LowEndParams
     // 16 — every index moved by seven semitones. `LowEndBand::midi` and `centreHz` are the addresses.
     double lowNoteHz   = 20.0;      // the semitone range: every note whose CENTRE lies in [low, high]
     double highNoteHz  = 300.0;     // defaults give MIDI 16..62 (E0..D4), 47 bands
+    // THE NOTE'S TOP: the bands whose centre lies at or under it are the only ones the note's readings see — occupancy
+    // (its frame gate, its reference and its counts), the peak, the runner-up, the background, the NoEnergy gate,
+    // totalBandEnergy() and bandRangeShare(). A band above it is measured for a drawing alone: energy, density, side,
+    // centroid, and an occupancy of 0. 0 (the default) means the whole table — the readings exactly as without it.
+    double noteTopHz   = 0.0;
     double tuningHz    = 440.0;     // A4. f(n) = tuningHz * 2^((n-69)/12), MIDI numbering (60 = C4)
     int    fftOrder    = 17;        // N = 1 << fftOrder. 17 is the smallest that resolves a semitone at
                                     // 30 Hz at 48 kHz — see "RESOLUTION" above.
@@ -367,6 +372,7 @@ public:
         // no effect is worse than one that is refused: the refusal is visible.
         if (p.skipBlocks < 0 || p.skipBlocks > kMaxBlocksLimit) return s;
         if (! (p.dutyThresholdDb >= 0.0) || ! (p.dutyThresholdDb <= 200.0)) return s;
+        if (! (p.noteTopHz >= 0.0)) return s;
         if (! (p.crossoverHz >= kMinCrossoverHz) || ! (p.crossoverHz <= 0.49 * sampleRate)) return s;   // Svf would clamp either end silently
         if (! (p.tuningHz >= kMinNoteHz) || ! (p.tuningHz < sampleRate)) return s;
         if (! (p.lowNoteHz >= kMinNoteHz) || ! (p.highNoteHz > p.lowNoteHz)) return s;
@@ -457,6 +463,9 @@ private:
             if (! midiRange (params_, lo, hi)) return false;
             midiLo_ = lo;
         }
+        noteBands_ = bandCount_;
+        if (params_.noteTopHz > 0.0)
+            for (noteBands_ = 0; noteBands_ < bandCount_ && noteHz (params_, midiLo_ + noteBands_) <= params_.noteTopHz;) ++noteBands_;
 
         blocks_.resizeForOverwrite (st.blockRecords);
         bands_.assign (st.bands, LowEndBand {});
@@ -658,7 +667,7 @@ public:
     {
         if (! prepared_ || spectrumPrepared_ || finished_ || ! source.finished_ || ! source.spectrumPrepared_ || this == &source
             || channels_ != source.channels_ || ! core::exactlyEqual (sampleRate_, source.sampleRate_)
-            || bandCount_ != source.bandCount_ || windowSamples() != source.windowSamples()
+            || bandCount_ != source.bandCount_ || noteBands_ != source.noteBands_ || windowSamples() != source.windowSamples()
             || hopSamples() != source.hopSamples() || ! core::exactlyEqual (binHz_, source.binHz_)) return false;
         for (int b = 0; b < bandCount_; ++b)
             if (bands_[(std::size_t) b].midi != source.bands_[(std::size_t) b].midi
@@ -1008,11 +1017,16 @@ public:
         return (std::isfinite (num) && std::isfinite (den) && den > 0.0) ? num / den : 0.0;
     }
 
-    LowestOccupied lowestOccupiedBand (double dutyMin) const noexcept
+    //
+    // `fromHz`: the search starts at the first band whose CENTRE lies at or above it — a band under it is skipped, never
+    // returned and never standing in the way of the bands above. 0, the default, searches the whole table; a non-finite
+    // fromHz fails every comparison and returns none.
+    LowestOccupied lowestOccupiedBand (double dutyMin, double fromHz = 0.0) const noexcept
     {
         LowestOccupied r;
         for (int b = 0; b < bandCount_; ++b)
         {
+            if (! (bands_[(std::size_t) b].centreHz >= fromHz)) continue;
             if (! (dutyCount_[(std::size_t) b] > 0) || ! (duty (b) >= dutyMin)) continue;
             r.band = b;
             r.midi = bands_[(std::size_t) b].midi;
@@ -1317,7 +1331,7 @@ private:
     void countDuty (double frameTotal) noexcept
     {
         double bandTotal = 0.0, frameMax = 0.0;
-        for (int b = 0; b < bandCount_; ++b)
+        for (int b = 0; b < noteBands_; ++b)
         {
             const double e = traceMid_[(std::size_t) b] + traceSide_[(std::size_t) b];
             bandTotal += e;
@@ -1326,7 +1340,7 @@ private:
         if (! (frameMax > 0.0) || ! (bandTotal > kNoteFloorShare * frameTotal)) return;
         ++dutyFrames_;
         const double floorE = frameMax * dutyShare_;
-        for (int b = 0; b < bandCount_; ++b)
+        for (int b = 0; b < noteBands_; ++b)
         {
             const double e = traceMid_[(std::size_t) b] + traceSide_[(std::size_t) b];
             if (e >= floorE)
@@ -1372,7 +1386,7 @@ private:
             row.centroidHz = row.energy > 0.0 ? mom / row.energy : 0.0;
             row.centsOffset = row.centroidHz > 0.0 && row.centreHz > 0.0
                             ? 1200.0 * core::det::log2 (row.centroidHz / row.centreHz) : 0.0;
-            totalBandEnergy_ += row.energy;
+            if (b < noteBands_) totalBandEnergy_ += row.energy;
             if (! (std::isfinite (row.energy) && std::isfinite (row.density)
                    && std::isfinite (row.centroidHz) && std::isfinite (row.centsOffset)))
                 bad = true;
@@ -1398,13 +1412,13 @@ private:
 
         // argmax twice, strictly, so a tie goes to the LOWEST band index
         peakBand_ = 0; peakDensityBand_ = 0;
-        for (int b = 1; b < bandCount_; ++b)
+        for (int b = 1; b < noteBands_; ++b)
         {
             if (bands_[(std::size_t) b].energy > bands_[(std::size_t) peakBand_].energy) peakBand_ = b;
             if (bands_[(std::size_t) b].density > bands_[(std::size_t) peakDensityBand_].density) peakDensityBand_ = b;
         }
         secondBand_ = -1;
-        for (int b = 0; b < bandCount_; ++b)
+        for (int b = 0; b < noteBands_; ++b)
         {
             if (b == peakBand_) continue;
             if (secondBand_ < 0 || bands_[(std::size_t) b].energy > bands_[(std::size_t) secondBand_].energy) secondBand_ = b;
@@ -1415,7 +1429,7 @@ private:
         // semitone band's width grows with frequency and the energies therefore tilt +5.02 dB across the
         // default range under a perfectly flat spectrum. Even count -> the mean of the two middles.
         int n = 0;
-        for (int b = 0; b < bandCount_; ++b) if (b != peakBand_) sort_[(std::size_t) n++] = bands_[(std::size_t) b].density;
+        for (int b = 0; b < noteBands_; ++b) if (b != peakBand_) sort_[(std::size_t) n++] = bands_[(std::size_t) b].density;
         if (n > 0)
         {
             std::sort (sort_.begin(), sort_.begin() + n);
@@ -1428,7 +1442,7 @@ private:
     LowEndParams params_ {};
     bool prepared_ = false, spectrumPrepared_ = false, finished_ = false;
     double sampleRate_ = 48000.0, binHz_ = 0.0;
-    int channels_ = 0, bandCount_ = 0, midiLo_ = 0;
+    int channels_ = 0, bandCount_ = 0, midiLo_ = 0, noteBands_ = 0;   // noteBands_: the bands at or under noteTopHz
     std::int64_t blockSamples_ = 0;
 
     SpectrumFrames frames_;

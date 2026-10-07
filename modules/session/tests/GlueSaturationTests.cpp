@@ -1018,8 +1018,8 @@ void theMix()
     felitronics::test::group ("the glue's mix: 40 % by default wherever the glue is on; 0 … 1 by hand, kept");
     const auto r = detail::rules();
     const auto engine = config::Config::load().config.engine;
-    ok (same (engine.glue.mix, 0.4) && same (engine.glue.mixStep, 0.2) && same (engine.glue.mixRange.min, 0.0) && same (engine.glue.mixRange.max, 1.0)
-        && same (engine.glue.mixDomain.min, 0.0) && same (engine.glue.mixDomain.max, 1.0), "[glue] mix 0.4, the slider 0 … 1 by 0.2, the domain 0 … 1");
+    ok (same (engine.glue.mix, 0.4) && same (engine.glue.mixStep, 0.0) && same (engine.glue.mixRange.min, 0.0) && same (engine.glue.mixRange.max, 1.0)
+        && same (engine.glue.mixDomain.min, 0.0) && same (engine.glue.mixDomain.max, 1.0), "[glue] mix 0.4, the slider 0 … 1 stepless (owner, 07.10), the domain 0 … 1");
     bool machine = true;
     for (std::uint16_t row = 0; row < r.rows; ++row)
     {

@@ -133,7 +133,8 @@ lookaheadMs = 1
 #   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
 # manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel — 0 to 6 dB, the whole domain — and step, 0.1 dB (owner,
-#   02.10). The manual cut starts at betweenCutDb, the "between" class, inside manualDomain.
+#   02.10); 0 since 07.10 — no step, a typed cut is kept as typed (owner: «все ручки недискретные»). The manual cut
+#   starts at betweenCutDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
 manualDomain = [0, 6]
 littleNeedDb = 3
@@ -152,7 +153,7 @@ densityWithinDb = 0.3
 kneeDb = 0
 manualMinDb = 0
 manualMaxDb = 6
-manualStepDb = 0.1
+manualStepDb = 0
 
 # THE LOW END (analysis::LowEnd), first phase. The file is measured once, for every target at once — the bass width at
 # 120 and at 150 Hz, the crossovers of the targets — and a change of target measures nothing again.
@@ -164,6 +165,19 @@ manualStepDb = 0.1
 #   band be occupied in at least occupiedFromDuty of the frames (10 %). Without a band that passes, or a valid note, there
 #   is no note: the target's floor, never the loudest band in its place, and never a higher band — a note above the true
 #   one would cut music.
+# occupiedAboveBackgroundDb (owner, 07.10: a mix with no bass says "unsure"): the lowest band must also stand this far
+#   above the background — its density (energy per hertz) over the median density of the other bands of the note's
+#   range — or it is no note: a veto, never a skip to the band above it, which would make a harmonic the note. A band
+#   that only the leakage of a high tone, a dither or a rumble lights reads within 2 dB of the background; a played
+#   note reads 17 dB over it and more (a 0.5 s B0) — up to 100 dB on a held bass.
+# noteRangeShareAtLeastDb (owner, 07.10, the same decision): the note's range must also hold this share of the programme's
+#   energy (`bandRangeShare`), or there is no note — a second veto on the decision alone, for a tone whose rounding draws
+#   real lines into an otherwise empty range (a float 997 Hz tone: −172 dB, its lines 6.3 dB over the background). The
+#   least share a sure note in the tests holds is −107 dB; a mix holds −30 dB and more.
+# lowestNoteFromHz (owner, 06.10: «the spectrum from 10 Hz, the lowest note from 25 Hz — not 20, 25»): the lowest note is
+#   sought from the first band whose centre lies at or above it, G#0 at 25.96 Hz. The run measures from 10 Hz for the
+#   spectrum, and a band under this one is skipped — it is never the note. It still takes part in each frame's loudest-band
+#   reference, so a rumble more than about 18 dB over the bass can keep the bass from counting as on (then: unsure, floor).
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
@@ -171,19 +185,28 @@ manualStepDb = 0.1
 [lowEnd]
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2
+occupiedAboveBackgroundDb = 6
+noteRangeShareAtLeastDb = -140
+lowestNoteFromHz = 25
 infraLowCrossoverHz = 30
 
 # THE GEOMETRY OF THE MAIN RUN — the core's LowEnd defaults written out as numbers, so that nothing depends on a default
-# that may move. With these the table is 47 semitone bands, MIDI 16…62 (20.60…293.66 Hz). fftOrder 17: a 2.73 s window
-# and a 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo). skipBlocks 0 is a named
+# that may move. With these the table is 68 semitone bands, MIDI 4…71 (10.30…493.88 Hz): from 10 Hz since 06.10 (owner: the
+# rubbish under 20 Hz is of interest), the lowest note from [lowEnd] lowestNoteFromHz; to 500 Hz since 07.10 for the
+# drawings (LowSpectrum, LowSide: the side share for mono bass up to 500), while noteTopHz keeps every reading of the
+# note — occupancy, the loudest band, the lowest band, the NoEnergy gate — on the bands up to 300 Hz, MIDI 4…62, as
+# before: a band above it carries energy, density and side for a drawing, and an occupancy of 0. fftOrder 17: a 2.73 s window and a
+# 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo); its bands are four bins wide — a Hann
+# main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1, 50.71 at 96), and the bands under that are published as unresolved. skipBlocks 0 is a named
 # impossibility rather than a choice: the settling count the core derives from the filter is not on its interface, and
 # skipBlocks moves only the histogram, which is not read. The schema hands this block — and the infra-low run, the same
 # geometry split at infraLowCrossoverHz — to LowEnd::storageFor at every source rate the product accepts (8, 44.1, 48 and
 # 96 kHz): the analyzer says what it admits, and the block is refused whole where it refuses.
 [lowEnd.run]
 crossoverHz = 120
-lowNoteHz = 20
-highNoteHz = 300
+lowNoteHz = 10
+highNoteHz = 500
+noteTopHz = 300
 fftOrder = 17
 dutyThresholdDb = 20
 skipBlocks = 0
@@ -197,11 +220,14 @@ skipBlocks = 0
 # source's rate — takes exactly the target's noteLossDb at the note. It is found on that response, not on the analogue formula, and
 # it is not rounded to the hertz (technical decision 3О4). A floor above it takes more of the note, and the report says
 # how much; "the cutoff hit 50 Hz: the lowest note is higher" when machineTopHz stops it.
-# note (owner decision 3.2): the lowest note is sure when its band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
-#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, lies above aboveHz (not DC, not rumble) and sounds at least
+# note (owner decision 3.2): the lowest note — the lowest band on at all from [lowEnd] lowestNoteFromHz up — is sure when its
+#   band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
+#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line and [lowEnd] occupiedAboveBackgroundDb (6 dB) above the
+#   background, the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, lies above aboveHz (not DC, not rumble) and sounds at least
 #   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
+# hzStep: 0 — the cutoff knob has no step (owner, 06.10): a typed value is kept as typed, and the travel is continuous.
 # hzMin…hzMax: slider travel — to 80 Hz for a person (owner, 01.10: a voice with a guitar from a microphone takes a cut
 #   that high); frequencyDomain checks the actual source Nyquist limit.
 # machineTopHz: the machine's top — the machine's cutoff never goes above it, whatever the note; at most hzMax.
@@ -210,18 +236,20 @@ skipBlocks = 0
 #   default, named as a number so that the order of the list cannot change the sound.
 # comfort: the knob's field is neutral from lowHz to highHz and shades through a warning towards warningLowHz below and
 #   warningHighHz above, red past them (50 to 80 Hz of the travel is red) — one window, a hint to the knob, changing
-#   neither the machine nor the travel. Below 20 Hz there is nothing to cut; above 42 Hz the cutoff takes music, not
-#   rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
+#   neither the machine nor the travel. Below 30 Hz the field yellows (owner, 06.10), red from 26 — the ramp as long as
+#   before; above 42 Hz the cutoff takes music, not rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
 # marks: labels on the frequency axis of the curve, where the low end of instruments lives; behind the curve the spectrum
 #   of THIS mix is drawn. What a cutoff costs there: at 32 Hz and 24 dB/oct, 0.5 dB at 41.2 Hz (E1), 3.7 dB at 30.87 Hz
-#   (B0), 5.9 dB at 28 Hz (the 808's mark, there so its label fits on the plot).
+#   (B0), 6.4 dB at 27.5 Hz (A0, the piano's lowest key). The guitar's low E (E2, 82.41 Hz) and speech (70 Hz) stand
+#   above the machine's 50 Hz top: where a person's knob would start taking a voice with a guitar (owner, 06.10, which
+#   also took the 808's mark out).
 [hpf]
 frequencyDomain = "sourceNyquist"
 slopeDomain = [6, 96]
 slopeMultiple = 6
-hzStep = 1
+hzStep = 0
 band = 0
 hzMin = 15
 hzMax = 80
@@ -230,7 +258,7 @@ slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24
 note = { aboveHz = 20, soundingAtLeastS = 3 }
-comfort = { lowHz = 24, highHz = 42, warningLowHz = 20, warningHighHz = 50 }
+comfort = { lowHz = 30, highHz = 42, warningLowHz = 26, warningHighHz = 50 }
 curveTopDb = 0
 curveBottomDb = -36
 curveStepDb = 6
@@ -239,7 +267,9 @@ marks = [
     { key = "kick", hz = 50 },
     { key = "bass4", hz = 41.2 },
     { key = "bass5", hz = 30.87 },
-    { key = "sub808", hz = 28 },
+    { key = "piano", hz = 27.5 },
+    { key = "guitar", hz = 82.41 },
+    { key = "speech", hz = 70 },
 ]
 
 # MONO BASS (owner decisions 3.5) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
@@ -256,7 +286,11 @@ marks = [
 #   when it sounds at least soundingAtLeastS in all. Less than that, or a low end that could not be measured, is its own
 #   reason, and the machine leaves mono bass out: it does not fold what it could not weigh.
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
-# frequencyRange, frequencyStep: the crossover knob's travel and step — 5 Hz (owner, 02.10).
+# frequencyRange, frequencyStep: the crossover knob's travel and its step — 0, no step (owner, 07.10: as the high-pass's
+#   cutoff; it was 5 Hz from 02.10): a typed value is kept as typed, the travel is continuous.
+# comfort (owner, 07.10: "everything as in HPF"): the crossover knob's field is neutral from lowHz to highHz and shades
+#   towards warningLowHz below and warningHighHz above, red past them — a hint to the knob, as [hpf] comfort is; it
+#   changes neither the machine nor the travel.
 [monoBass]
 frequencyDomain = [60, 300]
 lowWidthDomain = [0, 1]
@@ -264,7 +298,8 @@ lowWidth = 0
 lowWidthRange = [0, 1]
 lowWidthStep = 0.05
 frequencyRange = [60, 300]
-frequencyStep = 5
+frequencyStep = 0
+comfort = { lowHz = 100, highHz = 180, warningLowHz = 75, warningHighHz = 250 }
 loss = { warnFromDb = 1, offAboveDb = 3, soundingWithinDb = 20, soundingAtLeastS = 3 }
 
 # The knob's scale shows two regions, each with a physical reason rather than a taste; the map is static — it follows
@@ -352,6 +387,11 @@ trustedConfidence = "high"
 #   1.25, 1.52 for 2.6 and 1.54 for 3 (1.86 for 0.5, 1.74 for 6); with 1.5 the median is 1.27, 2.61 and 3.02 dB, the
 #   single mixes 1.02…1.55, 2.19…3.04 and 2.56…3.48 (at 0 it was 1.68, 3.24 and 3.70). The report states what each
 #   master's compressor really took.
+# STEPLESS AND COLOURED (owner, 07.10, as the high-pass, mono bass and the EQ): knobStepDb and mixStep 0 — a typed value is
+# kept as typed. comfort, mixComfort: the knobs' fields, as [hpf] comfort — neutral from low to high, shading towards
+# warningLow below and warningHigh above, red past them. A side that does not exist is an edge AT the domain's end
+# (low = warningLow = 0 for the amount, high = warningHigh = 1 for the mix): no value lies beyond it. The amount's red at
+# 6 dB is the domain's end; the knob's travel ends at 3 dB, where the field stands a third of the way to red.
 [glue]
 domain = [0, 6]
 default = 0
@@ -365,7 +405,8 @@ knee = { from = 8, to = 4, law = "linear" }
 divisor = { from = 2, to = 8, law = "geometric" }
 knobMinDb = 0
 knobMaxDb = 3
-knobStepDb = 0.1
+knobStepDb = 0
+comfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 6 }
 # THE GLUE IN PARALLEL (owner decision, 05.10, v0.17.0: «делай ручку 40% по дефолту»): the compressed signal's share of the
 # glue's output — the rest the dry signal (the chain's compressorMix), 1 the downward glue as it always was. mix: what the
 # machine's layer takes, the auto plan and a manual glue alike; the overnight study (parallel variants at the same share)
@@ -375,7 +416,8 @@ knobStepDb = 0.1
 mixDomain = [0, 1]
 mix = 0.4
 mixRange = [0, 1]
-mixStep = 0.2
+mixStep = 0
+mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
 
 # SATURATION — the peak-normalised saturator, the chain's clipper stage. A taste of the manual mode: the machine never
 # sets it, and it does not shorten needles (the peak clipper inside the limiter does).
@@ -402,13 +444,16 @@ mixStep = 0.2
 #   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the mix is
 #   in both). The report gives the largest cut and the usual one over the
 #   loud places — the loudShare of the quanta with the highest input peaks: their largest, and their median.
+# STEPLESS AND COLOURED (owner, 07.10): driveStep 0 — a typed value is kept as typed; driveComfort: the drive knob's field,
+# as [glue] comfort — neutral 0…1.5 dB, red at 8 dB, no low side (an edge at the domain's start).
 [saturation]
 driveDomain = [0, 12]
 mixDomain = [0, 1]
 shape = "tape"
 driveDb = 0
 driveRange = [0, 12]
-driveStep = 0.5
+driveStep = 0
+driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }
 bias = 0
 mix = 1
 mixRange = [0, 1]
@@ -424,13 +469,14 @@ cut = { loudShare = 0.05 }
 # bands (type, hz, q), is felitronics-bands' bands.toml, keyed tilt, low, body, mud, forward, brightness, air — never
 # written here (the config's schema refuses it). domain: what a command and a project accept (±6 dB);
 # band: the core's EQ band it writes; normal: where the value turns red; hard: the ends of the slider's travel; step: the
-# knob's step — travel and step are hints, a value between steps or past the travel is taken as written.
+# knob's step — travel and step are hints, a value between steps or past the travel is taken as written. step 0: no step
+# (owner, 07.10: every EQ knob — tilt, low and the five bands — as the high-pass's cutoff): a typed value is kept as typed.
 [tilt]
 domain = [-6, 6]
 band = 1
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 # LOW — a separate device on every target, with one dB knob and an on tick. The machine enables it only
 # when the target carries lowDb, its correction for the medium (today lp, +0.5 dB) — and not on an input too quiet to
@@ -443,7 +489,7 @@ domain = [-6, 6]
 band = 2
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 # THE EQ BANDS — one device of five static bands, a person's only (the owner's decision of 01.10): the machine leaves
 # every band at 0 dB, since it does not touch timbre in this release. A band at 0 dB is neutral and out of the stage, and a
@@ -457,35 +503,35 @@ band = 3
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 [bands.mud]
 band = 4
 domain = [-6, 0]
 normal = [-1.5, 0.0]
 hard = [-3, 0]
-step = 0.1
+step = 0
 
 [bands.forward]
 band = 5
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 [bands.brightness]
 band = 6
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 [bands.air]
 band = 7
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 # THE EQ STAGE — one stage of the core that several devices write (the high-pass, tilt, low, the bands): a device is not a
 # stage. curve: where the summed curve the core computes leaves ±warnDb it is filled red and labelled; scaleDb is the

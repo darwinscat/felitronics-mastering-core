@@ -162,6 +162,31 @@ void theSchemaRefuses()
                 "[tilt]\ndomain = [1, 6]\nband = 1\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
     mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
+    // Where the lowest note is sought from (owner, 06.10): a band centre in hertz, 0 the whole table, under the table's top.
+    mustRefuse (E, "lowestNoteFromHz = 25\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = -1", "-1", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustAccept (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 0");
+    // A knob's step is 0 or more (owner, 07.10): 0, no step, is what every manual knob takes now; under 0 is no step at all.
+    mustRefuse (E, "hzStep = 0", "hzStep = -1", "-1", Fault::OutOfRange, "hpf.hzStep");
+    mustRefuse (E, "frequencyStep = 0", "frequencyStep = -1", "-1", Fault::OutOfRange, "monoBass.frequencyStep");
+    mustRefuse (E, "knobStepDb = 0", "knobStepDb = -0.1", "-0.1", Fault::OutOfRange, "glue.knobStepDb");
+    mustRefuse (E, "mixStep = 0\n", "mixStep = -0.1\n", "-0.1", Fault::OutOfRange, "glue.mixStep");
+    mustRefuse (E, "driveStep = 0", "driveStep = -0.5", "-0.5", Fault::OutOfRange, "saturation.driveStep");
+    mustRefuse (E, "manualStepDb = 0", "manualStepDb = -0.1", "-0.1", Fault::OutOfRange, "limiter.peakClipper.manualStepDb");
+    mustRefuse (T, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = -0.1 }", "-0.1", Fault::OutOfRange, "edit.lufs.step");
+    // ...and the two knobs that keep their step refuse 0: mono bass's width and the saturation's mix.
+    mustRefuse (E, "lowWidthStep = 0.05", "lowWidthStep = 0", "0", Fault::OutOfRange, "monoBass.lowWidthStep");
+    mustRefuse (E, "mixStep = 0.05", "mixStep = 0", "0", Fault::OutOfRange, "saturation.mixStep");
+    // A comfort window lies inside its knob's domain, in order, and is required (owner, 07.10).
+    mustRefuse (E, "warningHighHz = 250 }", "warningHighHz = 170 }", "170", Fault::Refused, "monoBass.comfort.warningHighHz",
+                Refusal::OutOfOrder);
+    mustRefuse (E, "comfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 6 }",
+                "comfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 7 }", "7", Fault::OutOfRange, "glue.comfort.warningHigh");
+    mustRefuse (E, "mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }\n", "", "[glue]", Fault::Missing, "glue.mixComfort");
+    mustRefuse (E, "driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }",
+                "driveComfort = { low = 2, high = 1.5, warningLow = 0, warningHigh = 8 }", "1.5", Fault::Refused,
+                "saturation.driveComfort.high", Refusal::OutOfOrder);
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
     // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
@@ -225,7 +250,7 @@ void theSchemaRefuses()
                 Refusal::OutOfOrder);   // points at the value of longP90Ms
     mustRefuse (E, "shapingUpToBits = 16", "shapingUpToBits = 24", "24", Fault::Refused, "dither.shapingUpToBits", Refusal::OutOfOrder);
     mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 20", "20", Fault::Refused, "limiter.slowReleaseMs", Refusal::OutOfOrder);
-    mustRefuse (E, "warningLowHz = 20, warningHighHz = 50", "warningLowHz = 20, warningHighHz = 40", "40", Fault::Refused,
+    mustRefuse (E, "warningLowHz = 26, warningHighHz = 50", "warningLowHz = 26, warningHighHz = 40", "40", Fault::Refused,
                 "hpf.comfort.warningHighHz", Refusal::OutOfOrder);
     mustRefuse (E, "hzMin = 15", "hzMin = 80", "80\nmachineTopHz", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
     // The machine's top lies on the knob's travel: above its start, at most its end, a finite number, and there.
@@ -258,9 +283,23 @@ void theSchemaRefuses()
     // over the analyzer's 65 536 hops, no enter level, a band whose corners are one float.
     mustRefuse (E, "hopMs = 100", "hopMs = 1", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
     mustRefuse (E, "blockHops = 4", "blockHops = 65", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
-    mustRefuse (E, "lowNoteHz = 20\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 20", "[lowEnd.run]", Fault::Refused,
+    mustRefuse (E, "lowNoteHz = 10\nhighNoteHz = 500", "lowNoteHz = 10\nhighNoteHz = 10", "[lowEnd.run]", Fault::Refused,
                 "lowEnd.run", Refusal::AnalyzerRefuses);
-    mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "highNoteHz = 500", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    // The note's top (07.10): a band centre in hertz, 0 the whole table; the analyzer refuses a negative one.
+    mustRefuse (E, "noteTopHz = 300\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.noteTopHz");
+    mustRefuse (E, "noteTopHz = 300", "noteTopHz = -1", "-1", Fault::OutOfRange, "lowEnd.run.noteTopHz");
+    mustAccept (E, "noteTopHz = 300", "noteTopHz = 0");
+    // The lowest band over the background (owner, 07.10): 0…60 dB, required.
+    mustRefuse (E, "occupiedAboveBackgroundDb = 6\n", "", "[lowEnd]", Fault::Missing, "lowEnd.occupiedAboveBackgroundDb");
+    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 61", "61", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
+    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = -1", "-1", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
+    mustAccept (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 0");
+    // The note range's share of the programme (owner, 07.10): −240…0 dB, required.
+    mustRefuse (E, "noteRangeShareAtLeastDb = -140\n", "", "[lowEnd]", Fault::Missing, "lowEnd.noteRangeShareAtLeastDb");
+    mustRefuse (E, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = 1", "1", Fault::OutOfRange, "lowEnd.noteRangeShareAtLeastDb");
+    mustRefuse (E, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -241", "-241", Fault::OutOfRange,
+                "lowEnd.noteRangeShareAtLeastDb");
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "[stereoBursts]", Fault::Refused,
                 "stereoBursts", Refusal::AnalyzerRefuses);
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000.0001", "[stereoBursts]",
@@ -324,7 +363,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     using config::Refusal;
     // A two-note range just two hertz wide: LowEnd::storageFor admits it (MIDI 16 and 17 fall inside 20…22 Hz), and a
     // hand-written semitone rule refused it.
-    const auto twoNotes = bindWith ({ { Document::Engine, "highNoteHz = 300", "highNoteHz = 22" } });
+    const auto twoNotes = bindWith ({ { Document::Engine, "lowNoteHz = 10\nhighNoteHz = 500", "lowNoteHz = 20\nhighNoteHz = 22" } });
     ok (twoNotes && twoNotes->ok(), "lowEnd.run 20…22 Hz: two notes, admitted by the analyzer, passes the schema");
     // The grid is counted from the travel's start: a mono-bass travel from 60.5 Hz puts 120 Hz half a step off.
     std::string targets;
@@ -332,11 +371,11 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     ok (offset && offset->ok(), "shifted slider travel does not reject defaults");
     // Across the documents the engine's step is its own decimal, all nine places: on a low shelf of step 0.100000001 from
     // −3, 0.500000035 is on the grid and 0.5 is not.
-    const auto fine = bindWith ({ { Document::Engine, "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
+    const auto fine = bindWith ({ { Document::Engine, "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0",
                                     "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" },
                                   { Document::Targets, "lowDb = 0.5", "lowDb = 0.500000035" } });
     ok (fine && fine->ok(), "lowDb 0.500000035 on a step of 0.100000001 from −3: on the grid");
-    const auto coarse = bindWith ({ { Document::Engine, "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
+    const auto coarse = bindWith ({ { Document::Engine, "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0",
                                       "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" } }, &targets);
     ok (coarse && coarse->ok(), "defaults need not be on slider steps");
 }
@@ -355,7 +394,8 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "saturation.cut", "tilt.normal", "low.normal",
+    "monoBass.zones", "monoBass.comfort", "glue.comfort", "glue.mixComfort", "saturation.driveComfort", "saturation.cut",
+    "tilt.normal", "low.normal",
     "bands.body.normal", "bands.mud.normal", "bands.forward.normal", "bands.brightness.normal", "bands.air.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
 constexpr std::string_view kWhileNoDeEsser[] = { "deEsser", "stereoBursts" };
@@ -488,7 +528,7 @@ void theSoundIsWhatCanChangeAMaster()
         { config::Document::Targets, "default = \"allStreaming\"", "default = \"spotify\"",
           "the default target: a project that omits an unchanged target reopens on it", true },
         { config::Document::Targets, "lufs = { domain = \"finite\", from = -25,", "lufs = { domain = \"finite\", from = -26,", "the hand edit's travel", false },
-        { config::Document::Targets, "green = [-15, -13], step = 0.1 }", "green = [-15, -13], step = 0.05 }",
+        { config::Document::Targets, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.05 }",
           "the hand edit's step, which the targets' numbers sit on", true },
         { config::Document::Engine, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0.002 }",
           "a report-only observation threshold (clipping's full weight)", false },
@@ -496,8 +536,8 @@ void theSoundIsWhatCanChangeAMaster()
           "the wide-bass warning: mono bass is placed whatever it says", false },
         { config::Document::Engine, "polarity = { correlationBelow = 0,", "polarity = { correlationBelow = 0.1,",
           "observations.polarity: a finding — mono bass is decided by the loss of its own band", false },
-        { config::Document::Engine, "normal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# LOW",
-          "normal = [-1.2, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# LOW", "tilt's red zone", false },
+        { config::Document::Engine, "normal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0\n\n# LOW",
+          "normal = [-1.2, 1.5]\nhard = [-3, 3]\nstep = 0\n\n# LOW", "tilt's red zone", false },
         { config::Document::Engine, "slopesNormal = [12, 24]", "slopesNormal = [12]", "which slopes warn", false },
         { config::Document::Engine, "densityMinusDb = 3", "densityMinusDb = 4", "the peak clipper's printed density", false },
         { config::Document::Engine, "band = 8", "band = 9", "the de-esser's block, while no shell offers it", false },

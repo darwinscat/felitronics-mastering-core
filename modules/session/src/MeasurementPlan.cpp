@@ -54,6 +54,7 @@ MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
     p.lowEnd.crossoverHz = number (run.find ("crossoverHz"));
     p.lowEnd.lowNoteHz = number (run.find ("lowNoteHz"));
     p.lowEnd.highNoteHz = number (run.find ("highNoteHz"));
+    p.lowEnd.noteTopHz = number (run.find ("noteTopHz"));
     p.lowEnd.fftOrder = int (number (run.find ("fftOrder")));
     p.lowEnd.dutyThresholdDb = number (run.find ("dutyThresholdDb"));
     p.lowEnd.skipBlocks = int (number (run.find ("skipBlocks")));
@@ -204,6 +205,7 @@ std::uint64_t MeasurementPlan::key (std::uint64_t pcmHash, const MeasurementPara
         h.add (low.crossoverHz);
         h.add (low.lowNoteHz);
         h.add (low.highNoteHz);
+        h.add (low.noteTopHz);
         h.add (low.tuningHz);
         h.add (low.fftOrder);
         h.add (low.hop);

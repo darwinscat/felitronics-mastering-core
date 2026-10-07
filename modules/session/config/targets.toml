@@ -133,5 +133,6 @@ bandcamp = "noNormalisation"
 # for lufs, a ceiling that leaves a codec its headroom for tp. Travel and step guide the slider; every target default
 # must lie in the accepted domain, independently of those hints.
 [edit]
-lufs = { domain = "finite", from = -25, to = -5, green = [-15, -13], step = 0.1 }
-tp = { domain = [-6.0, -0.1], from = -4, to = -0.1, green = [-2, -1], step = 0.1 }
+# step 0: no step (owner, 07.10: «все ручки недискретные») — a typed loudness or ceiling is kept as typed.
+lufs = { domain = "finite", from = -25, to = -5, green = [-15, -13], step = 0 }
+tp = { domain = [-6.0, -0.1], from = -4, to = -0.1, green = [-2, -1], step = 0 }

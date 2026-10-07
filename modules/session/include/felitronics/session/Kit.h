@@ -75,6 +75,9 @@ struct KitTravel
 // window, 0 inside, +1 above. The windows and their outer bounds, all from the config:
 //   the target's loudness and ceiling   [edit] lufs/tp green, out to the knob's travel (targets.toml)
 //   the high-pass's cutoff              [hpf] comfort lowHz…highHz, out to warningLowHz / warningHighHz
+//   mono bass's crossover               [monoBass] comfort lowHz…highHz, out to warningLowHz / warningHighHz
+//   the glue's amount and mix           [glue] comfort, mixComfort: low…high, out to warningLow / warningHigh
+//   the saturation's drive              [saturation] driveComfort: low…high, out to warningLow / warningHigh
 //   tilt and low                        [tilt]/[low] normal, out to hard
 //   the five EQ bands' gains            [bands.*] normal, out to hard (owner, 02.10: coloured as tilt and low)
 // A knob without a window answers window = false, heat 0, side 0.
@@ -138,17 +141,19 @@ public:
     // on a knob whose whole travel lies at or below zero (the target's loudness and ceiling) a number typed without a
     // sign is read as negative ("14" is −14), and a sign typed is kept; the number is rounded to the knob's grid — its
     // travel's start plus a whole number of steps, a value exactly halfway taken away from zero, as Text rounds — in
-    // decimal digits, and the result must lie in the domain the command checks (Knob::accepts: `sourceRate` is the
-    // source's, for the high-pass's cutoff below its Nyquist). The high-pass's slope reads a whole number of dB/oct that
-    // Rules::slope accepts, unrounded.
+    // decimal digits (a knob of step 0 has no grid: the typed decimal is kept as it is), and the result must lie in the
+    // domain the command checks (Knob::accepts: `sourceRate` is the source's, for the high-pass's cutoff below its
+    // Nyquist). The high-pass's slope reads a whole number of dB/oct that Rules::slope accepts, unrounded.
     [[nodiscard]] static KitParsed parse (std::string_view typed, text::Lang lang, text::Term field,
                                           std::uint32_t sourceRate) noexcept;
 
-    // The knob's travel and step.
+    // The knob's travel and step; step 0 is no step (owner, 07.10: every manual knob but mono bass's width and the
+    // saturation's mix, which keep their 0.05; the high-pass's slope is a choice, not a travel).
     [[nodiscard]] static KitTravel travel (text::Term field) noexcept;
     // Where `value` stands along the travel, 0 … 1 (a value past an end stands at that end).
     [[nodiscard]] static KitNumber position (text::Term field, double value) noexcept;
-    // The value at `position` (clamped to 0 … 1) along the travel, on its grid: the step nearest, in decimal digits.
+    // The value at `position` (clamped to 0 … 1) along the travel, on its grid: the step nearest, in decimal digits; on a
+    // knob of step 0, the line from the travel's start to its end.
     [[nodiscard]] static KitNumber valueAt (text::Term field, double position) noexcept;
     // The heat of `value` on the knob (above).
     [[nodiscard]] static KitHeat heat (text::Term field, double value) noexcept;

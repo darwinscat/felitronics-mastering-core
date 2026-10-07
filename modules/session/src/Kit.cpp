@@ -100,13 +100,25 @@ std::optional<Window> windowOf (const Rules& r, Term field) noexcept
         w.outHigh = number (edit.find ("to"));
         return w;
     }
-    if (field == Term::FieldHpfFq)
+    if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq)
     {
-        const View comfort = r.engine.find ("hpf").find ("comfort");
+        const View comfort = r.engine.find (field == Term::FieldHpfFq ? "hpf" : "monoBass").find ("comfort");
         w.low = number (comfort.find ("lowHz"));
         w.high = number (comfort.find ("highHz"));
         w.outLow = number (comfort.find ("warningLowHz"));
         w.outHigh = number (comfort.find ("warningHighHz"));
+        return w;
+    }
+    // The glue's amount and mix, the saturation's drive (owner, 07.10): low, high, warningLow, warningHigh.
+    if (field == Term::FieldGlueUpToDb || field == Term::FieldGlueMix || field == Term::FieldSaturationDrive)
+    {
+        const View comfort = field == Term::FieldGlueUpToDb ? r.engine.find ("glue").find ("comfort")
+                           : field == Term::FieldGlueMix ? r.engine.find ("glue").find ("mixComfort")
+                           : r.engine.find ("saturation").find ("driveComfort");
+        w.low = number (comfort.find ("low"));
+        w.high = number (comfort.find ("high"));
+        w.outLow = number (comfort.find ("warningLow"));
+        w.outHigh = number (comfort.find ("warningHigh"));
         return w;
     }
     if (field == Term::FieldTiltDb || field == Term::FieldLowDb)
@@ -211,7 +223,8 @@ KitParsed Kit::parse (std::string_view typed, text::Lang lang, Term field, std::
     if (! signTyped (typed) && detail::compare (knob->to, Decimal { 0, 1, false }) <= 0) value = -value;
     const auto typedDecimal = detail::decimalOf (value);
     if (! typedDecimal) return out;
-    const auto onGrid = nearestOnGrid (*typedDecimal, knob->from, knob->step);
+    // A knob of no step (step 0) keeps the typed decimal as it is.
+    const auto onGrid = knob->step.mantissa == 0 ? typedDecimal : nearestOnGrid (*typedDecimal, knob->from, knob->step);
     if (! onGrid) return out;
     const double v = detail::kept (onGrid->toDouble());
     if (! knob->accepts (v, sourceRate)) return out;
@@ -249,6 +262,12 @@ KitNumber Kit::valueAt (Term field, double position) noexcept
     const auto& from = knob->from;
     const auto& to = knob->to;
     const auto& step = knob->step;
+    if (step.mantissa == 0)   // no step: the travel is continuous
+    {
+        const double lo = from.toDouble(), hi = to.toDouble();
+        if (! (hi >= lo)) return { CodecStatus::Invalid };
+        return { CodecStatus::Ok, detail::kept (lo + std::clamp (position, 0.0, 1.0) * (hi - lo)) };
+    }
     const int scale = std::max ({ int (from.scale), int (to.scale), int (step.scale) });
     std::int64_t f = 0, t = 0, b = 0;
     if (! detail::scaleUp (from.mantissa, scale - int (from.scale), f) || ! detail::scaleUp (to.mantissa, scale - int (to.scale), t)

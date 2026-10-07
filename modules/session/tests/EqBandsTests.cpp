@@ -164,11 +164,11 @@ void theConfig()
     {
         const auto& m = moveOf (e, i);
         as = as && m.band == rows[i].band && m.type == rows[i].type && same (m.freqHz, rows[i].hz) && same (m.q, rows[i].q)
-            && same (m.hard.min, rows[i].from) && same (m.hard.max, rows[i].to) && same (m.step, 0.1)
+            && same (m.hard.min, rows[i].from) && same (m.hard.max, rows[i].to) && same (m.step, 0.0)
             && detail::bandsSlot (detail::rules(), i) == rows[i].band;
     }
     ok (as, "body 160 Hz bell Q 0.7, mud 300 Hz bell Q 0.8 (−3…0), forward 3 kHz bell Q 0.7, brightness 8 kHz and air 12 kHz high "
-            "shelves Q 0.6; ±3 dB by 0.1 dB, in bands 3–7");
+            "shelves Q 0.6; ±3 dB, stepless (owner, 07.10), in bands 3–7");
     ok (e.hpf.band == 0 && e.tilt.band == 1 && e.low.band == 2 && e.deEsser.band == 8, "the other devices keep their bands");
 }
 
@@ -396,10 +396,10 @@ void theKitAndTheNorm()
     KitEq bad = k; bad.bands.mud = 0.5;
     ok (Kit::eqCurve (bad, 48000, kitCurve).status == CodecStatus::Invalid, "a gain outside its domain is no preview");
     const auto travel = Kit::travel (text::Term::FieldBandsMud), body = Kit::travel (text::Term::FieldBandsAir);
-    ok (travel.status == CodecStatus::Ok && same (travel.from, -3.0) && same (travel.to, 0.0) && same (travel.step, 0.1)
-        && same (body.from, -3.0) && same (body.to, 3.0), "the knobs' travel: mud −3…0, the others ±3, by 0.1 dB");
+    ok (travel.status == CodecStatus::Ok && same (travel.from, -3.0) && same (travel.to, 0.0) && same (travel.step, 0.0)
+        && same (body.from, -3.0) && same (body.to, 3.0) && same (body.step, 0.0), "the knobs' travel: mud −3…0, the others ±3, stepless");
     const auto typed = Kit::parse ("1,26", text::Lang::Ru, text::Term::FieldBandsBody, 0);
-    ok (typed.status == CodecStatus::Ok && typed.refusal == KitRefusal::None && same (typed.value, 1.3), "a typed gain lands on the 0.1 dB grid");
+    ok (typed.status == CodecStatus::Ok && typed.refusal == KitRefusal::None && same (typed.value, 1.26), "a typed gain is kept as typed (owner, 07.10)");
     const auto hot = Kit::heat (text::Term::FieldBandsForward, 3.0);
     ok (hot.window && hot.side == 1 && same (hot.heat, 1.0), "a band is coloured as tilt is (owner, 02.10): at its travel's end, full heat");
     // THE NORM (owner, 02.10: where the curve is red, the line is there): [eq] curve.warnDb judges the curve eqOnlyCurve
