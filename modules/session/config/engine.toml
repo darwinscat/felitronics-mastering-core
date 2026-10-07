@@ -165,11 +165,13 @@ manualStepDb = 0
 #   band be occupied in at least occupiedFromDuty of the frames (10 %). Without a band that passes, or a valid note, there
 #   is no note: the target's floor, never the loudest band in its place, and never a higher band — a note above the true
 #   one would cut music.
-# occupiedAboveBackgroundDb (owner, 07.10: a mix with no bass says "unsure"): the lowest band must also stand this far
-#   above the background — its density (energy per hertz) over the median density of the other bands of the note's
-#   range — or it is no note: a veto, never a skip to the band above it, which would make a harmonic the note. A band
-#   that only the leakage of a high tone, a dither or a rumble lights reads within 2 dB of the background; a played
-#   note reads 17 dB over it and more (a 0.5 s B0) — up to 100 dB on a held bass.
+# THE BOTTOM OF THE LOW END (owner, 07.10: a mix with no bass says "unsure"; the real songs keep their notes): the lowest
+#   band must also be where the low end starts — the band under it never on, under lowestNoteFromHz included — or it is
+#   no note: a veto, never a skip to the band above it, which would make a harmonic the note. A noise, a dither, a high
+#   tone's leakage or a rumble lights the bands on both sides of 25 Hz alike; a played lowest note has nothing on under
+#   it. No number: on real mixes it gives the note v0.18.0 named, and unsure on every no-bass case of the tests. The
+#   background's veto it replaces (a density 6 dB over the note range's median) took the note from real mixes: a dense
+#   mix's lowest note stands −6 to +0.4 dB over that median (Cold Gaze of Eternity −0.35 dB).
 # noteRangeShareAtLeastDb (owner, 07.10, the same decision): the note's range must also hold this share of the programme's
 #   energy (`bandRangeShare`), or there is no note — a second veto on the decision alone, for a tone whose rounding draws
 #   real lines into an otherwise empty range (a float 997 Hz tone: −172 dB, its lines 6.3 dB over the background). The
@@ -185,7 +187,6 @@ manualStepDb = 0
 [lowEnd]
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2
-occupiedAboveBackgroundDb = 6
 noteRangeShareAtLeastDb = -140
 lowestNoteFromHz = 25
 infraLowCrossoverHz = 30
@@ -222,8 +223,8 @@ skipBlocks = 0
 # how much; "the cutoff hit 50 Hz: the lowest note is higher" when machineTopHz stops it.
 # note (owner decision 3.2): the lowest note — the lowest band on at all from [lowEnd] lowestNoteFromHz up — is sure when its
 #   band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
-#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line and [lowEnd] occupiedAboveBackgroundDb (6 dB) above the
-#   background, the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, lies above aboveHz (not DC, not rumble) and sounds at least
+#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, the band under it never on (the low end starts there),
+#   the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, lies above aboveHz (not DC, not rumble) and sounds at least
 #   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.

@@ -420,9 +420,11 @@ machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 
 a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all from 25 Hz up (`[lowEnd] lowestNoteFromHz`, owner 06.10: the run
 measures from 10 Hz for the spectrum, and a band under 25 Hz is skipped — never the note, though it still takes part in each
 frame's loudest-band reference, so a rumble more than about 18 dB over the bass can keep the bass off; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
-of the frames, stands 2 dB over the duty line and its density 6 dB over the note range's background (`[lowEnd]
-occupiedAboveBackgroundDb`, owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither or a
-rumble — is unsure, and the veto never skips to the band above), the range holding −140 dB of the programme's energy
+of the frames, stands 2 dB over the duty line and is where the low end starts — the band under it, under 25 Hz included,
+never on (owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither, a noise or a rumble, which
+light both sides of 25 Hz alike — is unsure, and the veto never skips to the band above; it replaced a veto on the band's
+density over the note range's background, which took the lowest note from real mixes — a dense mix's lowest note stands
+−6 to +0.4 dB over that median — and gives v0.18.0's note on them, the two demo songs held in `RealMixLowEnd.h`), the range holding −140 dB of the programme's energy
 (`[lowEnd] noteRangeShareAtLeastDb`, the same decision: a float tone's rounding lines in an otherwise empty range are no
 note), lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not

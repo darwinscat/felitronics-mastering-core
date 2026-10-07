@@ -290,11 +290,9 @@ void theSchemaRefuses()
     mustRefuse (E, "noteTopHz = 300\n", "", "[lowEnd.run]", Fault::Missing, "lowEnd.run.noteTopHz");
     mustRefuse (E, "noteTopHz = 300", "noteTopHz = -1", "-1", Fault::OutOfRange, "lowEnd.run.noteTopHz");
     mustAccept (E, "noteTopHz = 300", "noteTopHz = 0");
-    // The lowest band over the background (owner, 07.10): 0…60 dB, required.
-    mustRefuse (E, "occupiedAboveBackgroundDb = 6\n", "", "[lowEnd]", Fault::Missing, "lowEnd.occupiedAboveBackgroundDb");
-    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 61", "61", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
-    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = -1", "-1", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
-    mustAccept (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 0");
+    // The background's veto is gone (owner, 07.10: real mixes keep their notes): [lowEnd] occupiedAboveBackgroundDb is unknown.
+    mustRefuse (E, "occupiedMarginWhenOnDb = 2\n", "occupiedMarginWhenOnDb = 2\noccupiedAboveBackgroundDb = 6\n", "occupiedAboveBackgroundDb",
+                Fault::UnknownKey, "lowEnd.occupiedAboveBackgroundDb");
     // The note range's share of the programme (owner, 07.10): −240…0 dB, required.
     mustRefuse (E, "noteRangeShareAtLeastDb = -140\n", "", "[lowEnd]", Fault::Missing, "lowEnd.noteRangeShareAtLeastDb");
     mustRefuse (E, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = 1", "1", Fault::OutOfRange, "lowEnd.noteRangeShareAtLeastDb");
