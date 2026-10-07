@@ -418,8 +418,8 @@ from the first phase's low-end runs, with no trial render. The high-pass stands 
 included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
 machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 80 Hz (`hzMax`, owner 01.10: a voice with
 a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all from 25 Hz up (`[lowEnd] lowestNoteFromHz`, owner 06.10: the run
-measures from 10 Hz for the spectrum, and a band under 25 Hz is skipped — never the note, never in the way of the bands
-above; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
+measures from 10 Hz for the spectrum, and a band under 25 Hz is skipped — never the note, though it still takes part in each
+frame's loudest-band reference, so a rumble more than about 18 dB over the bass can keep the bass off; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
 of the frames, stands 2 dB over the duty line and its density 6 dB over the note range's background (`[lowEnd]
 occupiedAboveBackgroundDb`, owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither or a
 rumble — is unsure, and the veto never skips to the band above), the range holding −140 dB of the programme's energy

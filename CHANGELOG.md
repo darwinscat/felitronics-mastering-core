@@ -2,6 +2,84 @@
 
 # Changelog
 
+## v0.19.0 — 2026-10-07
+
+### session · analysis_offline — the low end measured from 10 Hz, the lowest note searched from 25 Hz, and a mix with no bass says "unsure"
+
+- The low-end analysis starts at 10 Hz instead of 20 Hz (`[lowEnd.run] lowNoteHz = 10`, owner, 06.10), so rumble under
+  20 Hz shows in the spectrum. At 48 kHz the bands under 25.36 Hz are narrower than the analysis window can separate;
+  they are marked unresolved.
+- The lowest note is searched from 25 Hz up (`[lowEnd] lowestNoteFromHz = 25`, owner, 06.10). A band under 25 Hz is
+  never the note. It still takes part in each frame's loudest-band reference, so a rumble under 20 Hz more than about
+  18 dB louder than the bass can keep the bass from counting as "on"; the planner then says "unsure" and the high-pass
+  stays at its floor. `LowEnd::lowestOccupiedBand` takes an optional `fromHz`.
+- A mix with no bass says "unsure" again (owner, 07.10). v0.18.0 said so only by accident; with the search from 25 Hz,
+  the leakage of a high tone, a dither or a rumble could light the first band and be named "lowest note 25.96 Hz". Two
+  new vetoes decide instead — a veto, never a skip to a higher band, which could make a harmonic the note:
+  - `[lowEnd] occupiedAboveBackgroundDb = 6`: the lowest band must stand 6 dB above the median band of the note range.
+    Leakage, dither and rumble stay within about 2 dB of it; a played bass stands 17 dB above it and more.
+  - `[lowEnd] noteRangeShareAtLeastDb = -140`: the note range must hold at least −140 dB of the programme's energy. This
+    catches a float test tone (997 Hz) whose rounding draws faint lines into an otherwise empty low end (−172 dB); the
+    faintest real note in the tests holds −107 dB.
+
+  Both apply to the planner's sure note and to the report's `lowestOccupiedSure`. Every real low note in the tests and
+  the contract scenarios is found as in v0.18.0.
+- The `2026-10` sound version moves (updated in place; no saved project exists).
+
+### session — the high-pass knob's comfort window and the curve's marks
+
+- `[hpf] comfort` is 30–42 Hz, red below 26 Hz (was 24–42 Hz and red below 20; owner, 06.10); above, red from 50 Hz as
+  before. The advice on a person's cutoff (`HpfBelowComfort`) and the knob's colour follow the config.
+- `[hpf] marks` (owner, 06.10): the 808 mark (28 Hz) is gone; `piano` 27.5 Hz (A0), `guitar` 82.41 Hz (E2) and `speech`
+  70 Hz are new; `kick`, `bass4` and `bass5` stay. The core carries the keys and frequencies; a shell names them.
+- Both are presentation: no master changes.
+
+### session — every manual knob is stepless
+
+- Step 0 means no step (owner, 06.10 and 07.10: «все ручки недискретные»): a typed value is kept exactly as typed
+  (`Kit::parse`), a slider position maps linearly onto the travel (`Kit::valueAt`), and `Kit::travel` reports step 0.
+  The schema admits 0 for exactly the steps listed below.
+- Stepless now: the high-pass cutoff (`[hpf] hzStep`, was 1 Hz), mono bass's crossover (`[monoBass] frequencyStep`, was
+  5 Hz), tilt, low and the five EQ bands (`step`, was 0.1 dB), the glue's amount and mix (`[glue] knobStepDb` was 0.1 dB,
+  `mixStep` 0.2), the saturation's drive (`[saturation] driveStep`, was 0.5 dB), the peak clipper's manual cut
+  (`[limiter.peakClipper] manualStepDb`, was 0.1 dB), and the target's loudness and ceiling (`targets.toml [edit]` steps,
+  were 0.1). Two knobs keep their steps, and their schema still refuses 0: mono bass's width (`[monoBass] lowWidthStep`,
+  0.05) and the saturation's mix (`[saturation] mixStep`, 0.05). Travels and domains are unchanged; the machine's values
+  do not move.
+
+### session — coloured fields for mono bass's crossover, the glue and the saturation's drive
+
+- Four new comfort windows, read by `fc_kit_heat` / `Kit::heat` like the high-pass's (owner, 07.10): neutral inside,
+  shading towards a warning edge, red past it.
+  - `[monoBass] comfort`: neutral 100–180 Hz, red at 75 Hz and at 250 Hz.
+  - `[glue] comfort`: neutral 0–1.5 dB, red at 6 dB (the knob's travel ends at 3 dB).
+  - `[glue] mixComfort`: neutral 30–100 %, red at 0.
+  - `[saturation] driveComfort`: neutral 0–1.5 dB, red at 8 dB.
+- One shared `config::Comfort` (low, high, warningLow, warningHigh) and one schema reader: each window lies inside its
+  knob's domain, in order. Presentation only: no master changes.
+
+### session · analysis_offline — the low-end drawings show the unresolved bands and reach 494 Hz
+
+- `LowSpectrum` and `LowSide` give the measured value of a band too narrow for the analysis window instead of `TooShort`
+  (owner, 06.10 and 07.10), so the drawings show what was measured down to 10 Hz. The unresolved flag stays on the bands
+  array; no decision reads these queries.
+- The low-end table reaches 493.88 Hz (`[lowEnd.run] highNoteHz = 500`: 68 bands, MIDI 4…71), so mono bass's side share
+  can be drawn up to 500 Hz. New `[lowEnd.run] noteTopHz = 300` (`LowEndParams::noteTopHz`): everything the note is read
+  from — occupancy, the loudest band, the background, the totals — still sees only the bands up to 300 Hz, bit for bit
+  what a 300 Hz table gives. The bands above carry energy, density and side for drawing. 0, the default, means the whole
+  table.
+
+### session — `DitherFloor`: the noise floor the delivery adds, per bin
+
+- New query kind `DitherFloor` (14, owner, 07.10): rows `[hz, dbPerBin, reason]` on a log grid from `fromHz` (> 0) to
+  `toHz`, for the current delivery — the plan's dither (bit depth, on or off, shaping) at the target's rate. The value
+  is the quantiser's noise (TPDF dither or plain rounding) shaped by the dither's noise shaping, in the same per-bin
+  scale as the source's spectrum, so the two can be drawn on one axis. At 48 kHz: 16-bit TPDF −138.47 dB per bin, flat;
+  Weighted −162.0 dB at 1 kHz and −128.9 dB at Nyquist; 24-bit rounding −191.4 dB. Above the delivery's Nyquist the
+  reason is `Unsupported`; 32 bits (no quantiser) is `NoSignal`.
+- The codec schema and the ABI manifest append the kind and its row; `FC_SESSION_ABI_VERSION` moves 13 → 14, no new
+  entry point.
+
 ## v0.18.0 — 2026-10-06
 
 ### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)

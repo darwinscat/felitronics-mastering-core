@@ -176,7 +176,8 @@ manualStepDb = 0
 #   least share a sure note in the tests holds is −107 dB; a mix holds −30 dB and more.
 # lowestNoteFromHz (owner, 06.10: «the spectrum from 10 Hz, the lowest note from 25 Hz — not 20, 25»): the lowest note is
 #   sought from the first band whose centre lies at or above it, G#0 at 25.96 Hz. The run measures from 10 Hz for the
-#   spectrum, and a band under this one is skipped — it is never the note and never stands in the way of the bands above.
+#   spectrum, and a band under this one is skipped — it is never the note. It still takes part in each frame's loudest-band
+#   reference, so a rumble more than about 18 dB over the bass can keep the bass from counting as on (then: unsure, floor).
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
