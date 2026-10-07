@@ -161,7 +161,8 @@ void theSchemaRefuses()
     mustRefuse (E, "[tilt]\ndomain = [-6, 6]\nband = 1\nnormal = [-1.5, 1.5]\nhard = [-3, 3]",
                 "[tilt]\ndomain = [1, 6]\nband = 1\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
-    mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
+    // [hpf] note.aboveHz is gone (owner, 07.10): the note is sought from [lowEnd] lowestNoteFromHz alone, and the key is unknown.
+    mustRefuse (E, "note = { ", "note = { aboveHz = 20, ", "aboveHz", Fault::UnknownKey, "hpf.note.aboveHz");
     // Where the lowest note is sought from (owner, 06.10): a band centre in hertz, 0 the whole table, under the table's top.
     mustRefuse (E, "lowestNoteFromHz = 25\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
     mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");

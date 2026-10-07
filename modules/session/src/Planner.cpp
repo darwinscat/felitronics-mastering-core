@@ -104,8 +104,8 @@ bool quiet (const PlanInputs& in) noexcept { return quietInput (in); }
 // 10 Hz for the spectrum, is skipped (owner, 06.10). It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
 // frames, is resolved, carries a valid note reading, stands [lowEnd] occupiedMarginWhenOnDb above the duty line and is where
 // the low end starts — the band under it, under lowestNoteFromHz included, never on — while the range holds [lowEnd]
-// noteRangeShareAtLeastDb of the programme (owner, 07.10, both: a mix with no bass is unsure; real mixes keep their notes), lies
-// above [hpf] note.aboveHz and sounds [hpf] note.soundingAtLeastS in all (its frames times the hop). A lowest band that
+// noteRangeShareAtLeastDb of the programme (owner, 07.10, both: a mix with no bass is unsure; real mixes keep their notes), and
+// sounds [hpf] note.soundingAtLeastS in all (its frames times the hop). A lowest band that
 // fails any of it — a rare 808, one thump — is no note, and the cutoff is the target's floor: the detector never takes
 // a higher band as "the note", because a note above the true one cuts music.
 struct Note { std::int32_t midi = 0; double hz = 0.0; };
@@ -120,7 +120,7 @@ std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResul
     const double dutyFrom = configured (low.find ("occupiedFromDuty")), margin = configured (low.find ("occupiedMarginWhenOnDb"));
     const double fromHz = configured (low.find ("lowestNoteFromHz"));
     if (! (*share >= core::det::pow10 (configured (low.find ("noteRangeShareAtLeastDb")) / 10.0))) return {};   // a veto, as above
-    const double aboveHz = configured (note.find ("aboveHz")), sounding = configured (note.find ("soundingAtLeastS"));
+    const double sounding = configured (note.find ("soundingAtLeastS"));
     const auto rows = std::size_t (bands->stored);
     for (std::size_t b = 0; b < rows && (b + 1) * 16 <= bands->values.size(); ++b)
     {
@@ -128,7 +128,7 @@ std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResul
         const double count = row[11], duty = row[12];
         if (! (row[1] >= fromHz) || ! (count > 0)) continue;
         const bool bottom = b == 0 || ! (bands->values[(b - 1) * 16 + 11] > 0);   // the band under it never on
-        const bool sure = duty >= dutyFrom && row[15] > 0.5 && row[14] >= margin && bottom && row[1] > aboveHz
+        const bool sure = duty >= dutyFrom && row[15] > 0.5 && row[14] >= margin && bottom
                        && count * *hop / *rate >= sounding;
         if (! sure) return {};
         return Note { std::int32_t (row[0]), row[1] };

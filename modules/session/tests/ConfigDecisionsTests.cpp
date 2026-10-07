@@ -96,7 +96,9 @@ constexpr Golden kGolden[] = {
     // ...and [lowEnd] occupiedAboveBackgroundDb removed (owner, 07.10: real mixes keep their notes): the lowest band is a
     // note only where the band under it was never on — a master whose lowest note the background's veto took has it again;
     // it was 702dd4d0cbf8d059; updated in place, as above.
-    { "2026-10", 0x298d807f53e7f865ull },
+    // ...and [hpf] note.aboveHz removed (owner, 07.10): it was 20 Hz, under the 25 Hz the note is sought from, so no note
+    // and no master moves; it was 298d807f53e7f865; updated in place, as above.
+    { "2026-10", 0x5c869a1028b4a6fdull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -246,9 +248,9 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.hpf.comfort.lowHz, 30.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 30–42 Hz (owner, 06.10)");
     need (same (e.hpf.comfort.warningLowHz, 26.0) && same (e.hpf.comfort.warningHighHz, 50.0),
           "the high-pass field warns towards 26 and 50 Hz (owner, 06.10: yellow from 30 down, the ramp as long as before)");
-    need (same (e.hpf.noteAboveHz, 20.0) && same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
+    need (same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
           && same (e.lowEnd.occupiedFromDuty, 0.10) && same (e.lowEnd.occupiedMarginWhenOnDb, 2.0),
-          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, 3 s in all; not sought under 10 s");
     need (same (e.monoBass.lossWarnFromDb, 1.0) && same (e.monoBass.lossOffAboveDb, 3.0),
           "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB");
     need (! e.stages.monoBass, "mono bass is placed by its weighed loss, never before it");
@@ -426,8 +428,8 @@ void aDepartureIsNamed()
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
         { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
           "targets.club.hpfFloor" },
-        { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
-          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
+        { false, "note = { soundingAtLeastS = 3 }", "note = { soundingAtLeastS = 2 }",
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, 3 s in all; not sought under 10 s" },
         { false, "lowNoteHz = 10", "lowNoteHz = 20",
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
