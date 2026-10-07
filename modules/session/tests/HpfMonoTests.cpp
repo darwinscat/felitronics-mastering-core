@@ -13,6 +13,7 @@
 #include "EqCurve.h"
 #include "Grid.h"
 #include "Planner.h"
+#include "RealMixLowEnd.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/eq/EqBand.h>
 #include <felitronics/core/DetMath.h>
@@ -148,16 +149,17 @@ void theSureLowestNote()
         ok (cut (r).cut == HpfCut::Unsure, "a hair under 25 Hz is not: the floor");
     }
     {
-        // The lowest band's density over the background, [lowEnd] occupiedAboveBackgroundDb (owner, 07.10): 6 dB is a note, a
-        // hair less is none — the floor, never the band above it.
-        Readings r; r.occupy (28, 0.5, 60, 6); r.occupy (40, 0.5, 60, 6); r.background = 1.0;
-        double& density = r.bands[std::size_t (28 - kFirstMidi) * 16 + 7];
-        r.bands[std::size_t (40 - kFirstMidi) * 16 + 7] = 1.0e6;
-        density = felitronics::core::det::pow10 (0.6);
-        ok (cut (r).noteMidi == 28, "a lowest band 6 dB over the background: the note");
-        density = std::nextafter (density, 0.0);
+        // The bottom of the low end (owner, 07.10): the lowest band on at all from 25 Hz is a note only where the band under
+        // it — under 25 Hz included — was never on; on in a single frame, it is no note: the floor, never the band above it.
+        Readings r; r.occupy (20, 0.5, 60, 6); r.occupy (28, 0.5, 60, 6);
+        ok (cut (r).noteMidi == 20, "a lowest band at 25.96 Hz with nothing on under it: the note");
+        r.occupy (19, 0.004, 1, 0.5);
         ok (cut (r).cut == HpfCut::Unsure && ! cut (r).noteMidi && same (cut (r).cutoffHz, 32.0),
-            "a hair under 6 dB: no note, the floor — never the band above it");
+            "the band under it, 24.50 Hz, on in one frame: no note, the floor — never the band above it");
+        Readings lower; lower.occupy (20, 0.5, 60, 6); lower.occupy (18, 0.5, 60, 6);
+        ok (cut (lower).noteMidi == 20, "a band on further under 25 Hz, 23.12 Hz, with 24.50 Hz silent: the note all the same");
+        Readings first; first.occupy (kFirstMidi, 0.5, 40, 6); first.bands[1] = 25.0;
+        ok (cut (first).noteMidi == kFirstMidi, "the table's first band, with no band under it: the note");
     }
     {
         // The range's share of the programme, [lowEnd] noteRangeShareAtLeastDb (owner, 07.10): −140 dB is a note, a hair
@@ -845,13 +847,13 @@ void underTwentyFiveHzIsTheSpectrumsNotTheNotes()
     }
 }
 
-// A MIX WITH NO BASS SAYS "UNSURE" (owner, 07.10): the lowest band from 25 Hz up that only a high tone's leakage, a dither
-// or a rumble lights stands within a few dB of the note range's background, and [lowEnd] occupiedAboveBackgroundDb vetoes
-// it — never skipping to the band above it. A played bass stands far over the background and is found as before, also
-// 40 dB under a loud 1 kHz tone.
+// A MIX WITH NO BASS SAYS "UNSURE" (owner, 07.10): a high tone's leakage, a dither, a noise or a rumble lights the bands on
+// both sides of 25 Hz alike, so the lowest band from 25 Hz up is not where the low end starts — the band under it was on —
+// and it is no note, never a skip to the band above it. A played bass has nothing on under it and is found as before,
+// also 40 dB under a loud 1 kHz tone.
 void aMixWithNoBassIsUnsure()
 {
-    felitronics::test::group ("a mix with no bass is unsure: a band lit by leakage, dither or rumble is vetoed by the background");
+    felitronics::test::group ("a mix with no bass is unsure: a band lit by leakage, dither or rumble is not where the low end starts");
     const auto said = [] (const Measured& m)
     {
         const auto sure = lowNumber (m, "lowestOccupiedSure"), midi = lowNumber (m, "lowestOccupiedMidi");
@@ -888,6 +890,44 @@ void aMixWithNoBassIsUnsure()
     found (measure (Mix (20).tone (30.87, 0.03).tone (61.74, 0.19).tone (1000.0, 0.1)), 23,
            "a five-string B0 16 dB under its second harmonic: B0, never the harmonic");
     found (measure (Mix (20).tone (41.2, 0.3).dither (16).pink (0.001)), 28, "E1 over a dither and a rumble: its note");
+}
+
+// REAL MIXES KEEP THEIR NOTES (owner, 07.10): v0.19.0's background veto took the lowest note from real mixes — a dense mix's
+// lowest note stands −6 to +0.4 dB over the note range's median density — so the planner reads the recorded low end of
+// the two demo songs (RealMixLowEnd.h) and names v0.18.0's note on each: D♯1 in Cold Gaze of Eternity (the owner's
+// answer of 07.10: kept for now, though the song never goes under E), unsure in Cat in Space.
+void realMixesKeepTheirNotes()
+{
+    felitronics::test::group ("real mixes keep their notes: the two demo songs name v0.18.0's lowest note");
+    int same18 = 0, notes = 0;
+    std::string wrong;
+    for (const auto& mix : kRealMixes)
+    {
+        Readings r; r.rate = mix.rate; r.hop = mix.hop; r.rangeShare = mix.rangeShare; r.background = mix.background;
+        for (auto& v : r.bands) v = 0;
+        for (int b = 0; b < kBandCount; ++b) { double* row = r.bands.data() + b * 16; row[0] = kFirstMidi + b; row[1] = midiHz (kFirstMidi + b); row[15] = 1; }
+        for (int i = 0; i < mix.bandCount; ++i)
+        {
+            const auto& band = mix.bands[i];
+            double* row = r.bands.data() + (band.midi - kFirstMidi) * 16;
+            row[11] = band.count; row[12] = band.duty; row[14] = band.marginDb; row[7] = band.density; row[15] = band.resolved;
+        }
+        const auto f = plan (r.inputs ("allStreaming", double (mix.frames) / mix.rate)).found.hpf;
+        const int named = f.noteMidi.value_or (-1);
+        const int expected = mix.v018Note;
+        if (named == expected) ++same18;
+        else if (wrong.size() < 300) wrong += std::string (" ") + mix.name + ": " + std::to_string (named) + " not " + std::to_string (expected) + ";";
+        notes += named >= 0 ? 1 : 0;
+    }
+    ok (same18 == int (std::size (kRealMixes)), "every real mix names v0.18.0's note (" + std::to_string (same18) + " of "
+        + std::to_string (std::size (kRealMixes)) + ", " + std::to_string (notes) + " notes)" + wrong);
+    const auto one = [] (std::string_view name)
+    {
+        for (const auto& mix : kRealMixes) if (std::string_view (mix.name) == name) return &mix;
+        return static_cast<const RealMix*> (nullptr);
+    };
+    const auto* gaze = one ("cold-gaze-of-eternity");
+    ok (gaze && gaze->v018Note == 27, "PRECONDITION: Cold Gaze of Eternity, the demo, had D♯1 at v0.18.0");
 }
 
 //==============================================================================
@@ -1086,6 +1126,7 @@ int main()
     theLowestBandWithItsSureness();
     underTwentyFiveHzIsTheSpectrumsNotTheNotes();
     aMixWithNoBassIsUnsure();
+    realMixesKeepTheirNotes();
     masterAtLoudnessAndPeak();
     aHiddenMasterAtLoudnessAndPeakSoundsAsLate();
     theDeviceRunsGoFirst();

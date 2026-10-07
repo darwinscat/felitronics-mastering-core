@@ -93,7 +93,10 @@ constexpr Golden kGolden[] = {
     // occupiedAboveBackgroundDb 6 (07.10: a mix with no bass is unsure); it was e16b73aead43a728; updated in place, as above.
     // ...and [lowEnd] noteRangeShareAtLeastDb −140 (07.10, the same decision: a float tone's rounding lines are no note); it
     // was 4fab20b29ed728bb; updated in place, as above.
-    { "2026-10", 0x702dd4d0cbf8d059ull },
+    // ...and [lowEnd] occupiedAboveBackgroundDb removed (owner, 07.10: real mixes keep their notes): the lowest band is a
+    // note only where the band under it was never on — a master whose lowest note the background's veto took has it again;
+    // it was 702dd4d0cbf8d059; updated in place, as above.
+    { "2026-10", 0x298d807f53e7f865ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -256,8 +259,6 @@ std::vector<std::string> departures (const config::Config& c)
           && same (e.lowEnd.lowestNoteFromHz, 25.0),
           "the low end's table measures from 10 Hz to 500 Hz, the note's readings to 300 Hz, and the lowest note is sought "
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)");
-    need (same (e.lowEnd.occupiedAboveBackgroundDb, 6.0),
-          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)");
     need (same (e.lowEnd.noteRangeShareAtLeastDb, -140.0),
           "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
@@ -438,8 +439,6 @@ void aDepartureIsNamed()
           "from 25 Hz — not 20 (owner, 06.10 and 07.10)" },
         { false, "noteRangeShareAtLeastDb = -140", "noteRangeShareAtLeastDb = -160",
           "a mix with no bass is unsure: the note range holds −140 dB of the programme, or there is no note (owner, 07.10)" },
-        { false, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 3",
-          "a mix with no bass is unsure: the lowest band stands 6 dB over the note range's background, or it is no note (owner, 07.10)" },
         { false, "comfort = { lowHz = 100,", "comfort = { lowHz = 90,",
           "the comfort windows: mono bass's crossover 100–180 Hz, red at 75 and 250; the glue 0–1.5 dB, red at 6; its mix "
           "30–100 %, red at 0; the saturation's drive 0–1.5 dB, red at 8 (owner, 07.10)" },
