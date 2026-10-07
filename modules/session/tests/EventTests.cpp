@@ -311,8 +311,46 @@ void pump()
     // previousVersion restates, and with the landing's two keys taken out, every job's events but a master's are pinned.
     // THE MAX MODES (v0.15.0) came after everything below: the two max targets' rows and the engine's [landing.max]
     // table. Each restatement takes them out first; a manual master (the scenario's) never reads them.
-    const auto withoutMax = [] (std::string& targets, std::string& engine)
+    // V0.19.0 (owner, 06.10 and 07.10) came after everything below, the max modes included: each restatement takes it out
+    // first, before the older rows put their own numbers back (a step of 0 goes back to its step of 02.10, which a row
+    // then takes further back).
+    const auto withoutV019 = [] (std::string& targets, std::string& engine)
     {
+        const auto replace = [] (std::string& text, std::string_view now, std::string_view then, bool all = false)
+        {
+            for (auto at = text.find (now); at != std::string::npos; at = all ? text.find (now, at + then.size()) : std::string::npos)
+                text.replace (at, now.size(), then);
+        };
+        const auto erase = [] (std::string& text, std::string_view line)   // the line from its leading newline
+        {
+            if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
+        };
+        // The low end from 10 Hz, its table to 500 Hz with the note's readings to 300, the lowest note from 25 Hz and the
+        // background's veto.
+        replace (engine, "\nlowNoteHz = 10\n", "\nlowNoteHz = 20\n");
+        replace (engine, "\nhighNoteHz = 500\n", "\nhighNoteHz = 300\n");
+        for (const std::string_view key : { "\nlowestNoteFromHz = ", "\noccupiedAboveBackgroundDb = ", "\nnoteTopHz = " }) erase (engine, key);
+        // The high-pass curve's marks: the piano's back to the 808's, the guitar's and speech's out; its comfort window from
+        // 30 Hz, red from 26, back to 24 and 20.
+        replace (engine, "{ key = \"piano\", hz = 27.5 }", "{ key = \"sub808\", hz = 28 }");
+        for (const std::string_view mark : { "\n    { key = \"guitar\", ", "\n    { key = \"speech\", " }) erase (engine, mark);
+        replace (engine, "comfort = { lowHz = 30, highHz = 42, warningLowHz = 26,", "comfort = { lowHz = 24, highHz = 42, warningLowHz = 20,");
+        // The stepless knobs: their steps of before.
+        replace (engine, "\nhzStep = 0\n", "\nhzStep = 1\n");
+        replace (engine, "\nfrequencyStep = 0\n", "\nfrequencyStep = 5\n");
+        replace (engine, "\nstep = 0\n", "\nstep = 0.1\n", true);
+        replace (engine, "\nknobStepDb = 0\n", "\nknobStepDb = 0.1\n");
+        replace (engine, "\nmixStep = 0\n", "\nmixStep = 0.2\n");
+        replace (engine, "\ndriveStep = 0\n", "\ndriveStep = 0.5\n");
+        replace (engine, "\nmanualStepDb = 0\n", "\nmanualStepDb = 0.1\n");
+        replace (targets, ", step = 0 }", ", step = 0.1 }", true);
+        // The comfort windows of mono bass, the glue and the saturation.
+        for (const std::string_view key : { "\ncomfort = { lowHz = 100,", "\ncomfort = { low = ", "\nmixComfort = ", "\ndriveComfort = " })
+            erase (engine, key);
+    };
+    const auto withoutMax = [&withoutV019] (std::string& targets, std::string& engine)
+    {
+        withoutV019 (targets, engine);
         // v0.18.0: target classes and already-mastered delivery ceilings. Remove them when restating the older pins.
         for (const std::string_view classification : { ", class = \"specification\"", ", class = \"streaming\"", ", class = \"other\"" })
             for (auto at = targets.find (classification); at != std::string::npos; at = targets.find (classification))
@@ -326,21 +364,6 @@ void pump()
                                             "\nexpectedPassesMaxClean = ", "\nexpectedPassesMaxDense = " })
             if (const auto at = engine.find (key); at != std::string::npos)
                 engine.erase (at, engine.find ('\n', at + 1) - at);
-        // The low end from 10 Hz, the lowest note from 25 Hz (owner, 06.10): [lowEnd.run] lowNoteHz back to 20, and
-        // [lowEnd] lowestNoteFromHz out.
-        if (const auto at = engine.find ("\nlowNoteHz = 10\n"); at != std::string::npos) engine.replace (at, 16, "\nlowNoteHz = 20\n");
-        if (const auto at = engine.find ("\nlowestNoteFromHz = "); at != std::string::npos)
-            engine.erase (at, engine.find ('\n', at + 1) - at);
-        // The high-pass curve's marks (owner, 06.10): the piano's back to the 808's, the guitar's and speech's out.
-        if (const auto at = engine.find ("{ key = \"piano\", hz = 27.5 }"); at != std::string::npos)
-            engine.replace (at, std::string_view ("{ key = \"piano\", hz = 27.5 }").size(), "{ key = \"sub808\", hz = 28 }");
-        for (const std::string_view mark : { "\n    { key = \"guitar\", ", "\n    { key = \"speech\", " })
-            if (const auto at = engine.find (mark); at != std::string::npos)
-                engine.erase (at, engine.find ('\n', at + 1) - at);
-        // The high-pass's comfort window from 27 Hz, red from 23 (owner, 06.10): back to 24 and 20.
-        constexpr std::string_view comfortNow = "comfort = { lowHz = 27, highHz = 42, warningLowHz = 23,";
-        if (const auto at = engine.find (comfortNow); at != std::string::npos)
-            engine.replace (at, comfortNow.size(), "comfort = { lowHz = 24, highHz = 42, warningLowHz = 20,");
         // The unread compressor mix was removed (owner, 05.10); restore it for the older config fingerprints alone.
         if (const auto at = engine.find ("\n[compressor]\n"); at != std::string::npos)
             engine.insert (at + 14, "mix = 1\n");
@@ -359,7 +382,7 @@ void pump()
             engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
         }
     };
-    const auto previousVersion = [&withoutMax] (std::vector<Notification> events)
+    const auto previousVersion = [&withoutMax, &withoutV019] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
         auto targets = config::Config::text (config::Document::Targets);
@@ -372,6 +395,7 @@ void pump()
                 targets.erase (at, targets.find ('\n', at + 1) - at);
         // ...and the engine with the observation rows before the owner's table.
         auto engine = config::Config::text (config::Document::Engine);
+        withoutV019 (targets, engine);
         const std::pair<std::string_view, std::string_view> rows[] = {
             { "from = 0.001, fullAt = 0.01, warningFrom = 0.01, errorFrom = 0.1 }", "from = 0.001, fullAt = 0.01 }" },
             { "depthBits = 24, fromBitsShort = 1, fullAtBitsShort = 8, errorFromBitsShort = 8 }", "fromBits = 1, fullAtBits = 8 }" },
@@ -390,7 +414,6 @@ void pump()
             { "{ key = \"bass4\", hz = 41.2 }", "{ key = \"bass4\", hz = 41 }" },
             { "{ key = \"bass5\", hz = 30.87 }", "{ key = \"bass5\", hz = 31 }" },
             { "{ key = \"sub808\", hz = 28 }", "{ key = \"sub808\", hz = 23 }" },
-            { "{ key = \"piano\", hz = 27.5 }", "{ key = \"sub808\", hz = 23 }" },   // the marks of 06.10, before withoutMax
             { "hzMax = 80\nmachineTopHz = 50\n", "hzMax = 50\n" },
             { "frequencyStep = 5\n", "frequencyStep = 1\n" }, { "manualStepDb = 0.1\n", "manualStepDb = 0.5\n" },
             { "manualMaxDb = 6\n", "manualMaxDb = 3\n" } };
@@ -509,11 +532,14 @@ void pump()
     // before them).
     // The low end from 10 Hz and the lowest note from 25 Hz (owner, 06.10) move the config's version alone here: withoutMax
     // restates it above, and these complete-stream pins move by it (504d1630b0dda1a5 / a68792578ab9b2f5 before them).
-    // The high-pass's comfort window from 27 Hz (owner, 06.10) moves the config's version alone, restated above as well
+    // The high-pass's comfort window from 30 Hz (owner, 06.10) moves the config's version alone, restated above as well
     // (da345d2043dfce62 / 0e28ca0cc1999975 before it).
     // The high-pass curve's marks of 06.10 move the config's version alone, restated above (0f27cc1f12a70335 /
     // 68ca2efc7cbe6d1d before them).
-    ok (eventsHash (one) == 0x6be3d618efebc6d8ull && eventsHash (cancelled) == 0x4c09489f3d62dc95ull,
+    // The rest of v0.19.0 (07.10) — the stepless knobs, the comfort windows of mono bass, the glue and the saturation, the
+    // low-end table to 500 Hz with the note's readings to 300 Hz, and the background's veto on the lowest note — moves the
+    // config's version alone, restated above by withoutV019 (6be3d618efebc6d8 / 4c09489f3d62dc95 before it).
+    ok (eventsHash (one) == 0xaf796027fbc2d96dull && eventsHash (cancelled) == 0x63e0b5042dc6966dull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

@@ -634,8 +634,10 @@ void theCorpusIsTheWasmModulesBytes()
 {
     felitronics::test::group ("native == wasm: the corpus session-check.mjs gives the module hashes to one value");
     // tools/wasm/session-check.mjs, "the pure kit", holds the wasm module to this same value.
-    // The high-pass's comfort window from 27 Hz, red from 23 (owner, 06.10), moves the heats: it was 6343e0c5c05c0bb1.
-    constexpr std::uint64_t kPinned = 0xa14d9679add39021ull;
+    // The high-pass's comfort window from 30 Hz, red from 26 (owner, 06.10), moves the heats: it was 6343e0c5c05c0bb1.
+    // The stepless knobs (07.10) move the travels, the parsed values and the values at a position, and the new comfort
+    // windows (07.10) the heats: it was a14d9679add39021.
+    constexpr std::uint64_t kPinned = 0x126d99c8e3ccaec8ull;
     const auto h = corpusHash();
     std::printf ("    kit corpus: %016llx\n", static_cast<unsigned long long> (h));
     ok (h == kPinned, "the kit corpus hashes to the pinned value");

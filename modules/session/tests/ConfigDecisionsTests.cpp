@@ -88,7 +88,10 @@ constexpr Golden kGolden[] = {
     // ...and the low end measured from 10 Hz, the lowest note sought from 25 Hz (owner, 06.10: [lowEnd.run] lowNoteHz 10,
     // [lowEnd] lowestNoteFromHz 25): a master whose lowest band on lay between 20 and 25 Hz takes its note from the bands
     // above; it was 086fda481af08315; updated in place, as above (no 2026-10 project is saved).
-    { "2026-10", 0xe16b73aead43a728ull },
+    // ...and every manual knob stepless (owner, 07.10: step 0, a typed value kept as typed — no machine value moves), the
+    // low-end table to 500 Hz with the note's readings kept to 300 Hz (noteTopHz, 07.10: the drawings), and [lowEnd]
+    // occupiedAboveBackgroundDb 6 (07.10: a mix with no bass is unsure); it was e16b73aead43a728; updated in place, as above.
+    { "2026-10", 0x4fab20b29ed728bbull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
