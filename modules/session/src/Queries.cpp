@@ -454,15 +454,15 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
     }
     if (q.kind == QueryKind::DitherFloor)
     {
-        // The delivery's settings exist once the plan has placed the devices; until then nothing is allocated. Pending
-        // only while that placement can still come: a plan that cannot be made (a silent source) is Unavailable, and a
-        // measurement cancelled before the placement is Cancelled until it continues — a polling caller always ends.
+        // The delivery's settings exist once the devices are placed; until then nothing is allocated, and the answer
+        // says whether a placement can still come. Only a running measurement places them (at the end of its first
+        // phase): Pending while one runs; Cancelled while it is stopped, at any point (a continue may place); Unavailable
+        // when the plan cannot be made (a silent source) or nothing runs that would place (a measured source without a
+        // usable loudness and true peak). A polling caller always reaches an end.
         if (plan_.dither.bits == 0)
-        {
-            const auto loudness = measurementResults_[std::size_t (Analyzer::Loudness)].status;
             return { plan_.status == PlanStatus::Unavailable ? QueryStatus::Unavailable
-                     : loudness == MeasurementStatus::Cancelled ? QueryStatus::Cancelled : QueryStatus::Pending, 0, 0, 0 };
-        }
+                     : state_ == State::MeasurementStopped ? QueryStatus::Cancelled
+                     : measurementJob_ != 0 ? QueryStatus::Pending : QueryStatus::Unavailable, 0, 0, 0 };
         const auto bytes = std::uint64_t (q.columns) * 3u * sizeof (double) + 128u;
         return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
     }
