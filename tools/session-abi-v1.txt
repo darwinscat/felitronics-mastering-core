@@ -2086,3 +2086,6 @@ row QueryDitherFloor element=f64 byteOrder=little columns=hz,dbPerBin,reason str
 # The loudest of the low end under [lowEnd] lowestNoteFromHz names no note (07.10, v0.20.0): low-frequency energy at its
 # frequency.
 enum felitronics::session::text::FactId::LoudestLowEnergy=458
+# The two diodes, saturation types a person may pick (07.10, v0.20.0): their words.
+enum felitronics::session::text::Term::SaturationTypeAsym=152
+enum felitronics::session::text::Term::SaturationTypeCubic=153

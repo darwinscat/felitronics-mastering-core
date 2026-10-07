@@ -95,7 +95,8 @@ template <template <class> class F> struct GlueFields
 
 // The saturation's type: the shaper's curve, in felitronics-core's WaveShaper::Shape order and values. The machine's layer
 // takes [saturation] shape of the config, any of the eight; a person picks one of the types the page offers — Tanh,
-// Tube, Transistor, Transformer, Tape. Atan, Cubic and Asym stay the config's (research): a hand edit refuses them.
+// Tube, Transistor, Transformer, Tape, and the two diodes (owner, 07.10): Cubic, the symmetric, and Asym, the asymmetric.
+// Atan stays the config's (research): a hand edit refuses it.
 enum class SaturationType : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Transistor, Transformer, Tape };
 
 // [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the type (a person's choice only:

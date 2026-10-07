@@ -325,9 +325,12 @@ void pump()
         {
             if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
         };
-        // v0.20.0 (owner, 07.10), after v0.19.0: [hpf] note.aboveHz back (20 Hz), [lowEnd.run] fftOrderUpToHz out.
+        // v0.20.0 (owner, 07.10), after v0.19.0: [hpf] note.aboveHz back (20 Hz), [lowEnd.run] fftOrderUpToHz out, the
+        // saturation's bias and DC blocker at 0.
         replace (engine, "note = { soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 3 }");
         erase (engine, "\nfftOrderUpToHz = ");
+        replace (engine, "\nbias = 0.2\n", "\nbias = 0\n");
+        replace (engine, "\ndcBlockHz = 10\n", "\ndcBlockHz = 0\n");
         // The low end from 10 Hz, its table to 500 Hz with the note's readings to 300, the lowest note from 25 Hz and the
         // range's veto.
         replace (engine, "\nlowNoteHz = 10\n", "\nlowNoteHz = 20\n");
@@ -547,8 +550,9 @@ void pump()
     // bottom of the low end (07.10, v0.20.0) once more (6c3491a8b997b879 / 69b29177d62337ad before it); [hpf] note.aboveHz
     // removed (07.10, v0.20.0) once more (368c55877f9bb7fe / 16eb2ed2f0970d35 before it); [lowEnd.run] fftOrderUpToHz (07.10,
     // v0.20.0) once more (150088df2017d43a / bd3c2671c8004c1d before it); [lowEnd] lowestNoteFromHz 30 (07.10, v0.20.0) once
-    // more (9610c2a7fc971f3f / 0a28dfdf08da9a7d before it).
-    ok (eventsHash (one) == 0xdcabbe73520f0ea7ull && eventsHash (cancelled) == 0x58311773c47f49e5ull,
+    // more (9610c2a7fc971f3f / 0a28dfdf08da9a7d before it); [saturation] bias 0.2 and dcBlockHz 10, the asymmetric diode's
+    // (07.10, v0.20.0), once more (dcabbe73520f0ea7 / 58311773c47f49e5 before it).
+    ok (eventsHash (one) == 0x41508f599701f864ull && eventsHash (cancelled) == 0x1a81582c5bc4ef89ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

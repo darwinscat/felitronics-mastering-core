@@ -490,6 +490,8 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldTargetLoudnessMode, "field", "targetLoudnessMode" },
     { Term::ReasonMasterForgotten, "measurementReason", "masterForgotten" },
     { Term::FieldGlueMix, "field", "glueMix" },
+    { Term::SaturationTypeAsym, "saturationType", "asym" },
+    { Term::SaturationTypeCubic, "saturationType", "cubic" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

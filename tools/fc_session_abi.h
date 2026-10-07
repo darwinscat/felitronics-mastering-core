@@ -83,7 +83,9 @@
 //  14            v0.19.0: the delivery's noise floor per bin — QueryKind::DitherFloor and its row (hz, dbPerBin, reason),
 //                answered from the plan's dither at the target's rate without a measurement. No entry point.
 //  15            v0.20.0: the loudest of the low end under the lowest note's band is low-frequency energy, not a note —
-//                text::FactId::LoudestLowEnergy (458) and Observation.third 1 on loudestLowNote. No entry point.
+//                text::FactId::LoudestLowEnergy (458) and Observation.third 1 on loudestLowNote; the two diodes, cubic and
+//                asym, saturation types a person may pick, their words text::Term::SaturationTypeAsym and
+//                SaturationTypeCubic (152, 153). No entry point.
 #define FC_SESSION_ABI_VERSION 15u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u

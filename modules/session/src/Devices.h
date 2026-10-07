@@ -35,12 +35,13 @@ inline FieldRule slopeRule() noexcept { return { FieldRule::Kind::Slope, {} }; }
 inline FieldRule needlesRule() noexcept { return { FieldRule::Kind::Needles, {} }; }
 inline FieldRule saturationTypeRule() noexcept { return { FieldRule::Kind::SaturationType, {} }; }
 
-// The saturation types a person may pick (the page offers them): Tanh and the four of felitronics-core v0.57.0. Atan,
-// Cubic and Asym are the config's only — a research setting, never a hand choice.
+// The saturation types a person may pick (the page offers them): Tanh, the four of felitronics-core v0.57.0, and the two
+// diodes (owner, 07.10): Cubic, the symmetric, and Asym, the asymmetric. Atan is the config's only — a research setting,
+// never a hand choice.
 [[nodiscard]] constexpr bool handSaturationType (SaturationType t) noexcept
 {
     return t == SaturationType::Tanh || t == SaturationType::Tube || t == SaturationType::Transistor
-        || t == SaturationType::Transformer || t == SaturationType::Tape;
+        || t == SaturationType::Transformer || t == SaturationType::Tape || t == SaturationType::Cubic || t == SaturationType::Asym;
 }
 
 // The types' names, in the config and in a project file: [saturation] shape, `type.hand = "tape"`.
