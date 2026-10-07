@@ -198,27 +198,53 @@ void parseReadsTheField()
         const auto p = Kit::parse (typed, lang, field, rate);
         return p.status == CodecStatus::Ok && p.refusal == why;
     };
-    ok (accepted ("-14.05", Lang::En, Term::FieldTargetLufs, -14.1), "-14.05 LUFS rounds away from zero to the step: −14.1");
-    ok (accepted ("\xE2\x88\x92" "14,05", Lang::Ru, Term::FieldTargetLufs, -14.1), "the typographic minus and the Russian decimal comma");
+    ok (accepted ("-14.05", Lang::En, Term::FieldTargetLufs, -14.05), "-14.05 LUFS is kept as typed: the loudness has no step (owner, 07.10)");
+    ok (accepted ("\xE2\x88\x92" "14,05", Lang::Ru, Term::FieldTargetLufs, -14.05), "the typographic minus and the Russian decimal comma");
     ok (accepted ("14", Lang::En, Term::FieldTargetLufs, -14.0), "a bare number on a travel below zero is negative");
     ok (accepted ("+14", Lang::En, Term::FieldTargetLufs, 14.0), "a sign typed is kept (loudness has no bound)");
-    ok (accepted ("0.25", Lang::Ru, Term::FieldTargetTp, -0.3), "a halfway ceiling goes away from zero: −0.25 → −0.3");
-    ok (refused ("-0.04", Lang::En, Term::FieldTargetTp, KitRefusal::OutOfDomain), "a ceiling that rounds to 0 is out of its domain");
+    ok (accepted ("0.25", Lang::Ru, Term::FieldTargetTp, -0.25), "a bare ceiling is negative and kept as typed: −0.25");
+    ok (refused ("-0.04", Lang::En, Term::FieldTargetTp, KitRefusal::OutOfDomain), "a ceiling above −0.1 dBTP is out of its domain");
     ok (refused ("-7", Lang::En, Term::FieldTargetTp, KitRefusal::OutOfDomain), "a ceiling below −6 is out of its domain");
-    ok (accepted ("30.4", Lang::En, Term::FieldHpfFq, 30.0, 48000) && accepted ("30.5", Lang::En, Term::FieldHpfFq, 31.0, 48000),
-        "the cutoff rounds to its 1 Hz step, halfway up");
+    ok (accepted ("30.4", Lang::En, Term::FieldHpfFq, 30.4, 48000) && accepted ("30.5", Lang::En, Term::FieldHpfFq, 30.5, 48000),
+        "the cutoff is kept as typed: it has no step (owner, 06.10)");
     ok (refused ("30", Lang::En, Term::FieldHpfFq, KitRefusal::OutOfDomain, 0), "without a source the cutoff has no Nyquist to stay under");
     ok (accepted ("0.325", Lang::En, Term::FieldMonoBassWidth, 0.35) && accepted ("0.33", Lang::En, Term::FieldMonoBassWidth, 0.35),
         "the width moves to its 0.05 grid");
     ok (refused ("1.2", Lang::En, Term::FieldMonoBassWidth, KitRefusal::OutOfDomain), "a width above 1 is refused");
-    ok (accepted ("0.3", Lang::En, Term::FieldGlueMix, 0.4) && accepted ("0,5", Lang::Ru, Term::FieldGlueMix, 0.6) && accepted ("1", Lang::En, Term::FieldGlueMix, 1.0),
-        "the glue's mix moves to its 0.2 grid, halfway away from zero");
+    // STEP 0 IS NO STEP (owner, 06.10 and 07.10: «все ручки недискретные»): every manual knob but the width keeps the decimal
+    // a person typed — off every grid it used to have — and travels with step 0.
+    {
+        struct Typed { Term field; const char* typed; double want; std::uint32_t rate; };
+        const Typed stepless[] = {
+            { Term::FieldTargetLufs, "-14.37", -14.37, 0 }, { Term::FieldTargetTp, "-1.23", -1.23, 0 },
+            { Term::FieldHpfFq, "31.7", 31.7, 48000 }, { Term::FieldMonoBassFq, "123.4", 123.4, 48000 },
+            { Term::FieldTiltDb, "1.23", 1.23, 0 }, { Term::FieldLowDb, "-0.37", -0.37, 0 },
+            { Term::FieldBandsBody, "1.23", 1.23, 0 }, { Term::FieldBandsMud, "-1.23", -1.23, 0 },
+            { Term::FieldBandsForward, "0.07", 0.07, 0 }, { Term::FieldBandsBrightness, "-2.71", -2.71, 0 },
+            { Term::FieldBandsAir, "2.33", 2.33, 0 }, { Term::FieldGlueUpToDb, "1.23", 1.23, 0 },
+            { Term::FieldGlueMix, "0.37", 0.37, 0 }, { Term::FieldSaturationDrive, "2.3", 2.3, 0 },
+            { Term::FieldLimiterNeedlesDb, "1.23", 1.23, 0 },
+        };
+        bool kept = true, travels = true;
+        std::string first;
+        for (const auto& k : stepless)
+        {
+            const bool here = accepted (k.typed, Lang::En, k.field, k.want, k.rate);
+            const auto t = Kit::travel (k.field);
+            kept = kept && here; travels = travels && t.status == CodecStatus::Ok && sameBits (t.step, 0.0);
+            if (! here && first.empty()) first = std::string (" — not ") + k.typed;
+        }
+        ok (kept, "step 0: every manual knob keeps a typed value as typed" + first);
+        ok (travels, "step 0: every manual knob's travel has no step");
+    }
+    ok (accepted ("0.3", Lang::En, Term::FieldGlueMix, 0.3) && accepted ("0,5", Lang::Ru, Term::FieldGlueMix, 0.5) && accepted ("1", Lang::En, Term::FieldGlueMix, 1.0),
+        "the glue's mix is kept as typed: it has no step (owner, 07.10)");
     ok (refused ("1.2", Lang::En, Term::FieldGlueMix, KitRefusal::OutOfDomain), "a glue mix above 1 is refused");
     {
         const auto t = Kit::travel (Term::FieldGlueMix);
-        ok (t.status == CodecStatus::Ok && sameBits (t.from, 0.0) && sameBits (t.to, 1.0) && sameBits (t.step, 0.2), "the glue's mix travels 0 … 1 by 0.2: 0, 20, … 100 %");
+        ok (t.status == CodecStatus::Ok && sameBits (t.from, 0.0) && sameBits (t.to, 1.0) && sameBits (t.step, 0.0), "the glue's mix travels 0 … 1, stepless");
     }
-    ok (accepted ("1,5", Lang::De, Term::FieldTiltDb, 1.5) && accepted ("-2.25", Lang::En, Term::FieldTiltDb, -2.3), "tilt, signed both ways");
+    ok (accepted ("1,5", Lang::De, Term::FieldTiltDb, 1.5) && accepted ("-2.25", Lang::En, Term::FieldTiltDb, -2.25), "tilt, signed both ways, kept as typed");
     ok (accepted ("24", Lang::En, Term::FieldHpfSlope, 24.0) && accepted ("18", Lang::En, Term::FieldHpfSlope, 18.0),
         "a slope is a whole number of dB/oct as written, 18 included");
     ok (refused ("25", Lang::En, Term::FieldHpfSlope, KitRefusal::OutOfDomain) && refused ("24.5", Lang::En, Term::FieldHpfSlope, KitRefusal::OutOfDomain),
@@ -251,23 +277,27 @@ void travelAndHeat()
 {
     felitronics::test::group ("travel and heat: the config's travels, windows and grids");
     const auto t = Kit::travel (Term::FieldTargetLufs);
-    ok (t.status == CodecStatus::Ok && sameBits (t.from, -25) && sameBits (t.to, -5) && sameBits (t.step, 0.1), "the loudness travel is [edit] lufs");
+    ok (t.status == CodecStatus::Ok && sameBits (t.from, -25) && sameBits (t.to, -5) && sameBits (t.step, 0.0), "the loudness travel is [edit] lufs, stepless");
     ok (Kit::travel (Term::FieldHpfSlope).status == CodecStatus::Invalid, "a slope is a choice, not a travel");
     const auto hpf = Kit::travel (Term::FieldHpfFq);
-    ok (hpf.status == CodecStatus::Ok && sameBits (hpf.from, 15) && sameBits (hpf.to, 80) && sameBits (hpf.step, 1),
-        "the high-pass knob travels from 15 to 80 Hz by the hertz (owner, 01.10), past the machine's 50 Hz top");
+    ok (hpf.status == CodecStatus::Ok && sameBits (hpf.from, 15) && sameBits (hpf.to, 80) && sameBits (hpf.step, 0),
+        "the high-pass knob travels from 15 to 80 Hz (owner, 01.10), past the machine's 50 Hz top, stepless (06.10)");
     ok (sameBits (Kit::position (Term::FieldTargetLufs, -15).value, 0.5) && sameBits (Kit::position (Term::FieldTargetLufs, -30).value, 0.0)
         && sameBits (Kit::position (Term::FieldTargetLufs, 0).value, 1.0), "a position along the travel, past an end at that end");
-    ok (sameBits (Kit::valueAt (Term::FieldTargetLufs, 0.5).value, -15.0) && sameBits (Kit::valueAt (Term::FieldTargetLufs, 0.123).value, -22.5)
+    // A stepless travel is continuous (owner, 07.10): the value at a position is the line from the travel's start to its end.
+    ok (sameBits (Kit::valueAt (Term::FieldTargetLufs, 0.5).value, -15.0)
+        && sameBits (Kit::valueAt (Term::FieldTargetLufs, 0.123).value, -25.0 + 0.123 * 20.0)
         && sameBits (Kit::valueAt (Term::FieldTargetLufs, 2.0).value, -5.0) && sameBits (Kit::valueAt (Term::FieldTargetLufs, -1.0).value, -25.0),
-        "the value at a position is the nearest step, in decimal digits");
+        "the value at a position on a stepless travel: linear, clamped to its ends");
+    ok (sameBits (Kit::valueAt (Term::FieldMonoBassWidth, 0.123).value, 0.1) && sameBits (Kit::valueAt (Term::FieldMonoBassWidth, 0.5).value, 0.5),
+        "the value at a position on a stepped travel is the nearest step, in decimal digits");
     bool roundTrip = true;
     for (std::int64_t k = 0; k <= 200; ++k)
     {
         const double v = felitronics::toml::Decimal { -250 + k, 1, false }.toDouble();
-        roundTrip = roundTrip && sameBits (Kit::valueAt (Term::FieldTargetLufs, Kit::position (Term::FieldTargetLufs, v).value).value, detail::kept (v));
+        roundTrip = roundTrip && std::abs (Kit::valueAt (Term::FieldTargetLufs, Kit::position (Term::FieldTargetLufs, v).value).value - v) < 1e-12;
     }
-    ok (roundTrip, "every step of the loudness travel goes to its position and back to itself, bit for bit");
+    ok (roundTrip, "every value of the loudness travel goes to its position and back to itself");
     ok (Kit::position (Term::FieldTargetLufs, std::numeric_limits<double>::quiet_NaN()).status == CodecStatus::Invalid
         && Kit::valueAt (Term::FieldTargetLufs, std::numeric_limits<double>::infinity()).status == CodecStatus::Invalid, "non-finite: Invalid");
     const auto heat = [] (Term f, double v, double want, int side)
@@ -477,12 +507,12 @@ void theAbiAnswersAsTheCall()
         && fc_kit_parse ("1", 1, "en", 2, 0x10003u, 0, &value, &refusal) == FC_SESSION_ERR_CONTRACT, "a field the kit has no knob for");
     alignas (8) unsigned char raw[16] {};
     ok (fc_kit_parse ("1", 1, "en", 2, 9, 0, reinterpret_cast<double*> (raw + 4), &refusal) == FC_SESSION_ERR_ALIGNMENT, "a misaligned value");
-    // The owner's steps (02.10): the mono bass crossover by 5 Hz, the peaks' cut by 0.1 dB.
+    // The owner's travels (02.10), stepless since 07.10: the mono bass crossover, the peaks' cut.
     double mono[3] {}, needles[3] {};
     ok (fc_kit_travel (std::uint32_t (Term::FieldMonoBassFq), mono) == FC_SESSION_OK && sameBits (mono[0], 60) && sameBits (mono[1], 300)
-        && sameBits (mono[2], 5), "mono bass below: 60 to 300 Hz by 5 Hz (owner, 02.10)");
+        && sameBits (mono[2], 0), "mono bass below: 60 to 300 Hz, stepless (owner, 02.10 and 07.10)");
     ok (fc_kit_travel (std::uint32_t (Term::FieldLimiterNeedlesDb), needles) == FC_SESSION_OK && sameBits (needles[0], 0) && sameBits (needles[1], 6)
-        && sameBits (needles[2], 0.1), "cut off the peaks: 0 to 6 dB by 0.1 dB (owner, 02.10)");
+        && sameBits (needles[2], 0), "cut off the peaks: 0 to 6 dB, stepless (owner, 02.10 and 07.10)");
     bool knobs = true;
     for (const auto& k : kKnobs)
     {
