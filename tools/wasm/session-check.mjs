@@ -1373,9 +1373,13 @@ for (const p of growth) M._free(p);
        'Momentary and ShortTerm with a master id answer the master\'s own curves, a row per 100 ms');
     const density = ask(leanSession, {kind:1, audioId:whole.value.source.hash, fromFrame:'0', toFrame:String(leanFrames), columns:8, requestId:'42'});
     const energy = ask(leanSession, {kind:1, audioId:whole.value.source.hash, fromFrame:'0', toFrame:String(leanFrames), columns:8, requestId:'43', spectrum:1});
+    // The lean source lasts 2 s, under one 2.73 s low-end window: no band holds energy, so both quantities read 0 with
+    // NoSignal (7) on every row — the grid starts inside the table, from 10.3 Hz since v0.19.0. The quantity's effect on a
+    // measured band is held natively and across the tiers by tools/tests/SessionQueryTests.cpp (query-parity.mjs).
     ok(density && energy && accepts(energy.response, 'QueryResponse') && density.response.request.spectrum === 0 && energy.response.request.spectrum === 1
-        && density.rows.length === 24 && energy.rows.length === 24 && density.rows.some((v, i) => i % 3 === 1 && v !== energy.rows[i]),
-       'LowSpectrum answers density by default and energy when asked');
+        && density.rows.length === 24 && energy.rows.length === 24
+        && density.rows.every((v, i) => i % 3 !== 1 || (v === 0 && energy.rows[i] === 0 && density.rows[i + 1] === 7 && energy.rows[i + 1] === 7)),
+       'LowSpectrum answers density by default and energy when asked, both 0 and NoSignal on a source shorter than its window');
     const gone = ask(leanSession, {...base, masterId:kept.id + 9, kind:11, fromFrame:'0', toFrame:'0', columns:0});
     ok(gone && gone.response.status === 2 && gone.response.master == null && gone.wroteRows === 0, 'no such master: unavailable, no record');
     console.log(`lean-summary: 1 master — summary ${light.jsonBytes} + ${light.rowBytes} B, snapshot ${whole.jsonBytes} + ${whole.rowBytes} B, report query ${report?.wroteJson} + ${report?.wroteRows} B`);
