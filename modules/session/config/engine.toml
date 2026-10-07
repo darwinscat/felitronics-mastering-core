@@ -224,8 +224,8 @@ skipBlocks = 0
 # note (owner decision 3.2): the lowest note — the lowest band on at all from [lowEnd] lowestNoteFromHz up — is sure when its
 #   band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
 #   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, the band under it never on (the low end starts there),
-#   the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, lies above aboveHz (not DC, not rumble) and sounds at least
-#   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
+#   the range holding [lowEnd] noteRangeShareAtLeastDb (−140 dB) of the programme, and sounds at least soundingAtLeastS
+#   in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
 # hzStep: 0 — the cutoff knob has no step (owner, 06.10): a typed value is kept as typed, and the travel is continuous.
@@ -258,7 +258,7 @@ machineTopHz = 50
 slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24
-note = { aboveHz = 20, soundingAtLeastS = 3 }
+note = { soundingAtLeastS = 3 }
 comfort = { lowHz = 30, highHz = 42, warningLowHz = 26, warningHighHz = 50 }
 curveTopDb = 0
 curveBottomDb = -36

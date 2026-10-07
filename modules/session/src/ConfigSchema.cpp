@@ -484,7 +484,6 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands)
         d.refuse (in, "slopeDefault", Refusal::NotOneOf);
     in.table ("note", Need::Required, [&] (Reader& t)
     {
-        t.required ("aboveHz", o.noteAboveHz, R { 0.0, 200.0 });
         t.required ("soundingAtLeastS", o.noteSoundingAtLeastS, R { 0.0, 600.0 });
     });
     in.table ("comfort", Need::Required, [&] (Reader& t)

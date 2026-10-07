@@ -221,7 +221,6 @@ struct Hpf
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;
-    double noteAboveHz = 0.0;                  // note.aboveHz
     double noteSoundingAtLeastS = 0.0;         // note.soundingAtLeastS
     HpfComfort comfort;
     double curveTopDb = 0.0, curveBottomDb = 0.0, curveStepDb = 0.0, curveHeadroomDb = 0.0;

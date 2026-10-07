@@ -141,10 +141,10 @@ void theSureLowestNote()
         ok (cut (unsureLowest).cut == HpfCut::Unsure, "the lowest occupied band not sure: the floor — never a higher band, which would cut music");
     }
     {
-        // The search starts at [lowEnd] lowestNoteFromHz, 25 Hz included (owner, 06.10), which [hpf] note.aboveHz (20 Hz) lies under.
+        // The search starts at [lowEnd] lowestNoteFromHz, 25 Hz included (owner, 06.10), and nothing else bounds it from below.
         Readings r; r.occupy (kFirstMidi, 0.5, 40, 6);
         r.bands[1] = 25.0;
-        ok (cut (r).cut != HpfCut::Unsure && r.bands[1] > 20.0, "a band at 25 Hz exactly is sought — and above 20 Hz");
+        ok (cut (r).cut != HpfCut::Unsure, "a band at 25 Hz exactly is sought");
         r.bands[1] = std::nextafter (25.0, 0.0);
         ok (cut (r).cut == HpfCut::Unsure, "a hair under 25 Hz is not: the floor");
     }

@@ -426,7 +426,7 @@ light both sides of 25 Hz alike — is unsure, and the veto never skips to the b
 density over the note range's background, which took the lowest note from real mixes — a dense mix's lowest note stands
 −6 to +0.4 dB over that median — and gives v0.18.0's note on them, the two demo songs held in `RealMixLowEnd.h`), the range holding −140 dB of the programme's energy
 (`[lowEnd] noteRangeShareAtLeastDb`, the same decision: a float tone's rounding lines in an otherwise empty range are no
-note), lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
+note), and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
 sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
 chain's own response (`highPassCutoffFor`: the matched cascade of the target's slope at the source's rate, by bisection,
