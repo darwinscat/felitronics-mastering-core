@@ -101,7 +101,7 @@ bool quiet (const PlanInputs& in) noexcept { return quietInput (in); }
 
 // THE SURE LOWEST NOTE (owner decision 3.2, as written), from the first phase's low-end run: the LOWEST BAND THAT WAS ON
 // AT ALL from [lowEnd] lowestNoteFromHz up decides, and that band alone — a band under it, which the table measures from
-// 10 Hz for the spectrum, is skipped (owner, 06.10). It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
+// 10 Hz for the spectrum, is skipped (owner, 06.10 and 07.10: from 30 Hz, B0). It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
 // frames, is resolved, carries a valid note reading, stands [lowEnd] occupiedMarginWhenOnDb above the duty line and is where
 // the low end starts — the band under it, under lowestNoteFromHz included, never on — while the range holds [lowEnd]
 // noteRangeShareAtLeastDb of the programme (owner, 07.10, both: a mix with no bass is unsure; real mixes keep their notes), and

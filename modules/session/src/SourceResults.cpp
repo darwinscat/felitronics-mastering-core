@@ -89,8 +89,8 @@ void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, do
     // says whether it stands the margin and is resolved, `lowestOccupiedResolved` whether the band is resolved at all. An
     // uncertain band never substitutes the loudest one, and whether it is a SURE lowest note (its duration, the
     // programme's length) and what the high-pass does with it is the planner's (src/Planner.cpp), in the snapshot's plan.
-    // It is sought from [lowEnd] lowestNoteFromHz up (owner, 06.10): the table measures from 10 Hz, and a band under 25 Hz
-    // is the spectrum's — skipped here, never the lowest band.
+    // It is sought from [lowEnd] lowestNoteFromHz up (owner, 06.10 and 07.10): the table measures from 10 Hz, and a band
+    // under 30 Hz is the spectrum's — skipped here, never the lowest band.
     const auto occupied = a.lowestOccupiedBand (duty, fromHz);
     const bool found = a.noteValid() && occupied.band >= 0;
     const bool resolved = found && occupied.band >= a.firstResolvedBand();

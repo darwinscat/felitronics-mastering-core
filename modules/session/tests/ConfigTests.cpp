@@ -164,10 +164,10 @@ void theSchemaRefuses()
     // [hpf] note.aboveHz is gone (owner, 07.10): the note is sought from [lowEnd] lowestNoteFromHz alone, and the key is unknown.
     mustRefuse (E, "note = { ", "note = { aboveHz = 20, ", "aboveHz", Fault::UnknownKey, "hpf.note.aboveHz");
     // Where the lowest note is sought from (owner, 06.10): a band centre in hertz, 0 the whole table, under the table's top.
-    mustRefuse (E, "lowestNoteFromHz = 25\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
-    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
-    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = -1", "-1", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
-    mustAccept (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 0");
+    mustRefuse (E, "lowestNoteFromHz = 30\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 30", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 30", "lowestNoteFromHz = -1", "-1", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustAccept (E, "lowestNoteFromHz = 30", "lowestNoteFromHz = 0");
     // A knob's step is 0 or more (owner, 07.10): 0, no step, is what every manual knob takes now; under 0 is no step at all.
     mustRefuse (E, "hzStep = 0", "hzStep = -1", "-1", Fault::OutOfRange, "hpf.hzStep");
     mustRefuse (E, "frequencyStep = 0", "frequencyStep = -1", "-1", Fault::OutOfRange, "monoBass.frequencyStep");

@@ -276,6 +276,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceDeliveryAsIs, "sourceDeliveryAsIs", {}, 0 },
     { FactId::SourceDeliveryPeaksOnly, "sourceDeliveryPeaksOnly",
       { { { "gain", ArgKind::Value, {} }, { "ceiling", ArgKind::Value, {} } } }, 2 },
+    { FactId::LoudestLowEnergy, "loudestLowEnergy", { { { "hz", ArgKind::Value, {} } } }, 1 },
     { FactId::HpfBelowComfort, "hpfBelowComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfAboveComfort, "hpfAboveComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfSlopeGentle, "hpfSlopeGentle", { { { "slope", ArgKind::Count, {} }, { "gentlest", ArgKind::Count, {} } } }, 2 },

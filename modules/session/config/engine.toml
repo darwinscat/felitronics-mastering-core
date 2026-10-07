@@ -168,7 +168,7 @@ manualStepDb = 0
 # THE BOTTOM OF THE LOW END (owner, 07.10: a mix with no bass says "unsure"; the real songs keep their notes): the lowest
 #   band must also be where the low end starts — the band under it never on, under lowestNoteFromHz included — or it is
 #   no note: a veto, never a skip to the band above it, which would make a harmonic the note. A noise, a dither, a high
-#   tone's leakage or a rumble lights the bands on both sides of 25 Hz alike; a played lowest note has nothing on under
+#   tone's leakage or a rumble lights the bands on both sides of 30 Hz alike; a played lowest note has nothing on under
 #   it. No number: on real mixes it gives the note v0.18.0 named, and unsure on every no-bass case of the tests. The
 #   background's veto it replaces (a density 6 dB over the note range's median) took the note from real mixes: a dense
 #   mix's lowest note stands −6 to +0.4 dB over that median (Cold Gaze of Eternity −0.35 dB).
@@ -176,9 +176,10 @@ manualStepDb = 0
 #   energy (`bandRangeShare`), or there is no note — a second veto on the decision alone, for a tone whose rounding draws
 #   real lines into an otherwise empty range (a float 997 Hz tone: −172 dB, its lines 6.3 dB over the background). The
 #   least share a sure note in the tests holds is −107 dB; a mix holds −30 dB and more.
-# lowestNoteFromHz (owner, 06.10: «the spectrum from 10 Hz, the lowest note from 25 Hz — not 20, 25»): the lowest note is
-#   sought from the first band whose centre lies at or above it, G#0 at 25.96 Hz. The run measures from 10 Hz for the
-#   spectrum, and a band under this one is skipped — it is never the note. It still takes part in each frame's loudest-band
+# lowestNoteFromHz (owner, 07.10: «the bass's fifth string the limit for everything — 30»; 25 since 06.10, 20 before): the
+#   lowest note is sought from the first band whose centre lies at or above it, B0 at 30.87 Hz, a five-string's lowest. The
+#   run measures from 10 Hz for the spectrum and the drawings, and a band under this one is skipped — it is never the note,
+#   and nothing under it is ever NAMED a note: the loudest band there is low-frequency energy at its frequency. It still takes part in each frame's loudest-band
 #   reference, so a rumble more than about 18 dB over the bass can keep the bass from counting as on (then: unsure, floor).
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
@@ -188,7 +189,7 @@ manualStepDb = 0
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2
 noteRangeShareAtLeastDb = -140
-lowestNoteFromHz = 25
+lowestNoteFromHz = 30
 infraLowCrossoverHz = 30
 
 # THE GEOMETRY OF THE MAIN RUN — the core's LowEnd defaults written out as numbers, so that nothing depends on a default
