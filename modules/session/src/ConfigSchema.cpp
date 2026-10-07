@@ -423,6 +423,7 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
     in.required ("occupiedFromDuty", o.occupiedFromDuty, share());
     in.required ("occupiedMarginWhenOnDb", o.occupiedMarginWhenOnDb, R { 0.0, 40.0 });
     in.required ("occupiedAboveBackgroundDb", o.occupiedAboveBackgroundDb, R { 0.0, 60.0 });
+    in.required ("noteRangeShareAtLeastDb", o.noteRangeShareAtLeastDb, R { -240.0, 0.0 });   // −240 dB: the analyzer's own floor
     in.required ("lowestNoteFromHz", o.lowestNoteFromHz, R { 0.0, 200.0 });
     bool run = false;
     in.table ("run", Need::Required, [&] (Reader& t)

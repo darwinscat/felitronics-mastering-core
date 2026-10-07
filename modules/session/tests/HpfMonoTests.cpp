@@ -49,7 +49,8 @@ struct Readings
     std::vector<double> blocks;
     std::uint64_t blocksNotKept = 0;           // blocks of the piece past what the run holds: a reading of a first part
     double background = 0;                     // the run's backgroundDensity: the median density of the note range
-    MeasurementValue lowNumbers[5] {};
+    double rangeShare = 0.5;                   // the run's bandRangeShare: the note range's share of the programme
+    MeasurementValue lowNumbers[6] {};
     MeasurementArray lowArrays[2] {};
     MeasurementValue loudness[2] {};
     MeasurementResult results[kAnalyzers] {};
@@ -88,6 +89,7 @@ struct Readings
         lowNumbers[2] = { "peakMidi", 40.0, MeasurementReason::None, 0 };
         lowNumbers[3] = { "crossoverHz", crossover, MeasurementReason::None, 0 };
         lowNumbers[4] = { "backgroundDensity", background, MeasurementReason::None, 0 };
+        lowNumbers[5] = { "bandRangeShare", rangeShare, MeasurementReason::None, 0 };
         lowArrays[0] = { "blocks", { 0, 480, std::uint64_t (seconds * rate), rate }, 8, blocks.size() / 8 + blocksNotKept, blocks.size() / 8,
                          blocksNotKept == 0, blocks };
         lowArrays[1] = { "bands", { 0, 0, std::uint64_t (seconds * rate), rate }, 16, kBandCount, kBandCount, true, bands };
@@ -156,6 +158,15 @@ void theSureLowestNote()
         density = std::nextafter (density, 0.0);
         ok (cut (r).cut == HpfCut::Unsure && ! cut (r).noteMidi && same (cut (r).cutoffHz, 32.0),
             "a hair under 6 dB: no note, the floor — never the band above it");
+    }
+    {
+        // The range's share of the programme, [lowEnd] noteRangeShareAtLeastDb (owner, 07.10): −140 dB is a note, a hair
+        // less is none.
+        Readings r; r.occupy (28, 0.5, 60, 6);
+        r.rangeShare = felitronics::core::det::pow10 (-14.0);
+        ok (cut (r).noteMidi == 28, "a range holding −140 dB of the programme: the note");
+        r.rangeShare = std::nextafter (r.rangeShare, 0.0);
+        ok (cut (r).cut == HpfCut::Unsure && ! cut (r).noteMidi, "a hair under −140 dB: no note, the floor");
     }
     {
         Readings r; r.hop = 48000; r.occupy (33, 0.5, 3, 6);
@@ -861,6 +872,14 @@ void aMixWithNoBassIsUnsure()
     unsure (measure (Mix (20).tone (1000.0, 0.3)), "a 1 kHz tone alone");
     unsure (measure (Mix (20).tone (1000.0, 0.3).dither (16)), "a 1 kHz tone over a 16-bit dither");
     unsure (measure (Mix (20).pink (0.1)), "pink noise alone at −20 dBFS, a rumble that is all there is");
+    // A float tone that is not periodic in the sample grid: its rounding draws real lines into the empty range, 6.3 dB over
+    // the background, in a range holding −172 dB of the programme — the range's share vetoes it.
+    unsure (measure (Mix (20).tone (997.0, 0.25)), "a 997 Hz tone alone, its float rounding lines in the range");
+    {
+        const auto m = measure (Mix (4).tone (997.0, 0.25));
+        const auto sure = lowNumber (m, "lowestOccupiedSure");
+        ok (sure && same (*sure, 0.0), "and 4 s of it: the report's lowest band is not sure, as v0.18.0 read it");
+    }
     unsure (measure (Mix (20).tone (1000.0, 0.3).pink (0.001)), "a 1 kHz tone over a rumble at −60 dBFS");
     found (measure (Mix (20).tone (41.2, 0.3)), 28, "E1 41.2 Hz alone: its note");
     found (measure (Mix (20).tone (30.87, 0.3)), 23, "B0 30.87 Hz alone: its note");
