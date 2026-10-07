@@ -836,11 +836,14 @@ void underThirtyHzIsTheSpectrumsNotTheNotes()
         const auto peak = lowNumber (m, "peakMidi");
         ok (total > 0 && at / total > 0.9 && peak && same (*peak, 11.0),
             "a 15.43 Hz tone shows in its own band: " + std::to_string (total > 0 ? at / total : 0.0) + " of the table's energy, the loudest band");
-        MeasurementReason why {};
-        const auto lowest = lowNumber (m, "lowestOccupiedHz", &why);
-        ok (! lowest && why == MeasurementReason::NoSignal,
-            "and is no lowest occupied band: nothing from 30 Hz up (" + std::to_string (lowest.value_or (0.0)) + " Hz)");
-        ok (m.s->snapshot().view().observations.lowestLowBand.status == ObservationStatus::NotFound, "the report names no lowest band");
+        // The occupancy reference from 30 Hz (owner, 07.10): the tone's leakage is the loudest from 30 Hz up, so the reading
+        // names B0 30.87 Hz as the lowest band — unsure, and the plan stands at the floor.
+        const auto lowest = lowNumber (m, "lowestOccupiedHz"), sure = lowNumber (m, "lowestOccupiedSure");
+        ok (lowest && std::abs (*lowest - 30.87) < 0.005 && sure && same (*sure, 0.0),
+            "and its lowest occupied band, from 30 Hz up, is B0 30.87 Hz, unsure (" + std::to_string (lowest.value_or (0.0)) + " Hz)");
+        const auto lowestBand = m.s->snapshot().view().observations.lowestLowBand;
+        ok (lowestBand.status == ObservationStatus::Found && lowestBand.doubtful && same (lowestBand.value, 23.0),
+            "the report names the lowest band B0, unsure");
         // ...and the loudest of the low end, under 30 Hz, is named as low-frequency energy at its frequency — never a note
         // (owner, 07.10).
         const auto line = loudestLowLine (m);
@@ -848,6 +851,14 @@ void underThirtyHzIsTheSpectrumsNotTheNotes()
             && line.second.find ("нота") == std::string::npos && m.s->snapshot().view().observations.loudestLowNote.third == 1.0,
             "the loudest of the low end is low-frequency energy at 15.4 Hz, no note: \"" + line.first + "\" / \"" + line.second + "\"");
         ok (m.plan.hpf.cut == HpfCut::Unsure && ! m.plan.hpf.noteMidi && same (m.plan.hpf.cutoffHz, 32.0), "and the high-pass stands at the floor");
+    }
+    {
+        // The occupancy reference from 30 Hz (owner, 07.10): E1 under a 15.43 Hz rumble 26 dB louder is on, and its note.
+        const auto m = measure (Mix (20).tone (41.2, 0.02).tone (15.43, 0.4));
+        ok (m.plan.hpf.cut == HpfCut::Note && m.plan.hpf.noteMidi == 28, "E1 under a 15.43 Hz rumble 26 dB louder: its note (cut "
+            + std::to_string (int (m.plan.hpf.cut)) + ")");
+        const auto b0 = measure (Mix (20).tone (30.87, 0.01).tone (15.43, 0.4));
+        ok (b0.plan.hpf.noteMidi == 23, "B0 under a 15.43 Hz rumble 32 dB louder: its note");
     }
     {
         const auto m = measure (Mix (20).tone (55.0, 0.3).tone (15.43, 0.15).tone (440.0, 0.1));
