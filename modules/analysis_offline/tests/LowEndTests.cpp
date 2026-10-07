@@ -2292,5 +2292,88 @@ int main()
         ok (whole->peakMidi() != narrow->peakMidi() && b64 (whole->backgroundDensity()) != b64 (narrow->backgroundDensity()),
             "CONTROL: the whole 500 Hz table without the note's top reads another note (MIDI " + std::to_string (whole->peakMidi()) + ")");
     }
+
+    //==========================================================================
+    test::group ("noteFromHz — each frame's loudest band is sought from it up; only the occupancy moves (owner, 07.10)");
+    {
+        // A quiet E1 under a 15 Hz rumble 26 dB louder, 12 s at 12 kHz, a table from 10 Hz.
+        const std::size_t n = 144000;
+        Stereo x; x.l.assign (n, 0.0f); x.r.assign (n, 0.0f);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const double t = (double) i / kFs;
+            x.l[i] = x.r[i] = (float) (0.4 * std::sin (2.0 * kPi * 15.0 * t) + 0.02 * std::sin (2.0 * kPi * 41.2 * t));
+        }
+        const auto measured = [&] (double noteFromHz)
+        {
+            LowEndParams p = base; p.lowNoteHz = 10.0; p.highNoteHz = 300.0; p.fftOrder = 15; p.noteFromHz = noteFromHz;
+            auto le = std::make_unique<LowEnd>(); le->setParams (p);
+            ok (test::run (le->prepare (kFs, 4096, 2)) && test::run (feed (*le, x, 2)), "prepare and feed");
+            return le;
+        };
+        const auto whole = measured (0.0), from30 = measured (30.0);
+        const auto b64 = [] (double v) { return std::bit_cast<std::uint64_t> (v); };
+        int e1 = -1, rumble = -1;
+        for (int b = 0; b < whole->bandCount(); ++b)
+        {
+            if (whole->band (b).midi == 28) e1 = b;
+            if (whole->band (b).midi == 10) rumble = b;   // 14.57 Hz holds most of a 15 Hz tone
+        }
+        ok (e1 >= 0 && rumble >= 0 && whole->dutyCount (e1) == 0 && from30->dutyCount (e1) == from30->dutyFrames() && from30->dutyFrames() > 0,
+            "E1 under the rumble: never on against the whole table's loudest band, on in every frame against the loudest from 30 Hz");
+        ok (rumble >= 0 && from30->dutyCount (rumble) > 0 && from30->marginWhenOnDb (rumble) > whole->marginWhenOnDb (rumble),
+            "a band under 30 Hz is still measured against that reference — and stands over it");
+        bool same = whole->bandCount() == from30->bandCount() && whole->dutyFrames() == from30->dutyFrames();
+        for (int b = 0; same && b < whole->bandCount(); ++b)
+            same = b64 (whole->band (b).energy) == b64 (from30->band (b).energy) && b64 (whole->band (b).density) == b64 (from30->band (b).density);
+        ok (same && whole->peakMidi() == from30->peakMidi() && b64 (whole->backgroundDensity()) == b64 (from30->backgroundDensity())
+            && b64 (whole->bandRangeShare()) == b64 (from30->bandRangeShare()) && whole->noteReason() == from30->noteReason(),
+            "the energies, the peak, the background, the range's share and the frame gate: bit for bit");
+        LowEndParams bad = base; bad.noteFromHz = -1.0;
+        LowEndParams nan = base; nan.noteFromHz = std::numeric_limits<double>::quiet_NaN();
+        ok (! LowEnd::storageFor (kFs, 2, bad).ok && ! LowEnd::storageFor (kFs, 2, nan).ok, "a negative or NaN noteFromHz is refused");
+        LowEndParams q = base; q.lowNoteHz = 10.0; q.highNoteHz = 300.0; q.fftOrder = 15;
+        LowEnd primary, alike, companion; primary.setParams (q); alike.setParams (q); q.noteFromHz = 30.0; companion.setParams (q);
+        ok (primary.prepare (kFs, 4096, 2) && alike.prepareWithoutSpectrum (kFs, 4096, 2) && companion.prepareWithoutSpectrum (kFs, 4096, 2)
+            && feed (primary, x, 2) && alike.finishWithSpectrum (primary) && ! companion.finishWithSpectrum (primary),
+            "a companion whose reference starts elsewhere does not take the primary's occupancy; one that starts alike does");
+    }
+
+    //==========================================================================
+    test::group ("fftOrderFor — the order that resolves at a rate as the given order does at upToHz (owner, 07.10: 96 kHz as 48)");
+    {
+        bool each = true;
+        std::string worst;
+        for (const double fs : { 8000.0, 11025.0, 16000.0, 22050.0, 32000.0, 44100.0, 48000.0, 48001.0, 88200.0, 96000.0, 96001.0,
+                                 176400.0, 192000.0, 352800.0, 384000.0, 705600.0, 768000.0 })
+        {
+            const int order = LowEnd::fftOrderFor (fs, 17, 48000.0);
+            const double bin = fs / std::ldexp (1.0, order), coarser = fs / std::ldexp (1.0, order - 1);
+            // No wider than 48 kHz's bin at 17; one order less would be wider — unless that is under 17, which it never takes.
+            const bool fits = bin <= 48000.0 / 131072.0 && (order == 17 || coarser > 48000.0 / 131072.0) && order >= 17;
+            if (! fits && worst.empty()) worst = std::to_string (fs) + " Hz: order " + std::to_string (order);
+            each = each && fits;
+        }
+        ok (each, "every rate: the smallest order at or above 17 whose bin is no wider than 48 kHz's at 17" + (worst.empty() ? "" : " — not " + worst));
+        ok (LowEnd::fftOrderFor (44100.0, 17, 48000.0) == 17 && LowEnd::fftOrderFor (48000.0, 17, 48000.0) == 17
+            && LowEnd::fftOrderFor (88200.0, 17, 48000.0) == 18 && LowEnd::fftOrderFor (96000.0, 17, 48000.0) == 18
+            && LowEnd::fftOrderFor (192000.0, 17, 48000.0) == 19 && LowEnd::fftOrderFor (8000.0, 17, 48000.0) == 17,
+            "17 at 44.1 and 48 kHz, 18 at 88.2 and 96, 19 at 192 — and 17, never lower, at 8 kHz");
+        const double nan = std::numeric_limits<double>::quiet_NaN(), inf = std::numeric_limits<double>::infinity();
+        ok (LowEnd::fftOrderFor (nan, 17, 48000.0) == 17 && LowEnd::fftOrderFor (96000.0, 17, nan) == 17
+            && LowEnd::fftOrderFor (inf, 17, 48000.0) == 17 && LowEnd::fftOrderFor (96000.0, 17, 0.0) == 17
+            && LowEnd::fftOrderFor (-96000.0, 17, 48000.0) == 17 && LowEnd::fftOrderFor (1.0e300, 17, 1.0e-300) == 17 + 32,
+            "a non-finite or non-positive rate or upToHz gives the order itself; the rise stops 32 above it");
+        const auto b64 = [] (double v) { return std::bit_cast<std::uint64_t> (v); };
+        LowEndParams p = base; p.fftOrder = LowEnd::fftOrderFor (96000.0, 17, 48000.0);
+        LowEnd at96, at48;
+        LowEndParams q = base; q.fftOrder = 17;
+        at96.setParams (p); at48.setParams (q);
+        ok (at96.prepare (96000.0, 512, 2) && at48.prepare (48000.0, 512, 2)
+            && b64 (at96.resolvedAboveHz()) == b64 (at48.resolvedAboveHz()) && at96.windowSamples() == 2 * at48.windowSamples()
+            && at96.hopSamples() == 2 * at48.hopSamples(),
+            "at 96 kHz the bands resolve from the same centre as at 48 kHz (" + std::to_string (at96.resolvedAboveHz())
+            + " Hz), the window and the hop as long in seconds");
+    }
     return test::report();
 }

@@ -179,7 +179,8 @@ struct LowEndRun
     double lowNoteHz = 0.0;
     double highNoteHz = 0.0;
     double noteTopHz = 0.0;                    // the note's readings see the bands up to here; above, drawings alone
-    std::int32_t fftOrder = 0;
+    std::int32_t fftOrder = 0;                 // the order up to fftOrderUpToHz; above it, one more per doubling of the rate
+    double fftOrderUpToHz = 0.0;
     double dutyThresholdDb = 0.0;
     std::int32_t skipBlocks = 0;
 };
@@ -188,7 +189,6 @@ struct LowEnd
 {
     double occupiedFromDuty = 0.0;
     double occupiedMarginWhenOnDb = 0.0;
-    double occupiedAboveBackgroundDb = 0.0;    // the lowest band's density over the note range's background
     double noteRangeShareAtLeastDb = 0.0;      // the note range's share of the programme's energy, at least
     double lowestNoteFromHz = 0.0;             // the lowest note is sought from this band centre up
     double infraLowCrossoverHz = 0.0;
@@ -222,7 +222,6 @@ struct Hpf
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;
-    double noteAboveHz = 0.0;                  // note.aboveHz
     double noteSoundingAtLeastS = 0.0;         // note.soundingAtLeastS
     HpfComfort comfort;
     double curveTopDb = 0.0, curveBottomDb = 0.0, curveStepDb = 0.0, curveHeadroomDb = 0.0;

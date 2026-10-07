@@ -429,10 +429,9 @@ void saturationCurve()
     const auto read = [] (felitronics::toml::embedded::View v)
     { return v.decimal() ? v.decimal()->toDouble() : double (*v.integer()); };
     const float bias = float (read (sat.find ("bias"))), autoComp = float (read (sat.find ("autoComp")));
-    const float dcBlockHz = float (read (sat.find ("dcBlockHz")));
     using Shape = felitronics::saturation::WaveShaper::Shape;
     const SaturationType hand[] { SaturationType::Tanh, SaturationType::Tube, SaturationType::Transistor,
-                                  SaturationType::Transformer, SaturationType::Tape };
+                                  SaturationType::Transformer, SaturationType::Tape, SaturationType::Cubic, SaturationType::Asym };
     double out[2 * kKitSaturationPoints];
     // The oracle: the core's WaveShaper set as the stage sets it (Saturator::design), the stage's base-rate blend.
     bool kernel = true, grid = true;
@@ -442,7 +441,7 @@ void saturationCurve()
             {
                 const auto c = Kit::saturationCurve (type, drive, mix, out);
                 felitronics::saturation::WaveShaper w;
-                w.setShape (Shape (type)); w.setBias (bias);
+                w.setShape (Shape (type)); w.setBias (type == SaturationType::Asym ? bias : 0.0f);   // the stage's bias, asym's alone
                 w.setDrive (float (felitronics::core::dbToGain (float (drive)) - 1.0));
                 const float comp = float (std::pow (double (std::max (1.0e-6f, w.slopeAtZero())), double (-autoComp)));
                 kernel = kernel && c.status == CodecStatus::Ok && c.count == kKitSaturationPoints;
@@ -457,11 +456,12 @@ void saturationCurve()
             }
     ok (grid, "129 inputs from −1 to +1 of full scale, a 64th apart, each beside its output");
     ok (kernel, "each output is the core's WaveShaper at k = 10^(drive/20) − 1 with the config's bias, its drive compensation and the "
-                "dry/wet blend, bit for bit — five types, five drives, two mixes");
+                "dry/wet blend, bit for bit — seven types, five drives, two mixes");
     // The running stage, as the chain sets it, settles on the curve: a level held long enough leaves the oversampler, and
     // what the stage gives for it is the curve's output. Not the transformer: its flux follows the signal's history.
     bool settles = true;
-    for (const auto type : { SaturationType::Tanh, SaturationType::Tube, SaturationType::Transistor, SaturationType::Tape })
+    for (const auto type : { SaturationType::Tanh, SaturationType::Tube, SaturationType::Transistor, SaturationType::Tape,
+                             SaturationType::Cubic })
         for (const double drive : { 3.0, 9.0 })
         {
             (void) Kit::saturationCurve (type, drive, 1.0, out);
@@ -470,20 +470,35 @@ void saturationCurve()
                 felitronics::saturation::Saturator stage;
                 settles = settles && stage.prepare (48000, 512, 1, 4, 64);
                 felitronics::saturation::Saturator::Params p;
-                p.shape = Shape (type); p.driveDb = float (drive); p.bias = bias; p.mix = 1.0f; p.outputDb = 0.0f;
-                p.autoComp = autoComp; p.dcBlockHz = dcBlockHz;
+                p.shape = Shape (type); p.driveDb = float (drive); p.bias = 0.0f; p.mix = 1.0f; p.outputDb = 0.0f;
+                p.autoComp = autoComp; p.dcBlockHz = 0.0f;   // as the chain writes these four: no bias and no blocker
                 stage.setParams (p);
                 std::vector<float> held (4096, float (out[2 * i]));
                 float* io[] { held.data() };
                 settles = settles && stage.process (io, 1, int (held.size())) && std::fabs (double (held.back()) - out[2 * i + 1]) < 1e-4;
             }
         }
-    ok (settles, "the chain's saturator, held at a level, settles on the curve's output — tanh, tube, transistor, tape");
+    ok (settles, "the chain's saturator, held at a level, settles on the curve's output — tanh, tube, transistor, tape, cubic "
+                 "(not asym: its DC blocker takes a held level away)");
     ok (Kit::saturationCurve (SaturationType::Atan, 3, 1, out).status == CodecStatus::Invalid
-        && Kit::saturationCurve (SaturationType::Cubic, 3, 1, out).status == CodecStatus::Invalid
-        && Kit::saturationCurve (SaturationType::Asym, 3, 1, out).status == CodecStatus::Invalid
         && Kit::saturationCurve (SaturationType (9), 3, 1, out).status == CodecStatus::Invalid,
-        "atan, cubic and asym are the config's alone, and 9 is no type: refused");
+        "atan is the config's alone, and 9 is no type: refused");
+    {
+        // The symmetric diode's curve (owner, 07.10): odd — y(−x) = −y(x) — normalised to its own peak, flat past its knee.
+        const auto c = Kit::saturationCurve (SaturationType::Cubic, 9.0, 1, out);
+        bool odd = c.status == CodecStatus::Ok;
+        for (std::size_t i = 0; odd && i < kKitSaturationPoints; ++i) odd = sameBits (out[2 * i + 1] + out[2 * (128 - i) + 1], 0.0);
+        ok (odd && sameBits (out[2 * 128 + 1], 1.0) && sameBits (out[2 * 127 + 1], 1.0),
+            "the symmetric diode's curve: odd, its peak 1, flat past the knee at 9 dB of drive");
+    }
+    {
+        // The asymmetric diode's curve (owner, 07.10): drawn at [saturation] bias, the stage's own — it rises faster than it
+        // falls, the even harmonics' shape — and its bias is 0.2.
+        const auto c = Kit::saturationCurve (SaturationType::Asym, 3.3, 1, out);
+        ok (c.status == CodecStatus::Ok && sameBits (double (bias), double (0.2f)) && out[1] < 0.0 && out[2 * 128 + 1] > 0.0
+            && std::fabs (out[2 * 128 + 1]) < std::fabs (out[1]) && std::fabs (out[2 * 64 + 1]) < 1e-6,
+            "the diode's curve at its bias 0.2: through zero, its positive peak under its negative one");
+    }
     ok (Kit::saturationCurve (SaturationType::Tape, -0.5, 1, out).status == CodecStatus::Invalid
         && Kit::saturationCurve (SaturationType::Tape, std::numeric_limits<double>::quiet_NaN(), 1, out).status == CodecStatus::Invalid
         && Kit::saturationCurve (SaturationType::Tape, 1000, 1, out).status == CodecStatus::Invalid

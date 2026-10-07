@@ -434,7 +434,8 @@ struct PlanView
 //   tooShort        value the programme's length, second the length under which the lowest note is not sought, seconds
 //   alreadyLimited  value the input's PLR, second the bound, dB; third 1 where it is said because the source is clipped
 //   spectralWall    value the cutoff, Hz; second the drop, dB; third how far below Nyquist it stands, as a share
-//   loudestLowNote  value its MIDI number, second its frequency, Hz
+//   loudestLowNote  value its MIDI number, second its frequency, Hz; third 1 where that band lies under [lowEnd]
+//                   lowestNoteFromHz — low-frequency energy, not a note: its fact names the frequency alone
 //   lowestLowBand   value the lowest occupied band's MIDI number, second its centre, Hz
 //   infraLow        value the infra-low share of the energy, second the crossover it is weighed at, Hz
 //   wideBass        value the side's share of the energy below the crossover, second the crossover, Hz

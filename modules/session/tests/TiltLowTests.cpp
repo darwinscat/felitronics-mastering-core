@@ -13,6 +13,7 @@
 #include "Grid.h"
 #include "Planner.h"
 #include <felitronics/session/Config.h>
+#include <felitronics/session/Kit.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/eq/EqEngine.h>
 #include <felitronics/core/DetMath.h>
@@ -379,6 +380,23 @@ void theEqOnlyCurve()
         differs = differs || ! sameBits (v.eqOnlyCurve[i].db, v.eqCurve[i].db);
     }
     ok (same && differs, "on the whole curve's points: the project's curve with its high-pass out, bit for bit — and not the whole curve");
+    // AN UNTICKED EQ'S PICTURE (owner, 07.10): the pure kit's EQ curve (Kit::eqCurve, fc_kit_eq_curve_bands), given the
+    // high-pass off and tilt, low and the bands ticked at a device's values, is the snapshot's eqOnlyCurve bit for bit — so
+    // a page draws an unticked EQ's settings, dimmed, from the kit as they are held or dragged, never porting the band maths.
+    KitEq kit; kit.hpf = { false, 60, 24 }; kit.tilt = { true, 1.25 }; kit.low = { true, -0.75 };
+    std::vector<EqPoint> drawn (kEqCurvePoints);
+    bool kitSame = Kit::eqCurve (kit, rate, drawn).status == CodecStatus::Ok;
+    for (std::size_t i = 0; kitSame && i < kEqCurvePoints; ++i)
+        kitSame = sameBits (drawn[i].hz, v.eqOnlyCurve[i].hz) && sameBits (drawn[i].db, v.eqOnlyCurve[i].db);
+    TiltFields<Touched> tiltOff; tiltOff.on = false;
+    LowFields<Touched> lowOff; lowOff.on = false;
+    ok (s.apply (command::EditDevice { 6, tiltOff }).rejection == Rejection::None && s.apply (command::EditDevice { 7, lowOff }).rejection == Rejection::None,
+        "PRECONDITION: tilt and low unticked");
+    const auto off = s.snapshot();
+    bool flat = off.view().eqOnlyCurve.size() == kEqCurvePoints;
+    for (std::size_t i = 0; flat && i < kEqCurvePoints; ++i) flat = std::fabs (off.view().eqOnlyCurve[i].db) < 1e-12;
+    ok (kitSame && flat, "the kit's curve of tilt and low ticked is the snapshot's EQ-only curve, bit for bit; unticked, the "
+                         "snapshot's is flat while the kit still draws their values");
     std::uint32_t json = 0;
     const auto need = Wire::snapshotBytes (v);
     std::vector<char> text (need.jsonBytes); std::vector<double> rows (need.rowBytes / sizeof (double));

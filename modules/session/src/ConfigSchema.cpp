@@ -403,26 +403,29 @@ void readLimiter (Doc& d, Reader& in, Limiter& o)
 }
 
 // The low end (analysis::LowEnd): the main run and the infra-low run — the same geometry, split at infraLowCrossoverHz —
-// each admitted by LowEnd::storageFor at every source rate, or refused whole.
-bool lowEndAdmits (const LowEndRun& r, double crossoverHz)
+// each admitted by LowEnd::storageFor at every source rate — at the order that rate takes — or refused whole. noteFromHz is
+// [lowEnd] lowestNoteFromHz, the bottom of each frame's occupancy reference.
+bool lowEndAdmits (const LowEndRun& r, double crossoverHz, double noteFromHz)
 {
     analysis::LowEndParams p;
     p.crossoverHz = crossoverHz;
     p.lowNoteHz = r.lowNoteHz;
     p.highNoteHz = r.highNoteHz;
     p.noteTopHz = r.noteTopHz;
-    p.fftOrder = r.fftOrder;
+    p.noteFromHz = noteFromHz;
     p.dutyThresholdDb = r.dutyThresholdDb;
     p.skipBlocks = r.skipBlocks;
-    return std::all_of (std::begin (kSourceRates), std::end (kSourceRates),
-                        [&] (double rate) { return analysis::LowEnd::storageFor (rate, kChannels, p).ok; });
+    return std::all_of (std::begin (kSourceRates), std::end (kSourceRates), [&] (double rate)
+    {
+        p.fftOrder = analysis::LowEnd::fftOrderFor (rate, r.fftOrder, r.fftOrderUpToHz);
+        return analysis::LowEnd::storageFor (rate, kChannels, p).ok;
+    });
 }
 
 void readLowEnd (Doc& d, Reader& in, LowEnd& o)
 {
     in.required ("occupiedFromDuty", o.occupiedFromDuty, share());
     in.required ("occupiedMarginWhenOnDb", o.occupiedMarginWhenOnDb, R { 0.0, 40.0 });
-    in.required ("occupiedAboveBackgroundDb", o.occupiedAboveBackgroundDb, R { 0.0, 60.0 });
     in.required ("noteRangeShareAtLeastDb", o.noteRangeShareAtLeastDb, R { -240.0, 0.0 });   // −240 dB: the analyzer's own floor
     in.required ("lowestNoteFromHz", o.lowestNoteFromHz, R { 0.0, 200.0 });
     bool run = false;
@@ -435,16 +438,17 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
                               t.required ("highNoteHz", r.highNoteHz, R { 0.0, 1.0e6 }),
                               t.required ("noteTopHz", r.noteTopHz, R { 0.0, 1.0e6 }),
                               t.required ("fftOrder", r.fftOrder, I { 0, 30 }),
+                              t.required ("fftOrderUpToHz", r.fftOrderUpToHz, R { 1.0, 1.0e7 }),
                               t.required ("dutyThresholdDb", r.dutyThresholdDb, R { -1.0e6, 1.0e6 }),
                               t.required ("skipBlocks", r.skipBlocks) };
         run = std::all_of (std::begin (read), std::end (read), [] (bool x) { return x; });
     });
-    if (run && ! lowEndAdmits (o.run, o.run.crossoverHz)) d.refuse (in, "run", Refusal::AnalyzerRefuses);
+    if (run && ! lowEndAdmits (o.run, o.run.crossoverHz, o.lowestNoteFromHz)) d.refuse (in, "run", Refusal::AnalyzerRefuses);
     // The infra-low run is a second split BELOW the main one.
     if (in.required ("infraLowCrossoverHz", o.infraLowCrossoverHz, R { 0.0, 1.0e6 }) && run)
     {
         if (! (o.infraLowCrossoverHz < o.run.crossoverHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::OutOfOrder);
-        else if (! lowEndAdmits (o.run, o.infraLowCrossoverHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::AnalyzerRefuses);
+        else if (! lowEndAdmits (o.run, o.infraLowCrossoverHz, o.lowestNoteFromHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::AnalyzerRefuses);
     }
 }
 
@@ -485,7 +489,6 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands)
         d.refuse (in, "slopeDefault", Refusal::NotOneOf);
     in.table ("note", Need::Required, [&] (Reader& t)
     {
-        t.required ("aboveHz", o.noteAboveHz, R { 0.0, 200.0 });
         t.required ("soundingAtLeastS", o.noteSoundingAtLeastS, R { 0.0, 600.0 });
     });
     in.table ("comfort", Need::Required, [&] (Reader& t)

@@ -64,7 +64,7 @@ MeasurementReason lowReason (analysis::LowEndReason reason) noexcept
 }
 }
 void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, double duty, double margin, double fromHz,
-                            double aboveBackgroundDb, double rangeShareDb) noexcept
+                            double rangeShareDb) noexcept
 {
     out.number ("crossoverHz", double (a.crossoverHz())); out.number ("sampleRate", double (a.sampleRate())); out.number ("samplesProcessed", double (a.samplesProcessed())); out.number ("blockSamples", double (a.blockSamples()));
     out.number ("lowMidEnergy", double (a.lowMidEnergy())); out.number ("lowSideEnergy", double (a.lowSideEnergy())); out.number ("highMidEnergy", double (a.highMidEnergy())); out.number ("highSideEnergy", double (a.highSideEnergy()));
@@ -89,16 +89,16 @@ void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, do
     // says whether it stands the margin and is resolved, `lowestOccupiedResolved` whether the band is resolved at all. An
     // uncertain band never substitutes the loudest one, and whether it is a SURE lowest note (its duration, the
     // programme's length) and what the high-pass does with it is the planner's (src/Planner.cpp), in the snapshot's plan.
-    // It is sought from [lowEnd] lowestNoteFromHz up (owner, 06.10): the table measures from 10 Hz, and a band under 25 Hz
-    // is the spectrum's — skipped here, never the lowest band.
+    // It is sought from [lowEnd] lowestNoteFromHz up (owner, 06.10 and 07.10): the table measures from 10 Hz, and a band
+    // under 30 Hz is the spectrum's — skipped here, never the lowest band.
     const auto occupied = a.lowestOccupiedBand (duty, fromHz);
     const bool found = a.noteValid() && occupied.band >= 0;
     const bool resolved = found && occupied.band >= a.firstResolvedBand();
-    // ...and its density stands aboveBackgroundDb over the background, the range holding rangeShareDb of the programme, as
-    // the planner's sure note does (owner, 07.10).
-    const bool dense = found && a.band (occupied.band).density >= a.backgroundDensity() * core::det::pow10 (aboveBackgroundDb / 10.0)
-                    && a.bandRangeShare() >= core::det::pow10 (rangeShareDb / 10.0);
-    const bool confident = resolved && occupied.marginWhenOnDb >= margin && dense;
+    // ...and the low end starts there — the band under it, under fromHz included, never on — the range holding rangeShareDb
+    // of the programme, as the planner's sure note does (owner, 07.10).
+    const bool bottom = found && (occupied.band == 0 || a.dutyCount (occupied.band - 1) == 0)
+                     && a.bandRangeShare() >= core::det::pow10 (rangeShareDb / 10.0);
+    const bool confident = resolved && occupied.marginWhenOnDb >= margin && bottom;
     const auto missing = note == MeasurementReason::None ? MeasurementReason::NoSignal : note;
     const auto reading = found ? MeasurementReason::None : missing;
     out.number ("lowestOccupiedMidi", occupied.midi, -1, reading, unsigned (a.noteReason()));

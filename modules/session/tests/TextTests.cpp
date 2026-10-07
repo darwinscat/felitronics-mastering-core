@@ -746,6 +746,11 @@ void everyMessageRenders()
 
     same (render (Fact::of (FactId::LoudestLowNote, Arg::midi (28)), Lang::Ru), "Самая громкая нота баса: E1", "ru note");
     same (render (Fact::of (FactId::LoudestLowNote, Arg::midi (61)), Lang::En), "Loudest bass note: C♯4", "en note");
+    // Under the lowest note's band no note is named (owner, 07.10): low-frequency energy at its frequency.
+    same (render (Fact::of (FactId::LoudestLowEnergy, Arg::value (15.43, Unit::Hz, 1)), Lang::Ru),
+          "Громче всего в басу — низкочастотная энергия на 15,4\u00A0Гц", "ru low-frequency energy, no note");
+    same (render (Fact::of (FactId::LoudestLowEnergy, Arg::value (15.43, Unit::Hz, 1)), Lang::En),
+          "Loudest in the low end: low-frequency energy at 15.4\u00A0Hz", "en low-frequency energy, no note");
 
     const Fact wide = Fact::of (FactId::WideBass, Arg::value (18.2, Unit::Percent, 0));
     same (render (wide, Lang::Ru),
@@ -967,7 +972,7 @@ void everyRejectionIsAFact()
             || ((std::size_t) shape.id >= 180 && (std::size_t) shape.id <= 181)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 457)
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 458)
             || ((std::size_t) shape.id >= 500 && (std::size_t) shape.id <= 510)
             || ((std::size_t) shape.id >= 600 && (std::size_t) shape.id <= 619));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
@@ -1244,7 +1249,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x749d67f41171215full;   // ...and v0.18's already-mastered source guidance (454–457), in ru and en.
+    constexpr std::uint64_t kPinned = 0x7356bc5db08f3e4full;   // ...and v0.20's low-frequency energy, no note (458), in ru and en.
     ok (whole, "every fact of the corpus is complete: each renders its message, none a hole");
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
