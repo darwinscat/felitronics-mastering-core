@@ -454,9 +454,15 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
     }
     if (q.kind == QueryKind::DitherFloor)
     {
-        // The delivery's settings exist once the plan has placed the devices; until then the floor is Pending, and
-        // nothing is allocated for it.
-        if (plan_.dither.bits == 0) return { QueryStatus::Pending, 0, 0, 0 };
+        // The delivery's settings exist once the plan has placed the devices; until then nothing is allocated. Pending
+        // only while that placement can still come: a plan that cannot be made (a silent source) is Unavailable, and a
+        // measurement cancelled before the placement is Cancelled until it continues — a polling caller always ends.
+        if (plan_.dither.bits == 0)
+        {
+            const auto loudness = measurementResults_[std::size_t (Analyzer::Loudness)].status;
+            return { plan_.status == PlanStatus::Unavailable ? QueryStatus::Unavailable
+                     : loudness == MeasurementStatus::Cancelled ? QueryStatus::Cancelled : QueryStatus::Pending, 0, 0, 0 };
+        }
         const auto bytes = std::uint64_t (q.columns) * 3u * sizeof (double) + 128u;
         return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
     }
@@ -616,7 +622,8 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     auto v = header (q, source_, revision_, measurementKey_);
     const auto need = queryStorage (q); v.status = need.status;
     v.reason = need.status == QueryStatus::Empty ? MeasurementReason::None
-             : need.status == QueryStatus::Pending ? MeasurementReason::Pending : MeasurementReason::Unsupported;
+             : need.status == QueryStatus::Pending ? MeasurementReason::Pending
+             : need.status == QueryStatus::Cancelled ? MeasurementReason::Cancelled : MeasurementReason::Unsupported;
     v.complete = need.status == QueryStatus::Empty;
     if (need.status != QueryStatus::Ready) return QueryResult::copy (v);
     Checked request; request.bytes = need.bytes; request.largestBlockBytes = need.largestBlockBytes;
