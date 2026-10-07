@@ -563,6 +563,50 @@ void ditherFloorEnds()
         toTheEnd (s);
         ok (floor (s, frames).second.view().status == QueryStatus::Ready, "and Ready once the plan has placed the devices");
     }
+    {
+        // Stopped in the window after the loudness is measured and before the devices are placed (review, 07.10: the
+        // loudness kept Ready and the plan None, so the floor answered Pending forever while step() said Done).
+        constexpr std::uint64_t frames = 480000;
+        std::vector<float> left (frames), right (frames); source (left, right);
+        const float* planes[] { left.data(), right.data() };
+        auto made = Session::create(); auto& s = *made.session;
+        ok (s.apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None, "PRECONDITION: a source loads");
+        const auto window = [&]
+        {
+            const auto snapshot = s.snapshot();
+            return snapshot.view().measurements[std::size_t (Analyzer::Loudness)].status == MeasurementStatus::Ready
+                && snapshot.view().plan.dither.bits == 0;
+        };
+        bool found = false;
+        for (unsigned i = 0; i < 1000000 && ! (found = window()) && s.step (1).state != StepState::Done; ++i) {}
+        ok (found && s.measurementJob() != 0, "PRECONDITION: the loudness is Ready, the devices not yet placed, the measurement running");
+        ok (floor (s, frames).second.view().status == QueryStatus::Pending, "there, while the measurement runs: Pending");
+        ok (s.apply (command::Cancel { 2, s.measurementJob() }).rejection == Rejection::None && s.state() == State::MeasurementStopped
+            && s.step (64).state == StepState::Done, "PRECONDITION: the measurement is cancelled there, and the pump has nothing to do");
+        const auto [demand, answer] = floor (s, frames);
+        ok (demand.status == QueryStatus::Cancelled && demand.bytes == 0 && answer.view().status == QueryStatus::Cancelled,
+            "cancelled after the loudness, before the placement: Cancelled, not Pending forever");
+        ok (s.apply (command::ContinueMeasurement { 3 }).rejection == Rejection::None
+            && floor (s, frames).second.view().status == QueryStatus::Pending, "continued: Pending again");
+        toTheEnd (s);
+        ok (floor (s, frames).second.view().status == QueryStatus::Ready, "and Ready at its end");
+    }
+    {
+        // A measured source (the sidecar's facts, no audio and no measurement job) places the devices at once when its
+        // loudness and true peak are usable, and never otherwise.
+        const auto measured = [&] (std::optional<double> truePeak)
+        {
+            auto made = Session::create(); auto& s = *made.session;
+            const MeasuredSource facts { "measured", 0x1234567890abcdefull, 480000, 48000, 2, 48000, 24, true, -14.0, truePeak };
+            const bool loaded = s.loadMeasured (1, facts).rejection == Rejection::None && s.measurementJob() == 0;
+            return std::pair { loaded, floor (s, facts.frames).first.status };
+        };
+        const auto [usableLoaded, usable] = measured (-1.0);
+        const auto [unusableLoaded, unusable] = measured (std::nullopt);
+        ok (usableLoaded && usable == QueryStatus::Ready, "a measured source with its loudness and true peak: placed at once, Ready");
+        ok (unusableLoaded && unusable == QueryStatus::Unavailable,
+            "a measured source without a true peak: nothing will place the devices — Unavailable, not Pending forever");
+    }
 }
 int main()
 {
