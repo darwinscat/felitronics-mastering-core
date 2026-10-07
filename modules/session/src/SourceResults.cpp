@@ -63,7 +63,8 @@ MeasurementReason lowReason (analysis::LowEndReason reason) noexcept
     storageOverflow();
 }
 }
-void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, double duty, double margin, double fromHz) noexcept
+void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, double duty, double margin, double fromHz,
+                            double aboveBackgroundDb) noexcept
 {
     out.number ("crossoverHz", double (a.crossoverHz())); out.number ("sampleRate", double (a.sampleRate())); out.number ("samplesProcessed", double (a.samplesProcessed())); out.number ("blockSamples", double (a.blockSamples()));
     out.number ("lowMidEnergy", double (a.lowMidEnergy())); out.number ("lowSideEnergy", double (a.lowSideEnergy())); out.number ("highMidEnergy", double (a.highMidEnergy())); out.number ("highSideEnergy", double (a.highSideEnergy()));
@@ -93,7 +94,9 @@ void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, do
     const auto occupied = a.lowestOccupiedBand (duty, fromHz);
     const bool found = a.noteValid() && occupied.band >= 0;
     const bool resolved = found && occupied.band >= a.firstResolvedBand();
-    const bool confident = resolved && occupied.marginWhenOnDb >= margin;
+    // ...and its density stands aboveBackgroundDb over the background, as the planner's sure note does (owner, 07.10).
+    const bool dense = found && a.band (occupied.band).density >= a.backgroundDensity() * core::det::pow10 (aboveBackgroundDb / 10.0);
+    const bool confident = resolved && occupied.marginWhenOnDb >= margin && dense;
     const auto missing = note == MeasurementReason::None ? MeasurementReason::NoSignal : note;
     const auto reading = found ? MeasurementReason::None : missing;
     out.number ("lowestOccupiedMidi", occupied.midi, -1, reading, unsigned (a.noteReason()));

@@ -420,7 +420,9 @@ machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 
 a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all from 25 Hz up (`[lowEnd] lowestNoteFromHz`, owner 06.10: the run
 measures from 10 Hz for the spectrum, and a band under 25 Hz is skipped — never the note, never in the way of the bands
 above; the reading `lowestOccupied*` is sought the same way) decides, alone: it is a sure note when it is on in 10 %
-of the frames, stands 2 dB over the duty line, lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
+of the frames, stands 2 dB over the duty line and its density 6 dB over the note range's background (`[lowEnd]
+occupiedAboveBackgroundDb`, owner 07.10: a mix with no bass — a band lit only by a high tone's leakage, a dither or a
+rumble — is unsure, and the veto never skips to the band above), lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
 sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
 chain's own response (`highPassCutoffFor`: the matched cascade of the target's slope at the source's rate, by bisection,

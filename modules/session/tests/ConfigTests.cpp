@@ -266,6 +266,11 @@ void theSchemaRefuses()
     mustRefuse (E, "lowNoteHz = 10\nhighNoteHz = 300", "lowNoteHz = 10\nhighNoteHz = 10", "[lowEnd.run]", Fault::Refused,
                 "lowEnd.run", Refusal::AnalyzerRefuses);
     mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    // The lowest band over the background (owner, 07.10): 0…60 dB, required.
+    mustRefuse (E, "occupiedAboveBackgroundDb = 6\n", "", "[lowEnd]", Fault::Missing, "lowEnd.occupiedAboveBackgroundDb");
+    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 61", "61", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
+    mustRefuse (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = -1", "-1", Fault::OutOfRange, "lowEnd.occupiedAboveBackgroundDb");
+    mustAccept (E, "occupiedAboveBackgroundDb = 6", "occupiedAboveBackgroundDb = 0");
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "[stereoBursts]", Fault::Refused,
                 "stereoBursts", Refusal::AnalyzerRefuses);
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000.0001", "[stereoBursts]",

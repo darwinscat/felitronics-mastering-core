@@ -10,3 +10,11 @@
   whole table as before.
 - The sound version of the `2026-10` defaults moves (updated in place, no saved project exists): a mix whose lowest band
   on lay between 20 and 25 Hz now takes its note from the bands above it.
+- A mix with no bass says "unsure" again (owner, 07.10). From 25 Hz up, the leakage of a high tone, a dither or a rumble
+  could light the first band and pass every test of a sure note, so a mix with no bass named "lowest note 25.96 Hz,
+  below the floor"; v0.18.0 said "unsure" only because its first band, 20.60 Hz, was unresolved. New
+  `[lowEnd] occupiedAboveBackgroundDb = 6`: the lowest band's density must also stand 6 dB above the note range's
+  background (`backgroundDensity`, the median density of the other bands), or it is no note — a veto, never a skip to the
+  band above. The planner's sure note and `lowestOccupiedSure` apply it alike. A band lit by leakage, dither or rumble
+  reads within 2 dB of the background; a played bass reads 17 dB over it and more. Schema range 0…60 dB; it is a sound
+  number, so the `2026-10` sound version moves with it.
