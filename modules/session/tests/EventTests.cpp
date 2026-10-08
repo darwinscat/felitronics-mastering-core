@@ -329,7 +329,7 @@ void pump()
         {
             if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
         };
-        // The next release (owner, 07.10 and 08.10), after v0.20.0: the default target back to allStreaming, the third max
+        // v0.21.0 (07.10 and 08.10), after v0.20.0: the default target back to allStreaming, the third max
         // mode out (its target row, its budget, its expected passes), the glue's five and the limiter's three by hand out
         // (their domains, ranges, steps and comfort windows).
         replace (targets, "default = \"maxClean\"", "default = \"allStreaming\"");
