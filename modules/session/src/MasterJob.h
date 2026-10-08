@@ -26,6 +26,9 @@ namespace detail
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
+// [landing.max] <mode> cleaner (MVP): whether a max mode with a wish lands its zones at the loudness of the master without
+// them (true, also when absent) or on the mode's budget (false). False for the manual mode.
+[[nodiscard]] bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // [progress.master]: the renders a master's bar expects in its loudness mode — expectedPasses by hand,
 // expectedPassesMaxClean / expectedPassesMaxDense for the max modes; a waiting master's and a rendering one's alike.
 [[nodiscard]] std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept;
