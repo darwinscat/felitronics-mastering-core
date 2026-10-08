@@ -166,7 +166,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (LoudnessMode::MaxClean) == 1);
         static_assert (unsigned (LoudnessMode::MaxDense) == 2);
         static_assert (unsigned (LoudnessMode::MaxExtreme) == 3);
-        return 3;
+        static_assert (unsigned (LoudnessMode::MaxNuke) == 4);
+        return 4;
     }
     else if constexpr (std::is_same_v<T, MasterJobState>)
     {
@@ -657,6 +658,7 @@ constexpr void checkEnum (LoudnessMode value) noexcept
         case LoudnessMode::MaxClean: break;
         case LoudnessMode::MaxDense: break;
         case LoudnessMode::MaxExtreme: break;
+        case LoudnessMode::MaxNuke: break;
     }
 }
 

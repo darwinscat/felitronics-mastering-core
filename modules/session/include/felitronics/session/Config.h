@@ -137,10 +137,10 @@ struct Landing
     // [landing.max]: the max modes' search ceiling, the floor no max master lands under, and each mode's limiter budget (dB,
     // active-window P95, a whole number of quarter dB).
     double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
-    double cleanBudgetDb = 0.0, denseBudgetDb = 0.0, extremeBudgetDb = 0.0;
+    double cleanBudgetDb = 0.0, denseBudgetDb = 0.0, extremeBudgetDb = 0.0, nukeBudgetDb = 0.0;
     // Each max mode's `cleaner` (MVP): true (absent) — a wish lands its zones at the loudness the master without the
     // wishes reached; false — the zones land on the mode's budget.
-    bool cleanCleaner = true, denseCleaner = true, extremeCleaner = true;
+    bool cleanCleaner = true, denseCleaner = true, extremeCleaner = true, nukeCleaner = true;
     double maxBudgetResolutionDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
@@ -580,6 +580,7 @@ struct Progress
     std::int32_t masterExpectedPassesMaxClean = 0;   // [progress.master] expectedPassesMaxClean
     std::int32_t masterExpectedPassesMaxDense = 0;   // [progress.master] expectedPassesMaxDense
     std::int32_t masterExpectedPassesMaxExtreme = 0;   // [progress.master] expectedPassesMaxExtreme
+    std::int32_t masterExpectedPassesMaxNuke = 0;   // [progress.master] expectedPassesMaxNuke
 };
 
 // The blind test's protocol. Its variants — the chains a pair compares — are not here: they are defined with the test.

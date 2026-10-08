@@ -1936,6 +1936,10 @@ THE THIRD MAX MODE AND THE DEFAULT (owner, 07.10). `maxExtreme` «Максиму
 (`LoudnessMode` 3, `[landing.max] extreme.budgetDb` 3 dB, its target row's high-pass floor 50 Hz and mono bass 150 Hz).
 The floor is the machine's top (owner, 08.10), so the machine's cutoff on that target is always 50 Hz, whatever the note.
 `[targets] default` is `maxClean`: a new session, and a project that names no target, start on Maximum · clean.
+`maxNuke` «Максимум · нюк» is appended after it (`LoudnessMode` 4, `[landing.max] nuke.budgetDb` 7 dB,
+a number by ear; its target row is extreme's with lufs −7, the manual mode's start). Each max mode's `cleaner` (true
+when absent) says whether a wish of shares lands cleaner, not louder — the master without the wishes on the budget
+first, the zones at its loudness; `cleaner = false` lands the zones on the budget in one landing. No mode writes it.
 
 THE GLUE'S FIVE AND THE LIMITER'S THREE BY HAND (owner, 07.10 and 08.10). `editDevice glue` takes `thresholdDb` (dBFS on
 the input brought to `[input] referenceLufs`, −40…0), `ratio` (1…10), `kneeDb` (0…12), `attackMs` (0.1…100) and
@@ -1966,8 +1970,8 @@ stands, tick or none; the machine never ticks the saturation. No untouched maste
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
 theirs (`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes
-one by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense, 3 maxExtreme; null gives the row's back; set
-and cleared at once is `Contract`, a fifth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's target
+one by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense, 3 maxExtreme, 4 maxNuke; null gives the row's back; set
+and cleared at once is `Contract`, a sixth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's target
 layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`). Manual is
 the landing above, unchanged. A max mode asks for no number: it asks for the loudest master the mode's limiter budget
 allows. Its landing aims at `[landing.max] ceilingLufs` (−5 LUFS) with the mode's budget — `clean.budgetDb` 0.5 dB,

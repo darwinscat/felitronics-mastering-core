@@ -42,7 +42,7 @@
 #   album             optional: the album loudness, { lufs, desktopOnly }. Album mastering is a project of several
 #                     tracks; desktopOnly = true marks a number the web shell does not offer.
 #   loudnessMode      optional, "manual" when absent: how the landing takes its loudness — "manual", the row's lufs
-#                     (or a person's edit of it) as the target; "maxClean", "maxDense" or "maxExtreme", a max mode ([landing.max] in
+#                     (or a person's edit of it) as the target; "maxClean", "maxDense", "maxExtreme" or "maxNuke", a max mode ([landing.max] in
 #                     engine.toml): as loud as the mode's limiter budget allows, up to the modes' search ceiling, and
 #                     never under the modes' floor (−14 LUFS). A max row's lufs is then no goal: it is the number the
 #                     manual mode starts from when a person switches to it.
@@ -119,6 +119,9 @@ maxDense     = { group = "streaming", class = "streaming", lufs = -11, tp = -1, 
 # (50 Hz, the machine's top: its cutoff is always 50 Hz, owner 08.10) and a wider mono bass (150 Hz) so the low end leaves the
 # limiter room; its lufs is the manual mode's start.
 maxExtreme   = { group = "streaming", class = "streaming", lufs = -9, tp = -1, monoBass = 150, hpfFloor = 50, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxExtreme" }
+# The fourth max mode (MVP): "nuke" is extreme's row with a limiter budget of 5 dB ([landing.max]); its lufs,
+# the manual mode's start, is −7.
+maxNuke      = { group = "streaming", class = "streaming", lufs = -7, tp = -1, monoBass = 150, hpfFloor = 50, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxNuke" }
 
 # THE TARGETS' NOTES — where a target's loudness comes from, where that is not a platform's published number or a
 # standard; a shell shows the note beside the target (SnapshotText::targetNote). A target without a row has no note.
