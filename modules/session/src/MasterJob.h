@@ -47,6 +47,10 @@ struct MasterPlan
     Rejection rejection = Rejection::Contract;
     command::MasterReady ready {};
     mastering::LoudnessRequest request {};
+    // CLEANER, NOT LOUDER (owner, 08.10): a max mode with a wish lands first with the chain the project writes without
+    // the wishes (aloneParams, on the same topology), then at that loudness with the zones.
+    bool clean = false;
+    mastering::MasteringChainParams aloneParams {};
     std::uint32_t deliveryRate = 0;
     int frames = 0, traceBuckets = 0;
     // The waterfall (MVP): the clipper's drive scale (aligned against knob), NaN where the drive is not steered.
@@ -211,6 +215,14 @@ struct MasterJob final
     int startedRenders() const noexcept { return int (floorFirstPasses) + search.startedRenders(); }
     double renderProgress() const noexcept { return double (floorFirstPasses) + std::max (0.0, search.renderProgress()); }
     mastering::LoudnessRequest floorRequest {};
+    // The landing without the wishes first (MasterPlan::clean): running it, done with it, the parameters it ran with,
+    // the request the second landing starts from, and what the first one came to — its file's loudness, its limiter's
+    // take (P95 on the active windows) and what ended it.
+    bool cleanPhase = false, cleanDone = false, cleanOnFloor = false;
+    mastering::MasteringChainParams aloneParams {};
+    mastering::LoudnessRequest cleanRequest {};
+    std::optional<double> aloneLufs, aloneLimiterDb;
+    MaxStop aloneStop = MaxStop::None;
     // The waterfall (MVP): the wishes the landing was given, and the stages as its first landing steered them — the
     // parameters the delivery, the floor pass and the report take the mixes and the cut from.
     bool waterfall = false;
@@ -220,6 +232,7 @@ struct MasterJob final
     double saturationDriveScale = std::numeric_limits<double>::quiet_NaN(), saturationDriveMaxDb = std::numeric_limits<double>::quiet_NaN();
     void steer (mastering::MasteringChainParams& params) const noexcept;
     [[nodiscard]] bool beginFloor() noexcept;
+    [[nodiscard]] bool beginClean() noexcept;
     [[nodiscard]] bool beginDeliveryRender() noexcept;
     mastering::StepResult settleLanding (mastering::StepResult result) noexcept;
 };

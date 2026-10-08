@@ -222,6 +222,9 @@ struct MasterWaterfall
     MasterWaterfallZone glue, saturation, cut, limiter;
     std::optional<double> totalDb;
     std::uint32_t extraPasses = 0;
+    // A max mode with a wish (cleaner, not louder): the loudness the landing without the wishes reached, and its
+    // limiter's take there (P95 on the active windows) — the master with the zones stands on the same loudness.
+    std::optional<double> aloneLufs, limiterAloneDb;
 };
 struct MasterReport
 {

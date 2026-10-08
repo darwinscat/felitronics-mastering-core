@@ -365,6 +365,9 @@ struct Writer
             zone ("limiter", w.limiter);
             if (w.totalDb) workedLine ("totalDb", *w.totalDb, "machine");
             workedLine ("extraPasses", w.extraPasses, "machine");
+            // Cleaner, not louder: the loudness the master without the wishes reached, and its limiter's take there.
+            if (w.aloneLufs) workedLine ("aloneLufs", *w.aloneLufs, "machine");
+            if (w.limiterAloneDb) workedLine ("limiterAloneDb", *w.limiterAloneDb, "machine");
         }
         if (chain) renderState (rendered);
     }
