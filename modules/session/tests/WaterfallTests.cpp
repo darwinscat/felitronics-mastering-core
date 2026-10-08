@@ -148,6 +148,22 @@ bool sounds (const detail::MasterPlan& p, bool glue)
     return glue ? t.compressor && ! q.bypassCompressor : t.clipper && ! q.bypassClipper;
 }
 
+// The PCM `s` delivers for a master asked now (id 90), run until no job is left: FNV-1a over the float bits, 0 where a
+// step fails.
+std::uint64_t deliveredDigest (Session& s)
+{
+    if (s.apply (command::Master { 90 }).rejection != Rejection::None) return 0;
+    for (unsigned i = 0; i < 4000000 && s.job() != 0; ++i) (void) s.step (16);
+    const auto token = s.pendingMaster();
+    const auto shape = s.masterAudioShape (token);
+    std::vector<float> out (std::size_t (shape.frames * shape.channels));
+    if (out.empty() || s.copyMaster (token, out) != MasterTransferStatus::Ok) return 0;
+    std::uint64_t h = 0xCBF29CE484222325ull;
+    for (const float v : out)
+        for (unsigned k = 0; k < 4; ++k) h = (h ^ ((std::bit_cast<std::uint32_t> (v) >> (8u * k)) & 0xFFu)) * 0x100000001B3ull;
+    return h;
+}
+
 //==============================================================================
 // THE SHARE FIELDS: a person's alone — the machine's layer never holds one, and a share is the only field its edit
 // touches; on the mix's domain 0…1 (a value off it refused OutOfDomain, a non-number NotFinite, whole: the revision and
@@ -495,6 +511,31 @@ void noWishAsBefore()
         ok (now == row.digest, std::string (row.target) + ": " + digest);
     }
 }
+
+//==============================================================================
+// THE PAGE'S DEFAULT SHARES SOUND AS THEY DID: each max mode with the shares the page starts it on (glue, saturation,
+// cut), mastered on the fixture — the digests below were taken on 0797082, before the fixes of the review and of the
+// saturation's steering at large shares. A fix that moves one of them changes the sound people already heard.
+void defaultSharesAsBefore()
+{
+    felitronics::test::group ("the max modes with the page's default shares: 0797082's PCM to the bit");
+    struct Row { std::string_view target; double glue, saturation, cut; std::uint64_t digest; };
+    static constexpr Row before[] {
+        { "maxClean", 0.02, 0.10, 0.01, 0xe8986131c50be271ull },
+        { "maxDense", 0.05, 0.20, 0.05, 0xbb5c7839b52eff1cull },
+        { "maxExtreme", 0.15, 0.30, 0.05, 0x3bc9bda8f78129fcull },
+        { "maxNuke", 0.10, 0.40, 0.10, 0xc8cac2253d47cd21ull },
+    };
+    const auto pcm = fixture();
+    for (const auto& row : before)
+    {
+        auto made = loaded (pcm, row.target);
+        const std::uint64_t now = made && editShares (*made, 10, row.glue, row.saturation, row.cut) ? deliveredDigest (*made) : 0u;
+        char digest[17];
+        std::snprintf (digest, sizeof digest, "%016llx", (unsigned long long) now);
+        ok (now != 0u && now == row.digest, std::string (row.target) + " " + num (row.glue) + "/" + num (row.saturation) + "/" + num (row.cut) + ": " + digest);
+    }
+}
 } // namespace
 
 int main()
@@ -509,5 +550,6 @@ int main()
     nuke();
     snapshotAtTheCommand();
     noWishAsBefore();
+    defaultSharesAsBefore();
     return felitronics::test::report();
 }
