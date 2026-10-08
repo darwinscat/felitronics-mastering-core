@@ -813,6 +813,7 @@
         "totalDb": "double?",
         "extraPasses": "uint32",
         "aloneLufs": "double?",
+        "regrownDb": "double?",
         "limiterAloneDb": "double?"
       }
     },

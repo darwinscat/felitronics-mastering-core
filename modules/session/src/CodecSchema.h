@@ -1874,7 +1874,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterWaterfall>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.aloneLufs)>, std::optional<double>>);
         v.field ("aloneLufs", x.aloneLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cut)>, MasterWaterfallZone>);
@@ -1887,6 +1887,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("limiter", x.limiter);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterAloneDb)>, std::optional<double>>);
         v.field ("limiterAloneDb", x.limiterAloneDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.regrownDb)>, std::optional<double>>);
+        v.field ("regrownDb", x.regrownDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturation)>, MasterWaterfallZone>);
         v.field ("saturation", x.saturation);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.totalDb)>, std::optional<double>>);

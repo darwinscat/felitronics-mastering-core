@@ -857,6 +857,10 @@ private:
         shift = 0.0;
         if (waterfallSteps_ >= kWaterfallSteps || passes_ > request_.maxPasses - 4) return false;
         const auto& m = measurement_;
+        // THE START CLIPPER (MasteringChainConfig::startClipper) takes the cut zone where it is in the chain; the
+        // limiter's own clipper then keeps its needles. Its first pass measures the peak its threshold is cut from.
+        const bool start = chain_->startClipperOn();
+        const bool startProbe = start && ! std::isfinite (params_.startClipPeakDb);
         const double glueFull = m.compressor.valid && std::isfinite (m.compressor.p95Db) ? std::fmax (0.0, m.compressor.p95Db) : 0.0;
         const double glue = params_.bypassCompressor ? 0.0 : blendTakenDb (glueFull, params_.compressorMix);
         double saturation = 0.0;
@@ -864,7 +868,7 @@ private:
         if (! params_.bypassClipper && std::isfinite (request_.clipperLoudShare)
             && chain_->clipperPeaks (request_.clipperLoudShare, peaks) && peaks.quietGain > 0.0 && peaks.loudUsualRatio > 0.0)
             saturation = std::fmax (0.0, 20.0 * core::det::log10 (peaks.quietGain / peaks.loudUsualRatio));
-        const double cut = std::fmax (0.0, m.peakClipReductionP95Db);
+        const double cut = std::fmax (0.0, start ? chain_->startClipReductionP95Db() : m.peakClipReductionP95Db);
         const double limiter = std::isfinite (rec.limiterP95Db) ? std::fmax (0.0, rec.limiterP95Db) : 0.0;
         // The limiter's take where the landing will settle: a max mode's at its budget; else this pass's moved by the
         // loudness still to go, a dB of reduction per dB of drive (only once the limiter works at all).
@@ -887,7 +891,9 @@ private:
             const double through = (core::det::pow10 (-saturation / 20.0) - (1.0 - satMix)) / satMix;
             satFull = through > 0.0 ? std::fmax (0.0, -20.0 * core::det::log10 (std::fmin (1.0, through))) : 40.0;
         }
-        const bool clipping = params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb);
+        const double cutNow = start ? params_.startClipCutDb : params_.peakClipCutDb;
+        const bool clipping = start ? std::isfinite (params_.startClipCutDb)
+                                    : params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb);
         const double cutEnd = std::fmax (0.0, request_.waterfallCutMaxDb);
         // THE SATURATION FORESEEN (MasteringChain::clipperForesee): its take and how much louder its loud places leave it
         // at another mix and drive, read off this pass's counters — the steering lands it in one move, and the gain of the
@@ -909,10 +915,12 @@ private:
         // domain's end; nothing for a stage that does not sound.
         const double glueMost = params_.bypassCompressor ? 0.0 : glueFull;
         const double satMost = params_.bypassClipper ? 0.0 : foreseen ? satTop : satFull;
-        const double cutMost = clipping ? std::fmax (0.0, cut + cutEnd - params_.peakClipCutDb) : 0.0;
+        const double cutMost = clipping ? std::fmax (0.0, cut + cutEnd - cutNow) : 0.0;
         // THE TOTAL WHERE EVERY WISH IS MET: the limiter's take and every zone with no wish as they are, every zone at its
         // most where its share of that total lies past it, the rest of the total shared by the wishes — T = held / (1 − free).
-        double held0 = limiterAt;
+        // With the start clipper taking the cut zone, the limiter's own clipper's take (the peaks the glue and the
+        // saturation regrow) is a part of the limiter's rest: held as the limiter's take is.
+        double held0 = limiterAt + (start ? std::fmax (0.0, m.peakClipReductionP95Db) : 0.0);
         if (! std::isfinite (sGlue)) held0 += glue;
         if (! std::isfinite (sSaturation)) held0 += saturation;
         if (! std::isfinite (sCut)) held0 += cut;
@@ -1016,15 +1024,17 @@ private:
                 if (to > drive + 0.1) { next.clipper.driveDb = float (to); moved = true; }
             }
         }
-        if (! probe && off (sCut, cut) && clipping)
+        if (! probe && ! startProbe && off (sCut, cut) && clipping)
         {
             // The clipper's take (a P95 over what it clipped) moves near in proportion to its cut, not dB for dB
             // (measured, Cold Gaze, 08.10: a cut of 3 dB took 1.5): the cut scaled by want / take where it takes
             // anything — one step lands near — else dB for dB from where it stands.
-            const double from = params_.peakClipCutDb;
+            const double from = cutNow;
             const double to = std::clamp (cut > 0.05 && from > 0.05 ? from * (want (sCut) / cut) : from + (want (sCut) - cut), 0.0, cutEnd);
-            if (std::fabs (to - params_.peakClipCutDb) > 0.1) { next.peakClipCutDb = to; moved = true; }
+            if (std::fabs (to - from) > 0.1) { (start ? next.startClipCutDb : next.peakClipCutDb) = to; moved = true; }
         }
+        if (startProbe && chain_->startClipInputPeakDb() > -180.0)
+        { next.startClipPeakDb = chain_->startClipInputPeakDb(); moved = true; }
         if (! moved) return false;
         // The clipper's threshold is worked out from the peak at the limiter's input, which the stages before it move:
         // this pass's, at a gain of 0.

@@ -142,8 +142,14 @@ struct Landing
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
+// Where the cut zone's clipper stands (MVP, [limiter.peakClipper] place): at the start of the chain (ahead of the glue,
+// where the glue or the saturation sounds), inside the limiter, or both — the start one takes the cut, the limiter's keeps
+// its needles for the peaks the glue and the saturation regrow.
+enum class PeakClipperPlace : std::uint8_t { Start, Limiter, Both };
+
 struct PeakClipper
 {
+    PeakClipperPlace place = PeakClipperPlace::Both;
     Span manualDomain;
     double littleNeedDb = 0.0;
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
