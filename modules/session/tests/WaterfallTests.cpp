@@ -402,6 +402,26 @@ void cleaner()
         const double a = w && w->aloneLufs ? *w->aloneLufs : -99.0, b = k ? k->report->achievedLufs.value_or (0.0) : 0.0;
         ok (w && w->aloneLufs && w->limiterAloneDb && std::fabs (b - a) <= tolerance + 1e-9,
             "maxExtreme with three shares: alone " + num (a) + " LUFS, with the zones " + num (b) + " LUFS (toleranceLu " + num (tolerance) + ")");
+        // The report describes the landing that delivered: its target phase A's loudness, its miss from there.
+        const double target = k ? k->report->targetLufs : 0.0, miss = k ? k->report->missLu.value_or (-99.0) : -99.0;
+        ok (k && target == a && std::fabs (miss - (b - a)) < 1e-9 && k->report->targetMet,
+            "its report: target " + num (target) + " LUFS (phase A's " + num (a) + "), miss " + num (miss) + " LU, met "
+                + (k && k->report->targetMet ? "yes" : "no"));
+    }
+    {
+        // What ended the delivered landing is said where it did not land; phase A's stop only where it landed.
+        using felitronics::mastering::MasteringSolveStatus; using felitronics::mastering::MasteringConstraint;
+        const detail::MaxStopInputs landed { false, false, false, MasteringSolveStatus::Solved, MasteringConstraint::None };
+        const detail::MaxStopInputs peaks { true, false, false, MasteringSolveStatus::Solved, MasteringConstraint::None };
+        const detail::MaxStopInputs passes { false, false, false, MasteringSolveStatus::PassLimit, MasteringConstraint::None };
+        ok (detail::cleanStopOf (MaxStop::Budget, false, landed) == MaxStop::Budget
+                && detail::cleanStopOf (MaxStop::Budget, false, peaks) == MaxStop::TruePeak
+                && detail::cleanStopOf (MaxStop::Budget, false, passes) == MaxStop::Passes
+                && detail::cleanStopOf (MaxStop::Budget, true, landed) == MaxStop::Floor
+                && detail::cleanStopOf (MaxStop::Budget, true, peaks) == MaxStop::TruePeak,
+            "phase B landed: phase A's Budget; above the ceiling: TruePeak; out of passes: Passes; on the floor: Floor ("
+                + std::to_string (unsigned (detail::cleanStopOf (MaxStop::Budget, false, peaks))) + ", "
+                + std::to_string (unsigned (detail::cleanStopOf (MaxStop::Budget, false, passes))) + ")");
     }
     const auto shipped = detail::rules();
     const auto planted = detail::readRules (shipped.targets, felitronics::session::test::embedded::notCleaner.root(), shipped.geometry);
