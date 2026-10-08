@@ -27,6 +27,13 @@
       "Waiting",
       "Running"
     ],
+    "MasterJobState": [
+      "Queued",
+      "Running",
+      "Done",
+      "Failed",
+      "Cancelled"
+    ],
     "MaxStop": [
       "None",
       "Budget",
@@ -969,7 +976,16 @@
         "damageProgress": "Phase",
         "loudnessMode": "LoudnessMode",
         "damageJobs": "DamageJobEntry[]",
-        "sourceReport": "SourceReport?"
+        "sourceReport": "SourceReport?",
+        "masterJobs": "MasterJobRow[<=16]"
+      }
+    },
+    "MasterJobRow": {
+      "cpp": "MasterJobRow",
+      "fields": {
+        "job": "uint32",
+        "state": "MasterJobState",
+        "position": "uint32"
       }
     },
     "MasterToken": {

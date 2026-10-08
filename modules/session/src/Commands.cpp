@@ -211,6 +211,20 @@ Checked Session::storageFor (const Request& request) const noexcept
     if (checkFloatingPointEnvironment() != Status::Ok) return rejected (Rejection::FloatingPointEnvironment);
     // 2. STATE
     const auto which = Command (request.index());
+    // THE MASTERS' QUEUE (MVP): a master that cannot start now is queued with the project as it is, never refused for
+    // its timing; what it is asked with is checked now, its demand when its turn comes.
+    if (const auto* master = std::get_if<command::Master> (&request); master && masterQueues (*master))
+    {
+        if (queuedCount_ == kMaxQueuedMasters) return rejected (Rejection::Busy);
+        if (master->budgetResolutionDb && ! std::isfinite (*master->budgetResolutionDb)) return rejected (Rejection::NotFinite);
+        if (master->budgetResolutionDb && (*master->budgetResolutionDb < 0.05 || *master->budgetResolutionDb > 1.0))
+            return rejected (Rejection::OutOfDomain);
+        if ((master->source != 0 && master->source != source_.hash) || (master->revision != 0 && master->revision != revision_)
+            || master->ready.version > 1u) return rejected (Rejection::Contract);
+        if (const Rejection r = masterConsent (*master, project_); r != Rejection::None) return rejected (r);
+        if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
+        return {};
+    }
     if (const Rejection r = Table::commands[index (which)].cell[index (column())]; r != Rejection::None) return rejected (r);
 
     // The config, read in place after the build gate established its contract.
@@ -289,55 +303,17 @@ Checked Session::storageFor (const Request& request) const noexcept
             return rejected (Rejection::NotOffered);
         return {};
     }
-    if (const auto* master = std::get_if<command::Master> (&request))
-    {
-        // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
-        // and never one issued before.
-        if (! samples_) return rejected (Rejection::NoAudio);
-        if (! master->allowClippedGain)
-        {
-            const auto report = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
-                                                        source_.frames, source_.bitDepth }, &project_);
-            const auto row = rules.row (project_.target);
-            const auto mode = detail::loudnessModeOf (rules, project_);
-            const auto ceiling = rules.engine.find ("landing").find ("max").find ("ceilingLufs");
-            const double target = mode == LoudnessMode::Manual ? project_.targetEdit.lufs.value_or (row.lufs.toDouble())
-                : ceiling.decimal() ? ceiling.decimal()->toDouble() : double (ceiling.integer().value_or (0));
-            if ((master->masterAnyway || report.deliveryMode == DeliveryMode::Mastered)
-                && report.clipping == SourceClipStatus::Clipped
-                && report.loudnessLufs && target > *report.loudnessLufs)
-                return rejected (Rejection::ClippedGain);
-        }
-        // With the panel open a master the session decides waits until what its devices read has ended; with the panel
-        // hidden it is taken, and waits for it itself — resuming a stopped measurement takes a job id of its own.
-        const bool decided = master->ready.version == 0;
-        if (decided && project_.manual && plan_.waiting != 0) return rejected (Rejection::PlanPending);
-        const bool resumes = decided && (plan_.waiting & ~detail::bitOf (Analyzer::Excursions)) != 0 && measurementJob_ == 0;
-        if (lastJob_ == std::numeric_limits<JobId>::max()
-            || (resumes && lastJob_ == std::numeric_limits<JobId>::max() - 1u))
-            return rejected (Rejection::NoJobId);
-        // The job's demand, whole, before anything is done: a ready chain's, or the chain the project's devices come to
-        // as the measurements stand (a waiting master's tempo and needles move parameters, never the chain's geometry).
-        const auto plan = detail::MasterJob::plan (*this, *master, project_);
-        if (plan.rejection != Rejection::None) return rejected (plan.rejection);
-        const bool room = masterRoom_ > masterCount_;
-        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * 2u)
-            + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
-        if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
-        // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
-        // its job's bytes are free for this one, and it waits its turn again.
-        auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
-        priced.releasedBytes = damageJobBytes_ + lateMasterJobBytes_;
-        return priced;
-    }
+    if (const auto* master = std::get_if<command::Master> (&request)) return masterStorage (*master, project_, false);
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
-        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && lateMasterId_ == 0 && damageCount_ == 0)
+        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && lateMasterId_ == 0 && damageCount_ == 0
+            && queuedCount_ == 0)
             return rejected (Rejection::NoJob);
         if (cancel->job == 0 || (cancel->job != job_ && cancel->job != measurementJob_ && cancel->job != needlesJob_
-                                 && cancel->job != lateMasterId_ && damageIndex (cancel->job) == damageCount_))
+                                 && cancel->job != lateMasterId_ && damageIndex (cancel->job) == damageCount_
+                                 && ! queued (cancel->job)))
             return rejected (Rejection::UnknownJob);
         // The running grade cancelled frees its walks.
         Checked freed {};
@@ -356,6 +332,7 @@ Checked Session::storageFor (const Request& request) const noexcept
                 if (lateMasterId_ == forget->master) freed.releasedBytes += lateMasterJobBytes_;
                 return freed;
             }
+        if (queued (forget->master)) return {};
         return rejected (Rejection::UnknownMaster);
     }
     if (const auto* grade = std::get_if<command::GradeDamage> (&request))
@@ -643,50 +620,24 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* master = std::get_if<command::Master> (&request))
     {
-        // The damage graded for an earlier master is parked first — its walks freed before this master allocates — and
-        // waits its turn again; it is never ended by a new master.
-        parkDamage();
-        // A new delivery supersedes only the previous delivery's optional impact join. Its ready PCM and retained
-        // report stay; the old report records why that one field will not arrive.
-        cancelLateMasterCrest (MeasurementReason::Cancelled, true);
-        const auto plan = detail::MasterJob::plan (*this, *master, project_);
-        if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
+        if (masterQueues (*master))
         {
-            std::unique_ptr<Kept[]> room (new Kept[masterCount_ + 1]);
-            std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
-            masters_ = std::move (room);
-            masterRoom_ = masterCount_ + 1;
-            leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]);
+            // QUEUED: its id now, its recipe the project as it is at this command; its turn starts it (the pump).
+            auto& q = masterQueue_[queuedCount_++];
+            q.id = ++lastJob_;
+            q.request = *master;
+            q.request.source = 0; q.request.revision = 0;     // checked now; its turn comes at a later revision
+            q.project = project_;
+            q.machineFromFile = machineFromFile_;
+            noteMasterJob (q.id, MasterJobState::Queued);
+            answer.job = q.id;
         }
+        else
         {
-            std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);
-            if (masterRows_)
-                for (std::size_t i = 0; i < masterCount_; ++i) rowRoom[i] = std::move (masterRows_[i]);
-            masterRows_ = std::move (rowRoom);
+            beginMaster (*master, project_, machineFromFile_, 0);
+            noteMasterJob (job_, MasterJobState::Running);
+            answer.job = job_;
         }
-        job_ = ++lastJob_;
-        mastering_ = true;
-        masterUnit_ = 0;
-        masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
-        // THE RECIPE is the project as it is now — the target, its numbers, a person's layer — whatever changes while
-        // the measurements its devices read end. A master the session decides waits for them (the panel hidden: with
-        // it open the command was refused); a ready one renders at once.
-        jobWaiting_ = master->ready.version == 0 && plan_.waiting != 0;
-        jobMasterAnyway_ = master->masterAnyway;
-        jobBudgetResolutionDb_ = master->budgetResolutionDb;
-        jobMachineFromFile_ = machineFromFile_;
-        jobRecipe_ = Recipe { project_, source_.hash, config::Config::versions().sound };
-        jobRecipe_.readyVersion = plan.ready.version;
-        if (jobWaiting_)
-        {
-            const auto passes = detail::expectedPasses (rules.engine, plan.loudnessMode);
-            const auto chunks = (source_.frames + 1023u) / 1024u;
-            const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
-            masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };
-            masterProgress_.analyzers.emplace();
-        }
-        else startMaster (plan);
-        answer.job = job_;
     }
     else if (std::holds_alternative<command::ContinueMeasurement> (request))
     {
@@ -703,7 +654,10 @@ Answer Session::apply (const Request& request) noexcept
         // event closes.
         const auto damageAt = damageIndex (cancel->job);
         const bool measurement = cancel->job == measurementJob_, damage = damageAt < damageCount_;
-        if (! damage) dropJob (cancel->job);
+        const bool waitsInQueue = queued (cancel->job), runningMaster = cancel->job == job_;
+        if (waitsInQueue) { removeQueued (cancel->job); noteMasterJob (cancel->job, MasterJobState::Cancelled); }
+        else if (! damage) dropJob (cancel->job);
+        if (runningMaster) noteMasterJob (cancel->job, MasterJobState::Cancelled);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
@@ -711,8 +665,14 @@ Answer Session::apply (const Request& request) noexcept
         emit (event, progress);
         if (damage) endDamage (damageAt, MeasurementReason::Cancelled, true);
     }
+    else if (const auto* forgotten = std::get_if<command::Forget> (&request); forgotten && queued (forgotten->master))
+    {
+        removeQueued (forgotten->master);
+        forgetMasterJob (forgotten->master);
+    }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
+        forgetMasterJob (forget->master);
         if (lateMasterId_ == forget->master)
             cancelLateMasterCrest (MeasurementReason::MasterForgotten, false);
         if (pendingMaster_.master == forget->master)
@@ -800,6 +760,215 @@ Answer Session::apply (const Request& request) noexcept
         if (e.kind == EventKind::Measurement) e.payload.measurement.revision = revision_;
     }
     return answer;
+}
+
+//==============================================================================
+// THE MASTERS' QUEUE (MVP)
+
+// The consent a clipped source needs before loudness is added — asked at the command, queued or not.
+Rejection Session::masterConsent (const command::Master& master, const Project& project) const noexcept
+{
+    if (master.allowClippedGain) return Rejection::None;
+    const Rules rules = detail::rules();
+    const auto report = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
+                                                source_.frames, source_.bitDepth }, &project);
+    const auto row = rules.row (project.target);
+    const auto mode = detail::loudnessModeOf (rules, project);
+    const auto ceiling = rules.engine.find ("landing").find ("max").find ("ceilingLufs");
+    const double target = mode == LoudnessMode::Manual ? project.targetEdit.lufs.value_or (row.lufs.toDouble())
+        : ceiling.decimal() ? ceiling.decimal()->toDouble() : double (ceiling.integer().value_or (0));
+    if ((master.masterAnyway || report.deliveryMode == DeliveryMode::Mastered)
+        && report.clipping == SourceClipStatus::Clipped
+        && report.loudnessLufs && target > *report.loudnessLufs)
+        return Rejection::ClippedGain;
+    return Rejection::None;
+}
+
+// A master queues when another is made or waits its turn, when the previous master's PCM is not taken yet, before the
+// first measurement ended (or with it stopped), or — the panel open — while the plan it needs is pending.
+bool Session::masterQueues (const command::Master& master) const noexcept
+{
+    if (! samples_ || state_ == State::Empty) return false;
+    // A refusal for the source's content stays a refusal: where the readings never come, the table answers.
+    if (readingsNeverCome()) return false;
+    if (job_ != 0 || queuedCount_ != 0 || pendingMaster_.master != 0) return true;
+    if (Table::commands[index (Command::Master)].cell[index (column())] != Rejection::None) return true;
+    return master.ready.version == 0 && project_.manual && plan_.waiting != 0;
+}
+
+// A SOURCE WHOSE FIRST MEASUREMENT ENDED WITHOUT ITS MANDATORY READINGS (silence) never has them: a master on it is
+// refused for its content, not for its timing — at the command, and a queued one when its turn would come.
+bool Session::readingsNeverCome() const noexcept
+{
+    return (sourceMeasurements_ ? sourceMeasurements_->firstPublished : measurementsFromSidecar_) && ! mandatoryReady();
+}
+
+bool Session::queueReady() const noexcept
+{
+    return job_ == 0 && queuedCount_ != 0 && pendingMaster_.master == 0
+        && (Table::commands[index (Command::Master)].cell[index (column())] == Rejection::None || readingsNeverCome());
+}
+
+bool Session::queued (JobId job) const noexcept
+{
+    if (job == 0) return false;
+    for (std::size_t i = 0; i < queuedCount_; ++i)
+        if (masterQueue_[i].id == job) return true;
+    return false;
+}
+
+void Session::removeQueued (JobId job) noexcept
+{
+    std::size_t at = 0;
+    while (at < queuedCount_ && masterQueue_[at].id != job) ++at;
+    if (at == queuedCount_) return;
+    for (std::size_t i = at; i + 1 < queuedCount_; ++i) masterQueue_[i] = std::move (masterQueue_[i + 1]);
+    masterQueue_[--queuedCount_] = {};
+}
+
+void Session::noteMasterJob (JobId job, MasterJobState state) noexcept
+{
+    if (job == 0) return;
+    for (std::size_t i = 0; i < masterJobCount_; ++i)
+        if (masterJobs_[i].job == job) { masterJobs_[i].state = state; return; }
+    if (masterJobCount_ == kMaxMasterJobs)
+    {
+        // The oldest finished row goes; with none finished, the oldest.
+        std::size_t drop = 0;
+        while (drop < masterJobCount_ && (masterJobs_[drop].state == MasterJobState::Queued
+                                          || masterJobs_[drop].state == MasterJobState::Running)) ++drop;
+        if (drop == masterJobCount_) drop = 0;
+        for (std::size_t i = drop; i + 1 < masterJobCount_; ++i) masterJobs_[i] = masterJobs_[i + 1];
+        --masterJobCount_;
+    }
+    masterJobs_[masterJobCount_++] = { job, state, 0 };
+}
+
+void Session::forgetMasterJob (JobId job) noexcept
+{
+    std::size_t at = 0;
+    while (at < masterJobCount_ && masterJobs_[at].job != job) ++at;
+    if (at == masterJobCount_) return;
+    for (std::size_t i = at; i + 1 < masterJobCount_; ++i) masterJobs_[i] = masterJobs_[i + 1];
+    masterJobs_[--masterJobCount_] = {};
+}
+
+// THE HEAD OF THE QUEUE STARTS: the machine's layer of its recipe placed as the measurements stand now (a file's stays the
+// file's, a person's layer is the one asked), the checks a master asked now meets against that recipe, the heap's room,
+// then its job — waiting for what its devices read, or rendering at once. A refusal ends it as Failed, with a Rejected
+// event under its job id.
+void Session::promoteQueuedMaster() noexcept
+{
+    QueuedMaster next = std::move (masterQueue_[0]);
+    for (std::size_t i = 0; i + 1 < queuedCount_; ++i) masterQueue_[i] = std::move (masterQueue_[i + 1]);
+    masterQueue_[--queuedCount_] = {};
+    if (! next.machineFromFile && devicesPlaced_) place (next.project);
+    // Where the readings never come, the head is refused as a master asked now is (the table's code) and the queue moves on.
+    const Rejection cell = Table::commands[index (Command::Master)].cell[index (column())];
+    auto checked = readingsNeverCome() && cell != Rejection::None ? rejected (cell) : masterStorage (next.request, next.project, true);
+    if (checked.rejection == Rejection::None) checked = demand (checked);
+    if (checked.rejection != Rejection::None)
+    {
+        noteMasterJob (next.id, MasterJobState::Failed);
+        ++revision_;
+        Notification event;
+        event.jobId = next.id;
+        event.kind = EventKind::Rejected;
+        event.payload.rejected = { next.request.id, checked.rejection };
+        emit (event, Phase {});
+        return;
+    }
+    beginMaster (next.request, next.project, next.machineFromFile, next.id);
+    noteMasterJob (next.id, MasterJobState::Running);
+    replan();
+    ++revision_;
+    Notification event;
+    event.jobId = job_;
+    event.kind = EventKind::Phase;
+    event.payload.phase = masterProgress_;
+    emit (event);
+}
+
+// A MASTER'S CHECKS AND DEMAND, for `project` as its recipe: the one asked now (the project's own), or the queue's head.
+Checked Session::masterStorage (const command::Master& masterRequest, const Project& project, bool queuedMaster) const noexcept
+{
+    const auto* master = &masterRequest;
+    // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
+    // and never one issued before.
+    if (! samples_) return rejected (Rejection::NoAudio);
+    if (const Rejection r = masterConsent (*master, project); r != Rejection::None) return rejected (r);
+    // With the panel open a master the session decides waits until what its devices read has ended; with the panel
+    // hidden it is taken, and waits for it itself — resuming a stopped measurement takes a job id of its own.
+    const bool decided = master->ready.version == 0;
+    if (! queuedMaster && decided && project.manual && plan_.waiting != 0) return rejected (Rejection::PlanPending);
+    const auto waiting = queuedMaster ? planWaiting (project) : plan_.waiting;
+    const bool resumes = decided && (waiting & ~detail::bitOf (Analyzer::Excursions)) != 0 && measurementJob_ == 0;
+    if (lastJob_ == std::numeric_limits<JobId>::max()
+        || (resumes && lastJob_ == std::numeric_limits<JobId>::max() - 1u))
+        return rejected (Rejection::NoJobId);
+    // The job's demand, whole, before anything is done: a ready chain's, or the chain the project's devices come to
+    // as the measurements stand (a waiting master's tempo and needles move parameters, never the chain's geometry).
+    const auto plan = detail::MasterJob::plan (*this, *master, project);
+    if (plan.rejection != Rejection::None) return rejected (plan.rejection);
+    const bool room = masterRoom_ > masterCount_;
+    const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * 2u)
+        + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
+    if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
+    // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
+    // its job's bytes are free for this one, and it waits its turn again.
+    auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
+    priced.releasedBytes = damageJobBytes_ + lateMasterJobBytes_;
+    return priced;
+}
+
+// A MASTER'S JOB BEGINS — the one asked now (queuedId 0: its id is the next) or the queue's head (its id given at its
+// command), with `project` as its recipe.
+void Session::beginMaster (const command::Master& master, const Project& project, bool machineFromFile, JobId queuedId) noexcept
+{
+    const Rules rules = detail::rules();
+    // The damage graded for an earlier master is parked first — its walks freed before this master allocates — and
+    // waits its turn again; it is never ended by a new master.
+    parkDamage();
+    // A new delivery supersedes only the previous delivery's optional impact join. Its ready PCM and retained
+    // report stay; the old report records why that one field will not arrive.
+    cancelLateMasterCrest (MeasurementReason::Cancelled, true);
+    const auto plan = detail::MasterJob::plan (*this, master, project);
+    if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
+    {
+        std::unique_ptr<Kept[]> room (new Kept[masterCount_ + 1]);
+        std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
+        masters_ = std::move (room);
+        masterRoom_ = masterCount_ + 1;
+        leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]);
+    }
+    {
+        std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);
+        if (masterRows_)
+            for (std::size_t i = 0; i < masterCount_; ++i) rowRoom[i] = std::move (masterRows_[i]);
+        masterRows_ = std::move (rowRoom);
+    }
+    job_ = queuedId != 0 ? queuedId : ++lastJob_;
+    mastering_ = true;
+    masterUnit_ = 0;
+    masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+    // THE RECIPE is the project as it is now — the target, its numbers, a person's layer — whatever changes while
+    // the measurements its devices read end. A master the session decides waits for them (the panel hidden: with
+    // it open the command was refused); a ready one renders at once.
+    jobWaiting_ = master.ready.version == 0 && (queuedId != 0 ? planWaiting (project) : plan_.waiting) != 0;
+    jobMasterAnyway_ = master.masterAnyway;
+    jobBudgetResolutionDb_ = master.budgetResolutionDb;
+    jobMachineFromFile_ = machineFromFile;
+    jobRecipe_ = Recipe { project, source_.hash, config::Config::versions().sound };
+    jobRecipe_.readyVersion = plan.ready.version;
+    if (jobWaiting_)
+    {
+        const auto passes = detail::expectedPasses (rules.engine, plan.loudnessMode);
+        const auto chunks = (source_.frames + 1023u) / 1024u;
+        const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
+        masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };
+        masterProgress_.analyzers.emplace();
+    }
+    else startMaster (plan);
 }
 
 //==============================================================================
@@ -952,6 +1121,7 @@ bool Driver::mastered (Session& session, JobId job) noexcept
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Mastered)) return false;
     detail::debugBound (session.masterRoom_ > session.masterCount_);
     session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_, {}, {} };   // into the room master() took
+    session.noteMasterJob (session.job_, MasterJobState::Done);
     // A fixture's seam may end a master whose job never ran: the job goes with it.
     if (session.job_ != 0 && session.masterJob_ && ! session.masterTraceActive_)
     { session.masterJob_.reset(); session.masterJobBytes_ = 0; }

@@ -79,6 +79,9 @@ struct SnapshotView
     // placement, as eqCurve.
     std::span<const EqPoint> eqOnlyCurve;
     std::optional<SourceReport> sourceReport;
+    // THE MASTERS' QUEUE (MVP): the recent master jobs in the order asked — queued, running, done, failed, cancelled
+    // (Session.h, MasterJobState). Empty before the first master and after a load.
+    BoundedList<MasterJobRow, kMaxMasterJobs> masterJobs {};
 };
 // THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
 // targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change

@@ -72,7 +72,7 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept
-{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || lateMasterJob_ || crestJoin_ || damageCount_ != 0; }
+{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || lateMasterJob_ || crestJoin_ || damageCount_ != 0 || queueReady(); }
 std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -184,6 +184,7 @@ void Session::dropJob (JobId job) noexcept
             event.kind = EventKind::Fact;
             (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
             const auto progress = masterProgress_;
+            noteMasterJob (job_, MasterJobState::Cancelled);
             mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false; jobMasterAnyway_ = false;
             jobBudgetResolutionDb_.reset();
             masterUnit_ = 0; masterProgress_ = {};
@@ -197,6 +198,7 @@ void Session::dropJob (JobId job) noexcept
         masterJob_.reset(); masterJobBytes_ = 0;
         masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
         if (masterRows_ && masterCount_ < masterRoom_) masterRows_[masterCount_] = {};
+        noteMasterJob (job_, MasterJobState::Failed);
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
@@ -389,7 +391,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
 {
     eventCount_ = 0; oldWorldEvents_ = 0;
     // With no work there is no arithmetic to refuse and no publication to number.
-    if (! hasWork()) return { StepState::Done, 0, false };
+    // A queue waiting only for the previous master's PCM to be taken keeps the shell stepping (MVP).
+    if (! hasWork()) return { queuedCount_ != 0 && pendingMaster_.master != 0 ? StepState::More : StepState::Done, 0, false };
     if (checkFloatingPointEnvironment() != Status::Ok)
     {
         Notification event;
@@ -423,6 +426,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
     // The foreground master takes priority over phase two; phase two resumes after it.
     while (units < std::min (budget, kStepUnits) && hasWork())
     {
+        // THE MASTERS' QUEUE (MVP): the head starts when the session's master slot is free and a master may start.
+        if (queueReady()) { promoteQueuedMaster(); ++units; continue; }
         Notification event;
         event.kind = EventKind::Phase;
         if (job_ != 0)
@@ -800,6 +805,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
         ++units;
     }
     replan();
-    return { hasWork() ? StepState::More : StepState::Done, units, false };
+    return { hasWork() || (queuedCount_ != 0 && pendingMaster_.master != 0) ? StepState::More : StepState::Done, units, false };
 }
 } // namespace felitronics::session
