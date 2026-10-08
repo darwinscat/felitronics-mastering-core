@@ -272,6 +272,10 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     while (! snapshot (*s).view().mandatoryMeasurementsReady && s->measurementJob() != 0)
     { (void) step (*s, 1); collect(); }
     if (! snapshot (*s).view().mandatoryMeasurementsReady) detail::Inspector::mandatory (*s);
+    // The scenario names its target, All streaming — its master is a manual one — rather than lean on the one a new
+    // session starts on.
+    ok (apply (*s, command::SetTarget { 5, "allStreaming" }).rejection == Rejection::None, "the scenario names All streaming");
+    collect();
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
     ok (snapshot (*s).view().masterProgress.totalUnits == 12 && snapshot (*s).view().masterProgress.totalPasses == 12,
@@ -325,6 +329,16 @@ void pump()
         {
             if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
         };
+        // The next release (owner, 07.10 and 08.10), after v0.20.0: the default target back to allStreaming, the third max
+        // mode out (its target row, its budget, its expected passes), the glue's five and the limiter's three by hand out
+        // (their domains, ranges, steps and comfort windows).
+        replace (targets, "default = \"maxClean\"", "default = \"allStreaming\"");
+        erase (targets, "\nmaxExtreme ");
+        for (const std::string_view key : { "\nextreme = ", "\nexpectedPassesMaxExtreme = " }) erase (engine, key);
+        for (const std::string_view name : { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs", "lookaheadMs", "oversampling" })
+            for (const std::string_view suffix : { "Domain", "Range", "Step", "Comfort" })
+                for (const auto key = "\n" + std::string (name) + std::string (suffix) + " = "; engine.find (key) != std::string::npos;)
+                    erase (engine, key);
         // v0.20.0 (owner, 07.10), after v0.19.0: [hpf] note.aboveHz back (20 Hz), [lowEnd.run] fftOrderUpToHz out, the
         // saturation's bias and DC blocker at 0.
         replace (engine, "note = { soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 3 }");
@@ -551,8 +565,10 @@ void pump()
     // removed (07.10, v0.20.0) once more (368c55877f9bb7fe / 16eb2ed2f0970d35 before it); [lowEnd.run] fftOrderUpToHz (07.10,
     // v0.20.0) once more (150088df2017d43a / bd3c2671c8004c1d before it); [lowEnd] lowestNoteFromHz 30 (07.10, v0.20.0) once
     // more (9610c2a7fc971f3f / 0a28dfdf08da9a7d before it); [saturation] bias 0.2 and dcBlockHz 10, the asymmetric diode's
-    // (07.10, v0.20.0), once more (dcabbe73520f0ea7 / 58311773c47f49e5 before it).
-    ok (eventsHash (one) == 0x41508f599701f864ull && eventsHash (cancelled) == 0x1a81582c5bc4ef89ull,
+    // (07.10, v0.20.0), once more (dcabbe73520f0ea7 / 58311773c47f49e5 before it). The default target maxClean, the third
+    // max mode and the glue's five and the limiter's three by hand (07.10 and 08.10) move the config's version alone, restated
+    // above (41508f599701f864 / 1a81582c5bc4ef89 before them); the scenario names allStreaming and its master is the same.
+    ok (eventsHash (one) == 0xcd8695e50c1f280cull && eventsHash (cancelled) == 0x3a842aeaf3dc4689ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
