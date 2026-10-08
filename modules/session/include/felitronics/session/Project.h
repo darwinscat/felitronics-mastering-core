@@ -202,7 +202,7 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 26;
+inline constexpr std::size_t kDeviceFields = 34;
 
 struct Project
 {

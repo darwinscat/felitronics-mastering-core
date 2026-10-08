@@ -12,10 +12,13 @@
 #include <algorithm>
 #include <bit>
 #include <charconv>
+#include <initializer_list>
 #include <cstdio>
 #include <limits>
 #include <set>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace felitronics::session;
@@ -47,6 +50,8 @@ std::unique_ptr<Session> fresh (unsigned units = 10)
 {
     auto made = Session::create();
     ok (made.status == Status::Ok, "create succeeds");
+    // On allStreaming, which every file here names: a session starts on the config's default, Maximum · clean.
+    (void) made.session->apply (command::SetTarget { 1, "allStreaming" });
     Audio audio;
     ok (made.session->apply (audio.load()).rejection == Rejection::None, "load succeeds");
     if (units >= 5) budget::measure (*made.session, units < 10); else (void) made.session->step (units);
@@ -538,8 +543,39 @@ void everySnapshotKeyRequired()
         "a snapshot without any one of its " + std::to_string (members.size()) + " keys is refused; decoded without:" + decoded);
 }
 }
+
+// A PROJECT SAVED BEFORE (owner, 07.10: old projects open with machine values): v0.20.0 wrote no glue threshold, ratio,
+// knee, attack or release and no limiter release, lookahead or oversampling; the MVP build wrote the glue's five with its
+// own input's numbers. Either opens with the machine's values for this source and no difference.
+void savedBefore()
+{
+    auto s = fresh();
+    const auto& own = s->project().devices;
+    const std::string v020 = project (false) + "\n[glue]\nmix.machine = 0.4\n\n[limiter]\nneedles.machine = \"auto\"\n";
+    const std::string mvp = project (false) + "\n[glue]\nthresholdDb.machine = -20.5\nratio.machine = 1.9\nkneeDb.machine = 6\n"
+        "attackMs.machine = 20\nreleaseMs.machine = 120\n";
+    for (const auto& [file, name] : { std::pair { v020, "a v0.20.0 project" }, std::pair { mvp, "an MVP project with the glue's five" } })
+    {
+        auto replay = fresh();
+        const auto answer = import (*replay, file);
+        const auto v = replay->snapshot();
+        const auto& g = replay->project().devices.glue.machine;
+        const auto& l = replay->project().devices.limiter.machine;
+        const auto& shown = v.view().project.devices.glue.machine;
+        const auto& plan = v.view().plan.glue;
+        ok (answer.rejection == Rejection::None && v.view().machineDifferences.empty()
+                && detail::same (g.thresholdDb, own.glue.machine.thresholdDb) && detail::same (g.ratio, own.glue.machine.ratio)
+                && detail::same (g.kneeDb, own.glue.machine.kneeDb) && detail::same (g.attackMs, own.glue.machine.attackMs)
+                && detail::same (g.releaseMs, own.glue.machine.releaseMs)
+                && detail::same (l.releaseMs, own.limiter.machine.releaseMs) && detail::same (l.lookaheadMs, own.limiter.machine.lookaheadMs)
+                && l.oversampling == own.limiter.machine.oversampling
+                && plan.ratio && detail::same (shown.ratio, *plan.ratio) && plan.kneeDb && detail::same (shown.kneeDb, *plan.kneeDb),
+            std::string (name) + " opens with the machine's values and no difference ("
+                + std::to_string (v.view().machineDifferences.size()) + " found)");
+    }
+}
 int main()
 {
-    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); filesMachine(); numbers(); slicing(); demandsAndOrder(); everySnapshotKeyRequired();
+    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); filesMachine(); numbers(); slicing(); demandsAndOrder(); everySnapshotKeyRequired(); savedBefore();
     return felitronics::test::report();
 }
