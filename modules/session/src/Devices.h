@@ -25,7 +25,7 @@ namespace felitronics::session::detail
 // of [hpf], or one of the Needles modes.
 struct FieldRule
 {
-    enum class Kind : std::uint8_t { Flag, Knob, Slope, Needles, SaturationType };
+    enum class Kind : std::uint8_t { Flag, Knob, Slope, Needles, SaturationType, Oversampling };
     Kind kind = Kind::Flag;
     Knob knob {};
 };
@@ -34,6 +34,7 @@ inline FieldRule knobRule (const Knob& k) noexcept { return { FieldRule::Kind::K
 inline FieldRule slopeRule() noexcept { return { FieldRule::Kind::Slope, {} }; }
 inline FieldRule needlesRule() noexcept { return { FieldRule::Kind::Needles, {} }; }
 inline FieldRule saturationTypeRule() noexcept { return { FieldRule::Kind::SaturationType, {} }; }
+inline FieldRule oversamplingRule() noexcept { return { FieldRule::Kind::Oversampling, {} }; }
 
 // The saturation types a person may pick (the page offers them): Tanh, the four of felitronics-core v0.57.0, and the two
 // diodes (owner, 07.10): Cubic, the symmetric, and Asym, the asymmetric. Atan is the config's only — a research setting,
@@ -147,13 +148,16 @@ template <template <class> class F> struct DeviceOf<LimiterFields<F>>
 {
     static constexpr Device device = Device::Limiter;
     static constexpr std::string_view name = "limiter";
-    static constexpr std::string_view fields[] = { "needles", "needlesDb" };
+    static constexpr std::string_view fields[] = { "needles", "needlesDb", "releaseMs", "lookaheadMs", "oversampling" };
     static auto& layers (Devices& d) noexcept { return d.limiter; }
     static const auto& layers (const Devices& d) noexcept { return d.limiter; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
     {
         v (0, needlesRule(), s.needles...);
         v (1, knobRule (r.needles), s.needlesDb...);
+        v (2, knobRule (r.limiterRelease), s.releaseMs...);
+        v (3, knobRule (r.limiterLookahead), s.lookaheadMs...);
+        v (4, oversamplingRule(), s.oversampling...);
     }
 };
 

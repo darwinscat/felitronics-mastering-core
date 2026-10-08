@@ -199,6 +199,13 @@ Rules readRules (View targets, View engine, View geometry) noexcept
     r.read (clipper.find ("manualStepDb"), out.needles.step);
     r.read (clipper.find ("betweenCutDb"), out.needlesDefault);
     r.domain (clipper.find ("manualDomain"), out.needles);
+    const View limiter = engine.find ("limiter");
+    r.knob (limiter.find ("releaseMsRange"), limiter.find ("releaseMsStep"), limiter.find ("releaseMsDomain"), out.limiterRelease);
+    r.knob (limiter.find ("lookaheadMsRange"), limiter.find ("lookaheadMsStep"), limiter.find ("lookaheadMsDomain"),
+            out.limiterLookahead);
+    r.read (limiter.find ("releaseMs"), out.limiterReleaseDefault);
+    r.read (limiter.find ("lookaheadMs"), out.limiterLookaheadDefault);
+    r.read (engine.find ("chain").find ("oversampleFactor"), out.oversamplingDefault);
 
     const View stages = engine.find ("stages");
     r.read (stages.find ("eq"), out.eq);
@@ -232,6 +239,12 @@ bool Rules::slope (std::int32_t dbPerOct) const noexcept
     const View bounds = hpf.find ("slopeDomain");
     return dbPerOct >= int32 (bounds[0]) && dbPerOct <= int32 (bounds[1])
         && dbPerOct % int32 (hpf.find ("slopeMultiple")) == 0;
+}
+
+bool Rules::oversampling (std::int32_t factor) const noexcept
+{
+    const View bounds = engine.find ("limiter").find ("oversamplingDomain");
+    return factor >= int32 (bounds[0]) && factor <= int32 (bounds[1]) && factor > 0 && (factor & (factor - 1)) == 0;
 }
 
 bool Knob::accepts (double value, std::uint32_t sourceRate) const noexcept

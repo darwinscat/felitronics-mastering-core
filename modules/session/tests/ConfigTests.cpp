@@ -200,6 +200,11 @@ void theSchemaRefuses()
     mustRefuse (T, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
     mustRefuse (T, "default = \"allStreaming\"", "default = 14", "14", Fault::WrongType, "default");
     mustRefuse (E, "dualRelease = false", "dualRelease = 0", "0", Fault::WrongType, "limiter.dualRelease");
+    // The oversampling's bounds are integers — the session reads them so (Rules::oversampling): a bound written with a
+    // decimal point stops the config here, at its line and column, not the session when a factor is checked.
+    mustRefuse (E, "oversamplingDomain = [2, 16]", "oversamplingDomain = [2.0, 16.0]", "2.0", Fault::WrongType, "limiter.oversamplingDomain[0]");
+    mustRefuse (E, "oversamplingDomain = [2, 16]", "oversamplingDomain = [2.5, 16.5]", "2.5", Fault::WrongType, "limiter.oversamplingDomain[0]");
+    mustAccept (E, "oversamplingDomain = [2, 16]", "oversamplingDomain = [4, 8]");
 
     // Out of a domain: its own, an item of an array, and a range another key states (the edit travel, the knob).
     mustAccept (E, "hzMax = 80", "hzMax = 500");

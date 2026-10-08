@@ -86,9 +86,11 @@
 //                text::FactId::LoudestLowEnergy (458) and Observation.third 1 on loudestLowNote; the two diodes, cubic and
 //                asym, saturation types a person may pick, their words text::Term::SaturationTypeAsym and
 //                SaturationTypeCubic (152, 153). No entry point.
-//  16            the glue's five by hand — GlueFieldsValue/Touched.thresholdDb, ratio, kneeDb, attackMs and releaseMs, in
+//  16            the glue's five and the limiter's three by hand — GlueFieldsValue/Touched.thresholdDb, ratio, kneeDb,
+//                attackMs and releaseMs and LimiterFieldsValue/Touched.releaseMs, lookaheadMs and oversampling, in
 //                editDevice and revertEdits; their words text::Term::FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb,
-//                FieldGlueAttackMs and FieldGlueReleaseMs (154-158). No entry point.
+//                FieldGlueAttackMs and FieldGlueReleaseMs (154-158), FieldLimiterReleaseMs, FieldLimiterLookaheadMs and
+//                FieldLimiterOversampling (159-161). No entry point.
 #define FC_SESSION_ABI_VERSION 16u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u

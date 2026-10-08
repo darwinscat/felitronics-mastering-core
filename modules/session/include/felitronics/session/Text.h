@@ -450,6 +450,8 @@ enum class Term : std::uint16_t
     SaturationTypeAsym, SaturationTypeCubic,
     // The glue's five by hand (07.10) as the fields a refusal names: its fourth to eighth fields, in Project.h's order.
     FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb, FieldGlueAttackMs, FieldGlueReleaseMs,
+    // The limiter's three by hand (08.10) as the fields a refusal names: its third to fifth fields, in Project.h's order.
+    FieldLimiterReleaseMs, FieldLimiterLookaheadMs, FieldLimiterOversampling,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };

@@ -48,11 +48,14 @@ void writeChain (const PlanInputs& in, const Devices& devices, command::MasterRe
 
     // The geometry no device decides.
     topology.internalBlock = whole (engine.find ("chain").find ("internalBlock"));
-    topology.oversampleFactor = whole (engine.find ("chain").find ("oversampleFactor"));
+    // The oversampling and the limiter's lookahead are the limiter's fields since 08.10: a person's where set, else the
+    // machine's — [chain] oversampleFactor and [limiter] lookaheadMs, as before.
+    const auto limiterSettings = settingsOf (in.rules, devices.limiter);
+    topology.oversampleFactor = int (limiterSettings.oversampling);
     topology.tapsPerPhase = whole (engine.find ("chain").find ("tapsPerPhase"));
     topology.compressorLookaheadMs = number (engine.find ("compressor").find ("lookaheadMs"));
     topology.sidechainHpfHz = number (engine.find ("compressor").find ("sidechainHpfHz"));
-    topology.limiterLookaheadMs = number (engine.find ("limiter").find ("lookaheadMs"));
+    topology.limiterLookaheadMs = limiterSettings.lookaheadMs;
 
     // Neither gain is a device's: the landing search normalises the input and lands the loudness.
     params.inputGainDb = 0.0;
