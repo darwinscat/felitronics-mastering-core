@@ -40,7 +40,7 @@ fc_session extra = 777;
 std::string encoded (SnapshotView view)
 {
     // Process identities and retained renders are not in the project.
-    view.revision = 0; view.job = view.measurementJob = 0; view.jobRecipe = {}; view.masters = {};
+    view.revision = 0; view.job = view.measurementJob = 0; view.jobRecipe = {}; view.masters = {}; view.masterJobs = {};
     const auto need = Codec::encodedBytes (view);
     std::string out (std::size_t (need.bytes), '\0');
     ok (Codec::encode (view, out) == CodecStatus::Ok, "replay snapshot encodes");
