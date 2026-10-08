@@ -20,3 +20,6 @@
 - A third max mode, Maximum · extreme (`LoudnessMode` 3): limiter budget 3 dB, high-pass floor 50 Hz, mono bass 150 Hz.
 - A new session starts on Maximum · clean.
 - The machine-difference capacity (`kDeviceFields`) is 34, the device field walk's length again.
+- A master's exported as-worked report prints the glue's five as they applied — the numbers its render gave the
+  compressor, a field by hand at its value and every other at the law at the amount as it sounded — not the ones placed
+  at the machine's own amount. A glue out of the chain applied none, and its five stay as the project holds them.

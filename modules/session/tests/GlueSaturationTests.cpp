@@ -1314,6 +1314,56 @@ void theLimiterThree()
             && v1.view().plan.limiter.oversampling == factor, "reverted: the constants sound again");
 }
 
+// THE AS-WORKED FIVE: a master's exported report prints the glue's five as they applied — a field by hand at its hand
+// value, every other at the law at the amount as it sounded — the numbers its render state gave the compressor, not the
+// ones placed with the machine's own amount.
+void theWorkedFive()
+{
+    felitronics::test::group ("the as-worked report: the glue's five as they applied, not as placed");
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    GlueFields<Touched> glue; glue.on = true; glue.upToDb = 2.0; glue.ratio = 2.5;
+    ok (s.apply (command::EditDevice { 3, glue }).rejection == Rejection::None, "PRECONDITION: the glue ticked at 2 dB, its ratio 2.5 by hand");
+    settle (s);
+    const auto planned = plannedFive (s.snapshot());
+    command::Master request { 4 };
+    request.source = s.source().hash; request.revision = s.revision();
+    ok (s.apply (request).rejection == Rejection::None, "PRECONDITION: the master is taken");
+    (void) finish (s);
+    ok (s.job() == 0 && s.masters().size() == 1, "PRECONDITION: mastered");
+    if (s.masters().size() != 1) return;
+    const auto worked = s.exportWorked (s.masters()[0].id);
+    const std::string_view text = worked.view();
+    // The line `key = value # origin` inside the table that starts at `table`: its value and origin.
+    const auto lineOf = [&] (std::string_view table, std::string_view key) -> std::pair<std::string, std::string>
+    {
+        const auto from = text.find (table);
+        if (from == std::string_view::npos) return {};
+        const auto end = text.find ("\n[", from + table.size());
+        const auto at = text.find ("\n" + std::string (key) + " = ", from);
+        if (at == std::string_view::npos || at > end) return {};
+        const auto value = at + key.size() + 4, hash = text.find (" # ", value), eol = text.find ('\n', value);
+        return { std::string (text.substr (value, hash - value)), std::string (text.substr (hash + 3, eol - hash - 3)) };
+    };
+    constexpr std::string_view keys[] = { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs" };
+    bool applied = true, origins = true, ofThePlan = true;
+    std::string seen;
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        const auto [value, origin] = lineOf ("\n[glue]\n", keys[i]);
+        const auto [rendered, renderedOrigin] = lineOf ("\n[renderState]\n", "params.compressor." + std::string (keys[i]));
+        applied = applied && ! value.empty() && value == rendered;
+        origins = origins && origin == (i == 1 ? "hand" : "machine");
+        // A number the report cannot write short is written as its exact decimal in quotes.
+        const auto digits = value.size() > 1 && value.front() == '"' ? value.substr (1, value.size() - 2) : value;
+        ofThePlan = ofThePlan && planned[i] && ! digits.empty() && same (std::strtod (digits.c_str(), nullptr), *planned[i]);
+        seen += std::string (keys[i]) + " " + value + " (" + origin + ") / " + rendered + "; ";
+    }
+    ok (applied, "the [glue] table's five are the render state's compressor numbers: " + seen);
+    ok (origins, "the ratio by hand says hand, the four left alone say machine");
+    ok (ofThePlan, "and they are the plan's five as the snapshot stated them before the master");
+}
+
 int main()
 {
     std::printf ("felitronics::session — glue and saturation from the normalised input\n");
@@ -1333,5 +1383,6 @@ int main()
     theMix();
     theFiveByHand();
     theLimiterThree();
+    theWorkedFive();
     return felitronics::test::report();
 }

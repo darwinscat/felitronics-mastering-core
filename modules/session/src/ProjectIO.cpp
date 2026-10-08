@@ -291,6 +291,22 @@ struct Writer
                 if (hand) origin = "hand";
                 else if (isOn && detail::tickFrom (rules, layers) == TickFrom::Touched) origin = "hand";
                 else if (! detail::same (double (machine), double (defaultValue))) origin = "machine";
+                // The glue's five as they applied: the numbers the render gave its compressor — a field by hand at its
+                // value, every other at the law at the amount as it sounded — not the ones placed with the machine's own
+                // amount. A glue out of the chain applied none, and its five stay as the project holds them.
+                if (device == Device::Glue && chain && rendered.topology.compressor && ! rendered.params.bypassCompressor)
+                {
+                    const auto& c = rendered.params.compressor;
+                    const auto name = Of::fields[field];
+                    const double* applied = name == "thresholdDb" ? &c.thresholdDb : name == "ratio" ? &c.ratio
+                        : name == "kneeDb" ? &c.kneeDb : name == "attackMs" ? &c.attackMs : name == "releaseMs" ? &c.releaseMs : nullptr;
+                    if (applied)
+                    {
+                        workedLine (name, *applied, hand || master.recipe.readyVersion == 1 ? std::string_view ("hand")
+                            : ! detail::same (*applied, double (defaultValue)) ? std::string_view ("machine") : std::string_view ("default"));
+                        return;
+                    }
+                }
                 if (isOn && chain)
                 {
                     bool active = truthOf (sounded);
