@@ -813,8 +813,8 @@ void maxMasterLanding()
 }
 
 // [landing.max] <mode> cleaner: every max mode of the shipped config leaves it out, so a wish of theirs lands its zones
-// at the loudness the master without them reached (MasterPlan::clean); a mode written cleaner = false (ConfigTests reads
-// it) would land its zones on its budget in one landing.
+// at the loudness the master without them reached (MasterPlan::clean); a mode written cleaner = false (WaterfallTests
+// plants it) lands its zones on its budget in one landing.
 void maxCleanerSwitch()
 {
     const auto engine = detail::rules().engine;

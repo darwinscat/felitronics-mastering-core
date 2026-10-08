@@ -1,0 +1,513 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+
+// THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
+// 0 % out of the chain, the saturation's drive ceiling, the steering's convergence, cleaner not louder and its switch,
+// the two clippers, Maximum · nuke, the queue's snapshot at the command — and a master with no wish, to the bit, as the
+// candidate before the waterfall made it (commit 808c058) on every target.
+
+#include "MasterJob.h"
+#include "Rules.h"
+#include "embedded/not-cleaner.h"     // the shipped engine, extreme written cleaner = false (CMakeLists.txt)
+#include "embedded/place-start.h"     // ... [limiter.peakClipper] place = "start"
+#include "embedded/place-limiter.h"   // ... place = "limiter"
+#include <felitronics/session/Session.h>
+#include <felitronics/session/Snapshot.h>
+#include <felitronics/core/DetMath.h>
+#include <felitronics_test.h>
+#include <bit>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+using namespace felitronics::session;
+using felitronics::test::ok;
+
+namespace
+{
+// A master with no wish, to the bit: a fixture of six seconds (a kick, a click on its attack and a pad that swells, made
+// with the det functions, so every platform makes the same file), mastered on `target` by the session (version 0, the
+// machine's devices, no edit), its delivered PCM hashed (FNV-1a over the float bits). 0 where a step fails.
+std::uint64_t noWishDigest (std::string_view target)
+{
+    namespace det = felitronics::core::det;
+    constexpr double kPi = 3.141592653589793;
+    constexpr unsigned rate = 48000, frames = rate * 6;
+    std::vector<float> left (frames), right (frames);
+    for (unsigned i = 0; i < frames; ++i)
+    {
+        const double t = double (i) / rate, beat = double (i % (rate / 2)) / rate;
+        const double kick = 0.45 * det::exp2 (-beat / 0.04) * det::sin (2 * kPi * 60.0 * beat)
+                          + (beat < 0.004 ? 0.15 * (double ((i * 2654435761u) >> 16 & 0xffffu) / 32768.0 - 1.0) : 0.0);
+        const double swell = t < 3.0 ? 0.6 : 1.0;
+        const double pad = swell * (0.08 * det::sin (2 * kPi * 220.0 * t) + 0.05 * det::sin (2 * kPi * 3310.0 * t));
+        left[i] = float (kick + pad);
+        right[i] = float (kick + swell * (0.08 * det::sin (2 * kPi * 220.0 * t + 0.4) + 0.05 * det::sin (2 * kPi * 3310.0 * t + 1.1)));
+    }
+    const float* planes[] { left.data(), right.data() };
+    auto made = Session::create();
+    if (made.status != Status::Ok) return 0;
+    auto& s = *made.session;
+    if (s.apply (command::SetTarget { 1, target }).rejection != Rejection::None
+        || s.apply (command::Load { 2, { planes, 2, frames, rate }, { "mix.wav", rate, true, 24 } }).rejection != Rejection::None) return 0;
+    for (unsigned i = 0; i < 4000000 && (s.measurementJob() || s.needlesJob()); ++i) (void) s.step (16);
+    if (s.apply (command::Master { 3 }).rejection != Rejection::None) return 0;
+    for (unsigned i = 0; i < 4000000 && s.job() != 0; ++i) (void) s.step (16);
+    const auto token = s.pendingMaster();
+    const auto shape = s.masterAudioShape (token);
+    std::vector<float> out (std::size_t (shape.frames * shape.channels));
+    if (out.empty() || s.copyMaster (token, out) != MasterTransferStatus::Ok) return 0;
+    std::uint64_t h = 0xCBF29CE484222325ull;
+    for (const float v : out)
+        for (unsigned k = 0; k < 4; ++k) h = (h ^ ((std::bit_cast<std::uint32_t> (v) >> (8u * k)) & 0xFFu)) * 0x100000001B3ull;
+    return h;
+}
+
+// The same fixture's six seconds, planar (left, then right), for the sessions below.
+std::vector<float> fixture()
+{
+    namespace det = felitronics::core::det;
+    constexpr double kPi = 3.141592653589793;
+    constexpr unsigned rate = 48000, frames = rate * 6;
+    std::vector<float> out (2u * frames);
+    for (unsigned i = 0; i < frames; ++i)
+    {
+        const double t = double (i) / rate, beat = double (i % (rate / 2)) / rate;
+        const double kick = 0.45 * det::exp2 (-beat / 0.04) * det::sin (2 * kPi * 60.0 * beat)
+                          + (beat < 0.004 ? 0.15 * (double ((i * 2654435761u) >> 16 & 0xffffu) / 32768.0 - 1.0) : 0.0);
+        const double swell = t < 3.0 ? 0.6 : 1.0;
+        out[i] = float (kick + swell * (0.08 * det::sin (2 * kPi * 220.0 * t) + 0.05 * det::sin (2 * kPi * 3310.0 * t)));
+        out[frames + i] = float (kick + swell * (0.08 * det::sin (2 * kPi * 220.0 * t + 0.4) + 0.05 * det::sin (2 * kPi * 3310.0 * t + 1.1)));
+    }
+    return out;
+}
+
+// A session on `target` with the fixture loaded; measured unless `measure` is false.
+std::unique_ptr<Session> loaded (const std::vector<float>& pcm, std::string_view target, bool measure = true)
+{
+    const std::size_t frames = pcm.size() / 2u;
+    const float* planes[] { pcm.data(), pcm.data() + frames };
+    auto made = Session::create();
+    if (made.status != Status::Ok || made.session->apply (command::SetTarget { 1, target }).rejection != Rejection::None
+        || made.session->apply (command::Load { 2, { planes, 2, frames, 48000 }, { "mix.wav", 48000, true, 24 } }).rejection
+            != Rejection::None) return nullptr;
+    if (measure)
+        for (unsigned i = 0; i < 4000000 && (made.session->measurementJob() || made.session->needlesJob()); ++i) (void) made.session->step (16);
+    return std::move (made.session);
+}
+
+// Runs every job out, releasing each delivered master so the next queued one starts.
+void runOut (Session& s)
+{
+    for (unsigned i = 0; i < 4000000; ++i)
+    {
+        if (s.pendingMaster().master != 0) (void) s.releaseMaster (s.pendingMaster());
+        if (s.step (64).state == StepState::Done && s.pendingMaster().master == 0 && s.job() == 0) return;
+    }
+}
+
+// A master asked now, run out: its kept entry (nullptr where it was refused or did not finish).
+const Kept* master (Session& s, CommandId id)
+{
+    const std::size_t before = s.masters().size();
+    if (s.pendingMaster().master != 0) (void) s.releaseMaster (s.pendingMaster());
+    if (s.apply (command::Master { id }).rejection != Rejection::None) return nullptr;
+    runOut (s);
+    return s.masters().size() > before && s.masters().back().report ? &s.masters().back() : nullptr;
+}
+
+double number (felitronics::toml::embedded::View v) noexcept
+{
+    if (const auto d = v.decimal()) return d->toDouble();
+    if (const auto n = v.integer()) return double (*n);
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+std::string num (double x) { char b[32]; std::snprintf (b, sizeof b, "%.3f", x); return b; }
+
+bool editShares (Session& s, CommandId id, std::optional<double> glue, std::optional<double> saturation, std::optional<double> cut)
+{
+    bool fine = true;
+    if (glue) { GlueFields<Touched> f; f.share = *glue; fine = fine && s.apply (command::EditDevice { id, f }).rejection == Rejection::None; }
+    if (saturation) { SaturationFields<Touched> f; f.share = *saturation; fine = fine && s.apply (command::EditDevice { CommandId (id + 1), f }).rejection == Rejection::None; }
+    if (cut) { LimiterFields<Touched> f; f.cutShare = *cut; fine = fine && s.apply (command::EditDevice { CommandId (id + 2), f }).rejection == Rejection::None; }
+    return fine;
+}
+
+bool sounds (const detail::MasterPlan& p, bool glue)
+{
+    const auto& t = p.ready.topology;
+    const auto& q = p.ready.params;
+    return glue ? t.compressor && ! q.bypassCompressor : t.clipper && ! q.bypassClipper;
+}
+
+//==============================================================================
+// THE SHARE FIELDS: a person's alone — the machine's layer never holds one, and a share is the only field its edit
+// touches; on the mix's domain 0…1 (a value off it refused OutOfDomain, a non-number NotFinite, whole: the revision and
+// the project stay); a revert takes back the one share masked; and a person's own field wins over the steering (a drive
+// by hand is never raised to the ceiling).
+void shareFields()
+{
+    felitronics::test::group ("the share fields: a person's alone, their domain, their revert, a person's field first");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "spotify");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    const auto& d = s.project().devices;
+    ok (d.glue.machine.share == 0.0 && d.saturation.machine.share == 0.0 && d.limiter.machine.cutShare == 0.0
+            && ! d.glue.hand.share && ! d.saturation.hand.share && ! d.limiter.hand.cutShare,
+        "placed: no share in the machine's layer, none in a person's");
+    ok (! detail::MasterJob::plan (s, command::Master { 90 }, s.project()).request.waterfall(), "no share asked: no waterfall");
+    for (const double bad : { -0.05, 1.05 })
+    {
+        const auto rev = s.revision();
+        GlueFields<Touched> g; g.share = bad;
+        SaturationFields<Touched> t; t.share = bad;
+        LimiterFields<Touched> l; l.cutShare = bad;
+        const auto a = s.apply (command::EditDevice { 10, g }), b = s.apply (command::EditDevice { 11, t }), c = s.apply (command::EditDevice { 12, l });
+        ok (a.rejection == Rejection::OutOfDomain && b.rejection == Rejection::OutOfDomain && c.rejection == Rejection::OutOfDomain
+                && s.revision() == rev && ! d.glue.hand.share && ! d.saturation.hand.share && ! d.limiter.hand.cutShare,
+            "a share of " + num (bad) + " refused OutOfDomain on all three, whole");
+    }
+    {
+        const auto rev = s.revision();
+        GlueFields<Touched> g; g.share = std::numeric_limits<double>::quiet_NaN();
+        ok (s.apply (command::EditDevice { 13, g }).rejection == Rejection::NotFinite && s.revision() == rev && ! d.glue.hand.share,
+            "a share that is no number refused NotFinite, whole");
+    }
+    ok (editShares (s, 20, 0.0, 1.0, 0.5), "0 and 1 are on the domain, as 0.5");
+    ok (editShares (s, 30, 0.3, 0.2, 0.25), "PRECONDITION: three shares asked");
+    const auto& g = d.glue.hand;
+    ok (g.share == 0.3 && ! g.on && ! g.upToDb && ! g.mix && ! g.thresholdDb && ! g.ratio && ! g.kneeDb && ! g.attackMs && ! g.releaseMs
+            && d.saturation.hand.share == 0.2 && ! d.saturation.hand.drive && ! d.saturation.hand.mix
+            && d.limiter.hand.cutShare == 0.25 && ! d.limiter.hand.needles && ! d.limiter.hand.needlesDb,
+        "a share's edit touches its share alone");
+    auto planned = detail::MasterJob::plan (s, command::Master { 91 }, s.project());
+    ok (planned.request.waterfall() && planned.request.waterfallGlueShare == 0.3 && planned.request.waterfallSaturationShare == 0.2
+            && planned.request.waterfallCutShare == 0.25 && std::isfinite (planned.request.waterfallSaturationDriveMaxDb),
+        "the plan carries the three shares, and the drive's ceiling where no person set the drive");
+    SaturationFields<Touched> drive; drive.drive = 3.0;
+    ok (s.apply (command::EditDevice { 40, drive }).rejection == Rejection::None
+            && std::isnan (detail::MasterJob::plan (s, command::Master { 92 }, s.project()).request.waterfallSaturationDriveMaxDb),
+        "a person's drive wins: the waterfall never raises it");
+    SaturationFields<Mark> mask; mask.share = true;
+    ok (s.apply (command::RevertEdits { 41, mask }).rejection == Rejection::None && ! d.saturation.hand.share
+            && d.saturation.hand.drive == 3.0 && d.glue.hand.share == 0.3 && d.limiter.hand.cutShare == 0.25,
+        "a revert of the saturation's share takes back that share alone");
+    GlueFields<Mark> glueMask; glueMask.share = true;
+    LimiterFields<Mark> cutMask; cutMask.cutShare = true;
+    ok (s.apply (command::RevertEdits { 42, glueMask }).rejection == Rejection::None
+            && s.apply (command::RevertEdits { 43, cutMask }).rejection == Rejection::None
+            && ! d.glue.hand.share && ! d.limiter.hand.cutShare
+            && ! detail::MasterJob::plan (s, command::Master { 93 }, s.project()).request.waterfall(),
+        "all three taken back: no waterfall");
+}
+
+//==============================================================================
+// THE WATERFALL REPORT on the fixture: each zone's asked share (the person's, scaled to a total of 1 where the three ask
+// more), the share it reached (its dB over the total), and its stop by the report's rule — Reached within 0.1 dB of its
+// want or 3 % of the total, else the setting that stopped it; the limiter takes the rest. A master with no wish has no
+// waterfall.
+void waterfallReport()
+{
+    felitronics::test::group ("the waterfall report: asked, reached and the stop of each zone");
+    const auto pcm = fixture();
+    for (const bool over : { false, true })
+    {
+        auto made = loaded (pcm, "spotify");
+        if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+        Session& s = *made;
+        if (! over)
+        {
+            const Kept* plain = master (s, 5);
+            ok (plain && ! plain->report->waterfall, "a master with no wish: no waterfall in its report");
+        }
+        const double g = over ? 0.6 : 0.2, t = over ? 0.6 : 0.3, c = over ? 0.3 : 0.2, sum = g + t + c, scale = sum > 1.0 ? 1.0 / sum : 1.0;
+        const Kept* k = editShares (s, 10, g, t, c) ? master (s, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        if (! w) { ok (false, "a master with three shares reports its waterfall"); continue; }
+        const double total = w->totalDb.value_or (0.0);
+        const auto close = [] (std::optional<double> a, double b) { return a && std::fabs (*a - b) < 1e-9; };
+        ok (close (w->glue.asked, g * scale) && close (w->saturation.asked, t * scale) && close (w->cut.asked, c * scale)
+                && close (w->limiter.asked, std::fmax (0.0, 1.0 - sum * scale)) && w->limiter.stop == WaterfallStop::Rest,
+            std::string (over ? "asking 150 %: " : "asking 70 %: ") + "the asked shares " + num (*w->glue.asked) + ", "
+                + num (*w->saturation.asked) + ", " + num (*w->cut.asked) + ", the limiter the rest " + num (*w->limiter.asked));
+        double reachedSum = 0.0;
+        bool rule = total > 0.0;
+        for (const auto* z : { &w->glue, &w->saturation, &w->cut })
+        {
+            if (! z->reached || ! z->db || ! z->asked) { rule = false; continue; }
+            reachedSum += *z->reached;
+            const bool within = std::fabs (*z->asked * total - *z->db) <= std::fmax (0.1, 0.03 * total);
+            rule = rule && close (z->reached, *z->db / total) && (z->stop == WaterfallStop::Reached) == (within && z->setting.has_value());
+        }
+        reachedSum += w->limiter.reached.value_or (0.0);
+        ok (rule && std::fabs (reachedSum - 1.0) < 1e-6,
+            std::string (over ? "asking 150 %: " : "asking 70 %: ") + "each zone reached its dB over the total " + num (total)
+                + " dB, the four sum to 1, and Reached is said exactly within the tolerance — glue " + num (w->glue.reached.value_or (-1))
+                + " (stop " + std::to_string (unsigned (w->glue.stop)) + "), saturation " + num (w->saturation.reached.value_or (-1))
+                + " (" + std::to_string (unsigned (w->saturation.stop)) + "), cut " + num (w->cut.reached.value_or (-1))
+                + " (" + std::to_string (unsigned (w->cut.stop)) + ")");
+    }
+}
+
+//==============================================================================
+// A ZONE AT 0 % LEAVES ITS STAGE OUT OF THE CHAIN: a glue or a saturation share of 0 does not sound, where a share above
+// it ticks the stage; its zone reports Reached at 0 dB.
+void zeroZone()
+{
+    felitronics::test::group ("a zone at 0 % leaves its stage out of the chain");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "spotify");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    ok (editShares (s, 10, 0.3, 0.3, std::nullopt), "PRECONDITION: glue and saturation asked 30 %");
+    const auto on = detail::MasterJob::plan (s, command::Master { 90 }, s.project());
+    ok (sounds (on, true) && sounds (on, false), "asked 30 %: the glue and the saturation sound");
+    ok (editShares (s, 20, 0.0, 0.0, std::nullopt), "PRECONDITION: both asked 0 %");
+    const auto off = detail::MasterJob::plan (s, command::Master { 91 }, s.project());
+    ok (off.rejection == Rejection::None && ! sounds (off, true) && ! sounds (off, false), "asked 0 %: neither is in the chain");
+    const Kept* k = master (s, 30);
+    const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+    ok (w && w->glue.stop == WaterfallStop::Reached && w->saturation.stop == WaterfallStop::Reached
+            && w->glue.db.value_or (1.0) <= 0.05 && w->saturation.db.value_or (1.0) <= 0.05 && ! w->glue.setting && ! w->saturation.setting,
+        "their zones reached 0 % at no dB, with no setting");
+}
+
+//==============================================================================
+// THE DRIVE'S CEILING: a saturation asked more of the peak work than its mix at 1 takes has its drive raised, up to
+// [saturation] steerDriveMaxDb on the knob, and stops there: DriveAtCeiling, its drive the ceiling (maxNuke, asked all
+// of it). Not asserted here: on maxExtreme the same wish ends with the mix at 0 (an open defect of the steering).
+void driveCeiling()
+{
+    felitronics::test::group ("the saturation's drive raised up to [saturation] steerDriveMaxDb, DriveAtCeiling there");
+    const double ceiling = number (detail::rules().engine.find ("saturation").find ("steerDriveMaxDb"));
+    const auto pcm = fixture();
+    for (const std::string_view target : { "maxNuke" })
+    {
+    auto made = loaded (pcm, target);
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    const Kept* k = editShares (s, 10, std::nullopt, 1.0, std::nullopt) ? master (s, 20) : nullptr;
+    const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+    ok (w && w->saturation.stop == WaterfallStop::DriveAtCeiling && w->saturation.drive
+            && std::fabs (*w->saturation.drive - ceiling) <= 0.1 && w->saturation.setting && *w->saturation.setting >= 0.999,
+        std::string (target) + ", asked 100 %: the mix at 1, the drive " + num (w && w->saturation.drive ? *w->saturation.drive : -1.0) + " dB at the ceiling "
+            + num (ceiling) + " dB, stop " + std::to_string (w ? unsigned (w->saturation.stop) : 99u) + ", mix " + num (w && w->saturation.setting ? *w->saturation.setting : -1.0));
+    }
+}
+
+//==============================================================================
+// CONVERGENCE: the steering moves the stages at most twice on the fixture (extraPasses), and the landing's own passes
+// after them are no more than the no-wish landing's and two. A max mode's cleaner landing holds the master without the
+// wishes first — that landing is the no-wish one — so its passes are counted off before the zones' landing is compared.
+void convergence()
+{
+    felitronics::test::group ("the waterfall converges: passes within the no-wish landing's + 2");
+    const auto pcm = fixture();
+    for (const std::string_view target : { "spotify", "maxClean" })
+    {
+        auto made = loaded (pcm, target);
+        if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+        Session& s = *made;
+        const Kept* plain = master (s, 5);
+        const std::uint32_t alone = plain && plain->landing ? plain->landing->passes : 0u;
+        const Kept* k = editShares (s, 10, 0.2, 0.3, 0.2) ? master (s, 20) : nullptr;
+        const std::uint32_t passes = k && k->landing ? k->landing->passes : 999u;
+        const std::uint32_t extra = k && k->report->waterfall ? k->report->waterfall->extraPasses : 999u;
+        const std::uint32_t phaseA = target == "maxClean" ? alone : 0u;
+        ok (alone > 0 && extra <= 2u && passes >= extra + phaseA && passes - extra - phaseA <= alone + 2u,
+            std::string (target) + ": the no-wish landing " + std::to_string (alone) + " passes, with three shares "
+                + std::to_string (passes) + " in all, " + std::to_string (extra) + " of them the steering's moves"
+                + (phaseA ? ", " + std::to_string (phaseA) + " the landing without the wishes" : std::string()));
+    }
+}
+
+//==============================================================================
+// CLEANER, NOT LOUDER: a max mode with a wish lands the master without the wishes first on its budget, then the zones
+// at that loudness — the delivered master within toleranceLu of it. With `cleaner = false` written for the mode (a test
+// config), the master's plan lands the zones on the mode's budget in one landing; the key's one reader says so.
+void cleaner()
+{
+    felitronics::test::group ("cleaner, not louder: phase B at phase A's loudness; cleaner = false lands on the budget");
+    const double tolerance = number (detail::rules().engine.find ("landing").find ("toleranceLu"));
+    const auto pcm = fixture();
+    {
+        auto made = loaded (pcm, "maxExtreme");
+        if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+        Session& s = *made;
+        const Kept* k = editShares (s, 10, 0.2, 0.3, 0.2) ? master (s, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const double a = w && w->aloneLufs ? *w->aloneLufs : -99.0, b = k ? k->report->achievedLufs.value_or (0.0) : 0.0;
+        ok (w && w->aloneLufs && w->limiterAloneDb && std::fabs (b - a) <= tolerance + 1e-9,
+            "maxExtreme with three shares: alone " + num (a) + " LUFS, with the zones " + num (b) + " LUFS (toleranceLu " + num (tolerance) + ")");
+    }
+    const auto shipped = detail::rules();
+    const auto planted = detail::readRules (shipped.targets, felitronics::session::test::embedded::notCleaner.root(), shipped.geometry);
+    ok (! detail::maxCleaner (planted.engine, LoudnessMode::MaxExtreme) && detail::maxCleaner (planted.engine, LoudnessMode::MaxClean)
+            && detail::maxCleaner (planted.engine, LoudnessMode::MaxDense) && detail::maxCleaner (planted.engine, LoudnessMode::MaxNuke)
+            && detail::maxCleaner (shipped.engine, LoudnessMode::MaxExtreme),
+        "the switch's reader: extreme written false reads false, the modes without the key true");
+    auto made = loaded (pcm, "maxExtreme");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    ok (editShares (s, 10, 0.2, 0.3, 0.2), "PRECONDITION: three shares");
+    const auto clean = detail::MasterJob::plan (s, command::Master { 90 }, s.project());
+    const auto notClean = detail::MasterJob::plan (s, command::Master { 91 }, s.project(), planted);
+    ok (clean.rejection == Rejection::None && clean.clean && notClean.rejection == Rejection::None && ! notClean.clean
+            && notClean.request.waterfall() && notClean.request.limiterGr.limitDb == 3.0 && clean.request.limiterGr.limitDb == 3.0,
+        "the shipped config lands it cleaner; extreme's cleaner = false lands the zones on its 3 dB budget in one landing");
+}
+
+//==============================================================================
+// TWO CLIPPERS: the start clipper only with a cut wish and a sounding glue or saturation; [limiter.peakClipper] place
+// honoured — both (shipped): the start clipper and the limiter's; start: the start one alone; limiter: the limiter's alone.
+void twoClippers()
+{
+    felitronics::test::group ("two clippers: the start clipper with a cut wish where the glue or the saturation sounds; place honoured");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "spotify");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    const auto start = [] (const detail::MasterPlan& p) { return p.ready.topology.startClipper && ! p.ready.params.bypassStartClipper; };
+    GlueFields<Touched> glueOff; glueOff.on = false;
+    SaturationFields<Touched> satOff; satOff.on = false;
+    ok (s.apply (command::EditDevice { 10, glueOff }).rejection == Rejection::None
+            && s.apply (command::EditDevice { 11, satOff }).rejection == Rejection::None && editShares (s, 12, std::nullopt, std::nullopt, 0.3),
+        "PRECONDITION: the glue and the saturation off by hand, a cut asked");
+    const auto quiet = detail::MasterJob::plan (s, command::Master { 90 }, s.project());
+    ok (! sounds (quiet, true) && ! sounds (quiet, false) && ! start (quiet) && quiet.ready.params.limiter.peakClip,
+        "a cut wish with neither sounding: no start clipper, the limiter's takes the cut");
+    GlueFields<Touched> glueOn; glueOn.on = true;
+    ok (s.apply (command::EditDevice { 20, glueOn }).rejection == Rejection::None, "PRECONDITION: the glue on");
+    const auto both = detail::MasterJob::plan (s, command::Master { 91 }, s.project());
+    ok (sounds (both, true) && start (both) && both.ready.params.limiter.peakClip, "a cut wish with the glue sounding, place both: both clippers");
+    const auto shipped = detail::rules();
+    const auto atStart = detail::MasterJob::plan (s, command::Master { 92 }, s.project(),
+        detail::readRules (shipped.targets, felitronics::session::test::embedded::placeStart.root(), shipped.geometry));
+    const auto atLimiter = detail::MasterJob::plan (s, command::Master { 93 }, s.project(),
+        detail::readRules (shipped.targets, felitronics::session::test::embedded::placeLimiter.root(), shipped.geometry));
+    ok (start (atStart) && ! atStart.ready.params.limiter.peakClip, "place start: the start clipper alone");
+    ok (! start (atLimiter) && atLimiter.ready.params.limiter.peakClip, "place limiter: the limiter's clipper alone");
+    LimiterFields<Mark> cutMask; cutMask.cutShare = true;
+    ok (s.apply (command::RevertEdits { 30, cutMask }).rejection == Rejection::None
+            && ! start (detail::MasterJob::plan (s, command::Master { 94 }, s.project())),
+        "the glue sounding with no cut wish: no start clipper");
+}
+
+//==============================================================================
+// MAXIMUM · NUKE: the fourth max mode (enum value 4), its target row maxNuke (−7 LUFS nominal, −1 dBTP, the mode), its
+// limiter budget read from the config (7 dB), and a master planned on the row lands in it.
+void nuke()
+{
+    felitronics::test::group ("Maximum · nuke: enum 4, its target row, its budget from the config");
+    const auto r = detail::rules();
+    const auto row = r.find ("maxNuke");
+    const double budget = number (r.engine.find ("landing").find ("max").find ("nuke").find ("budgetDb"));
+    ok (row && r.row (*row).loudnessMode == LoudnessMode::MaxNuke && r.row (*row).lufs.toDouble() == -7.0 && r.row (*row).tp.toDouble() == -1.0
+            && unsigned (LoudnessMode::MaxNuke) == 4u && budget == 7.0 && detail::maxBudgetDb (r.engine, LoudnessMode::MaxNuke) == budget,
+        "the row maxNuke: −7 LUFS, −1 dBTP, mode 4, budget 7 dB from [landing.max] nuke");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "maxNuke");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    const auto planned = detail::MasterJob::plan (*made, command::Master { 90 }, made->project());
+    ok (planned.rejection == Rejection::None && planned.loudnessMode == LoudnessMode::MaxNuke && planned.request.limiterGr.limitDb == budget,
+        "a master on the row lands in nuke on its budget");
+}
+
+//==============================================================================
+// THE SNAPSHOT AT THE COMMAND: two masters asked while the file is still measured, the target changed between them,
+// are queued and each lands on the target it was asked with — the queue holds the project as it was at the command.
+void snapshotAtTheCommand()
+{
+    felitronics::test::group ("the queue's snapshot at the command: two queued masters keep their own targets");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "spotify", false);
+    if (! made) { ok (false, "PRECONDITION: a loaded session"); return; }
+    Session& s = *made;
+    const auto first = s.apply (command::Master { 10 });
+    const auto moved = s.apply (command::SetTarget { 11, "appleMusic" });
+    const auto second = s.apply (command::Master { 12 });
+    ok (s.measurementJob() != 0 && first.rejection == Rejection::None && moved.rejection == Rejection::None
+            && second.rejection == Rejection::None && first.job != 0 && second.job != 0 && first.job != second.job,
+        "PRECONDITION: both queued while the file is measured");
+    runOut (s);
+    const auto r = detail::rules();
+    const auto ms = s.masters();
+    ok (ms.size() == 2 && ms[0].report && ms[1].report && ms[0].recipe.project.target == *r.find ("spotify")
+            && ms[1].recipe.project.target == *r.find ("appleMusic") && ms[0].report->targetLufs == -14.0 && ms[1].report->targetLufs == -16.0,
+        "the first on spotify (−14 LUFS), the second on appleMusic (−16 LUFS): "
+            + (ms.size() == 2 && ms[0].report && ms[1].report ? num (ms[0].report->targetLufs) + ", " + num (ms[1].report->targetLufs) : std::string ("missing")));
+}
+
+//==============================================================================
+// A MASTER WITH NO WISH IS THE CANDIDATE BEFORE THE WATERFALL, TO THE BIT: the digests below are commit 808c058's — the
+// same noWishDigest, built from that commit's tree — on every target it had (maxNuke is new).
+void noWishAsBefore()
+{
+    felitronics::test::group ("a master with no wish: 808c058's PCM to the bit, on every target");
+    struct Row { std::string_view target; std::uint64_t digest; };
+    static constexpr Row before[] {
+        { "allStreaming", 0xe827cbdcbe481ba0ull },
+        { "cdDynamic", 0x7aeaea5d052b49a5ull },
+        { "club", 0xc469f78842c41d39ull },
+        { "lp", 0x887fc572199b8b8cull },
+        { "spotify", 0xe827cbdcbe481ba0ull },
+        { "spotifyLoud", 0xe381e06fc3aa38baull },
+        { "appleMusic", 0x03ad9388f6752a91ull },
+        { "youtube", 0xe827cbdcbe481ba0ull },
+        { "youtubeMusic", 0x682a2191780f269full },
+        { "amazon", 0xe827cbdcbe481ba0ull },
+        { "tidal", 0xe827cbdcbe481ba0ull },
+        { "deezer", 0x753a2c3a01fe34d0ull },
+        { "soundcloud", 0xe827cbdcbe481ba0ull },
+        { "td1008", 0x03ad9388f6752a91ull },
+        { "ebu", 0xf4d08c143dfc9dffull },
+        { "distrokid", 0xe827cbdcbe481ba0ull },
+        { "cdbaby", 0xe827cbdcbe481ba0ull },
+        { "tunecore", 0xe827cbdcbe481ba0ull },
+        { "amuse", 0xe827cbdcbe481ba0ull },
+        { "feiyr", 0xe827cbdcbe481ba0ull },
+        { "routenote", 0xe827cbdcbe481ba0ull },
+        { "horusmusic", 0xe827cbdcbe481ba0ull },
+        { "dittomusic", 0xe827cbdcbe481ba0ull },
+        { "cd", 0x344dabac76d00aebull },
+        { "bandcamp", 0x9e0e346579ea04abull },
+        { "atsc", 0x24beb33c9219f56cull },
+        { "arib", 0x24beb33c9219f56cull },
+        { "op59", 0x24beb33c9219f56cull },
+        { "maxClean", 0x216bcd36484ca254ull },
+        { "maxDense", 0xe3284c961c48a9d2ull },
+        { "maxExtreme", 0xb5e3282b4669f475ull },
+    };
+    for (const auto& row : before)
+    {
+        const std::uint64_t now = noWishDigest (row.target);
+        char digest[17];
+        std::snprintf (digest, sizeof digest, "%016llx", (unsigned long long) now);
+        ok (now == row.digest, std::string (row.target) + ": " + digest);
+    }
+}
+} // namespace
+
+int main()
+{
+    shareFields();
+    waterfallReport();
+    zeroZone();
+    driveCeiling();
+    convergence();
+    cleaner();
+    twoClippers();
+    nuke();
+    snapshotAtTheCommand();
+    noWishAsBefore();
+    return felitronics::test::report();
+}
