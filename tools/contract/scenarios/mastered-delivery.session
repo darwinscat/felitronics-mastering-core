@@ -1,6 +1,7 @@
 create main 134217728
 load 1 mastered
 drive 5000 work units
+command {"kind":"setTarget","commandId":"11","target":"allStreaming"}
 snapshot
 command {"kind":"master","commandId":"2"}
 drive 100000 work units

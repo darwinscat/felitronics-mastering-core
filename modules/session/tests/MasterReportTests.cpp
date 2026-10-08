@@ -78,6 +78,9 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     if (! s.snapshot().view().mandatoryMeasurementsReady
         || (waitForCrest && s.snapshot().view().measurements[std::size_t (session::Analyzer::Crest)].status
             != session::MeasurementStatus::Ready)) return false;
+    // The fixture names its target, All streaming, rather than lean on the one a new session starts on; a named target
+    // or a changed delivery rate below names its own on top.
+    if (s.apply (session::command::SetTarget { 7, "allStreaming" }).rejection != session::Rejection::None) return false;
     if (demanding && s.apply (session::command::EditTarget { 9, { -5.0, -6.0 } }).rejection
         != session::Rejection::None) return false;
     // A target well under the programme: the landing lowers it, and the limiter never reaches its ceiling.
