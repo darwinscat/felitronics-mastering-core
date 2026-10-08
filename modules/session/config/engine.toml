@@ -162,7 +162,8 @@ oversamplingDomain = [2, 16]
 #   02.10); 0 since 07.10 — no step, a typed cut is kept as typed (owner: «все ручки недискретные»). The manual cut
 #   starts at betweenCutDb, the "between" class, inside manualDomain.
 # place (owner 08.10): where the cut zone's clipper stands — "start" (after the high-pass and the mono bass, ahead of the
-#   glue, on its own x4 oversampler; only where the glue or the saturation sounds, else the limiter's takes the cut),
+#   glue, on an oversampler of its own at the chain's factor — the limiter's oversampling; only where the glue or the
+#   saturation sounds, else the limiter's takes the cut),
 #   "limiter" (inside the limiter, as before), "both" (the start one takes the cut zone, the limiter's keeps its needles for
 #   the peaks the glue and the saturation regrow, reported apart within the limiter's rest).
 [limiter.peakClipper]

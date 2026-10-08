@@ -80,8 +80,9 @@ struct MasteringChainConfig
     // which is bit-identical to the three-argument form.
     double sidechainHpfHz = 0.0;
 
-    // THE PEAK CLIPPER AT THE START (StartClipper): after the EQ and the mono bass, ahead of the compressor, on its
-    // own oversampler at `oversampleFactor` / `tapsPerPhase`. Off by default: a chain without it renders as it did.
+    // THE PEAK CLIPPER AT THE START (StartClipper): after the EQ and the mono bass, ahead of the compressor, on an
+    // oversampler of its own at the chain's `oversampleFactor` / `tapsPerPhase` — the limiter's, no factor of its own.
+    // Off by default: a chain without it renders as it did.
     bool startClipper = false;
 };
 
