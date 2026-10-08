@@ -877,6 +877,23 @@ void theQueueHasItsRefusals()
         rejectedWhole (*s, command::Master { 3 }, Rejection::NotMeasured, kNoField,
                        "a master on silence, measured with no mandatory readings");
     }
+    {
+        // Asked while the silence is measured, a master is queued; once the measurement ends without the readings, its
+        // turn refuses it NotMeasured — Failed, with a Rejected event under its job — and the queue is empty, not stuck.
+        auto s = fresh();
+        Audio a = makeAudio (2, 48000);
+        for (auto& p : a.planes) std::fill (p.begin(), p.end(), 0.0f);
+        ok (accepted (*s, loadOf (a)), "PRECONDITION: a second of silence loaded");
+        const Answer early = s->apply (command::Master { 3 });
+        bool refused = false;
+        for (unsigned i = 0; i < 100000 && s->step (16).state == StepState::More; ++i)
+            for (const auto& e : s->events())
+                refused = refused || (e.kind == EventKind::Rejected && e.jobId == early.job && e.payload.rejected.code == Rejection::NotMeasured);
+        const auto jobs = s->snapshot().view().masterJobs;
+        const bool failed = jobs.count == 1 && jobs.items[0].job == early.job && jobs.items[0].state == MasterJobState::Failed;
+        ok (early.rejection == Rejection::None && early.job != 0 && failed && refused && s->job() == 0 && ! s->snapshot().view().canMaster,
+            "a master queued on silence ends Failed (NotMeasured) once the measurement ends without its readings; nothing waits");
+    }
 }
 
 void everyRejectionWasProduced()
