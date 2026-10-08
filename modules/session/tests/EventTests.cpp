@@ -334,11 +334,12 @@ void pump()
         // (their domains, ranges, steps and comfort windows).
         replace (targets, "default = \"maxClean\"", "default = \"allStreaming\"");
         erase (targets, "\nmaxExtreme ");
+        erase (targets, "\nmaxNuke ");
         // ...and a person's tick (owner, 08.10): [glue] whenTicked back to 0.5, its ticked character out, the
         // saturation's whenTicked out.
         replace (engine, "whenTicked = 2.6", "whenTicked = 0.5");
         for (const std::string_view key : { "\nticked = ", "\nwhenTicked = 6" }) erase (engine, key);
-        for (const std::string_view key : { "\nextreme = ", "\nexpectedPassesMaxExtreme = " }) erase (engine, key);
+        for (const std::string_view key : { "\nextreme = ", "\nexpectedPassesMaxExtreme = ", "\nnuke = ", "\nexpectedPassesMaxNuke = " }) erase (engine, key);
         for (const std::string_view name : { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs", "lookaheadMs", "oversampling" })
             for (const std::string_view suffix : { "Domain", "Range", "Step", "Comfort" })
                 for (const auto key = "\n" + std::string (name) + std::string (suffix) + " = "; engine.find (key) != std::string::npos;)

@@ -80,8 +80,12 @@ limiterSlopeSpacingDb = 0.5
 #   clean   budget 0.5 dB — −13.05 / −12.04 LUFS, a little above streaming
 #   dense   budget 1.75 dB — −11.22 / −10.53 LUFS
 #   extreme budget 3 dB (owner, 07.10, MVP) — not yet measured on the ladder
+#   nuke    budget 7 dB — asked for about −8 LUFS on Cold Gaze; not measured on the ladder. With its zones (10/40/10) on
+#           three songs: Cold Gaze −8.03, cat-in-space −7.89, Deny Control −7.08 LUFS, worst-window ODG −0.75 / −0.43 / −0.85
 # cleaner: with a wish of shares, true (absent) lands the master without the wishes on the budget first and the zones at
-#   that loudness (cleaner, not louder); false lands the zones on the budget at once. Written only as false.
+#   that loudness (cleaner, not louder); false lands the zones on the budget at once. Written only as false. Measured
+#   for nuke: cleaner = false at budget 5 was 0.9–1.5 LU louder than budget 7 with cleaner, at a worse grade
+#   (−1.13 / −0.96 / −1.16) and a flatter LRA.
 # ceilingLufs: how high a max mode searches — no goal, a bound well above any landing a budget allows.
 # floorLufs: how low a max master ever lands, whichever target the mode sits on (owner, 04.10: "always pulled up to −14"):
 #   a mix so dense the budget holds it under is landed again there, with no budget, and delivered there.
@@ -93,6 +97,7 @@ budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
 extreme = { budgetDb = 3.0 }
+nuke = { budgetDb = 7.0 }
 
 # THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
 # held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.
@@ -980,6 +985,7 @@ expectedPasses = 3
 expectedPassesMaxClean = 7
 expectedPassesMaxDense = 6
 expectedPassesMaxExtreme = 6
+expectedPassesMaxNuke = 6
 
 # THE BLIND PAIRED PREFERENCE TEST — a development tool, never on a public page: its protocol. Two lanes A / B without
 # labels at equal loudness, "A better / B better / no preference", revealed after the last answer. Nothing here feeds the

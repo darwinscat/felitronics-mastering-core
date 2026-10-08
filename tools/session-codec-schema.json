@@ -16,7 +16,8 @@
       "Manual",
       "MaxClean",
       "MaxDense",
-      "MaxExtreme"
+      "MaxExtreme",
+      "MaxNuke"
     ],
     "DeliveryMode": [
       "Mastered",

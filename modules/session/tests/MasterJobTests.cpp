@@ -768,12 +768,14 @@ void maxMasterLanding()
 {
     const auto engine = detail::rules().engine;
     ok (detail::maxBudgetDb (engine, LoudnessMode::MaxClean) == 0.5 && detail::maxBudgetDb (engine, LoudnessMode::MaxDense) == 1.75
-            && detail::maxBudgetDb (engine, LoudnessMode::MaxExtreme) == 3.0 && std::isnan (detail::maxBudgetDb (engine, LoudnessMode::Manual))
-            && unsigned (LoudnessMode::MaxExtreme) == 3u,
-        "the max modes' budgets read from the config: clean 0.5 dB, dense 1.75 dB, extreme 3 dB (enum value 3), none for the manual mode");
-    for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense, LoudnessMode::MaxExtreme })
+            && detail::maxBudgetDb (engine, LoudnessMode::MaxExtreme) == 3.0 && detail::maxBudgetDb (engine, LoudnessMode::MaxNuke) == 7.0
+            && std::isnan (detail::maxBudgetDb (engine, LoudnessMode::Manual))
+            && unsigned (LoudnessMode::MaxExtreme) == 3u && unsigned (LoudnessMode::MaxNuke) == 4u,
+        "the max modes' budgets read from the config: clean 0.5 dB, dense 1.75 dB, extreme 3 dB (enum value 3), nuke 7 dB (enum value 4), none for the manual mode");
+    for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense, LoudnessMode::MaxExtreme, LoudnessMode::MaxNuke })
     {
-        const std::string name = mode == LoudnessMode::MaxClean ? "maxClean" : mode == LoudnessMode::MaxDense ? "maxDense" : "maxExtreme";
+        const std::string name = mode == LoudnessMode::MaxClean ? "maxClean" : mode == LoudnessMode::MaxDense ? "maxDense"
+                               : mode == LoudnessMode::MaxExtreme ? "maxExtreme" : "maxNuke";
         auto r = gradeSession (3.0);
         if (! r.session) { ok (false, name + ": a session"); continue; }
         auto& s = *r.session;
@@ -788,7 +790,8 @@ void maxMasterLanding()
         const auto stop = report ? report->maxStop : MaxStop::None;
         const bool landingStop = stop == MaxStop::Budget || stop == MaxStop::SearchCeiling || stop == MaxStop::Passes
             || stop == MaxStop::TruePeak || stop == MaxStop::OverBudget;
-        const double budget = mode == LoudnessMode::MaxClean ? 0.5 : mode == LoudnessMode::MaxDense ? 1.75 : 3.0;
+        const double budget = mode == LoudnessMode::MaxClean ? 0.5 : mode == LoudnessMode::MaxDense ? 1.75
+                            : mode == LoudnessMode::MaxExtreme ? 3.0 : 7.0;
         const bool kept = report && report->cost && report->cost->limiterP95Db.value
             && (stop != MaxStop::Budget || *report->cost->limiterP95Db.value <= budget + 1e-9);
         ok (master != 0 && report && report->loudnessMode == mode && landingStop && report->guardSteps == 0u && kept
@@ -813,12 +816,12 @@ void maxCleanerSwitch()
 {
     const auto engine = detail::rules().engine;
     ok (detail::maxCleaner (engine, LoudnessMode::MaxClean) && detail::maxCleaner (engine, LoudnessMode::MaxDense)
-            && detail::maxCleaner (engine, LoudnessMode::MaxExtreme)
+            && detail::maxCleaner (engine, LoudnessMode::MaxExtreme) && detail::maxCleaner (engine, LoudnessMode::MaxNuke)
             && ! detail::maxCleaner (engine, LoudnessMode::Manual),
         "[landing.max] cleaner: every max mode lands cleaner (absent: true), the manual mode never");
-    for (const LoudnessMode mode : { LoudnessMode::MaxExtreme })
+    for (const LoudnessMode mode : { LoudnessMode::MaxExtreme, LoudnessMode::MaxNuke })
     {
-        const std::string name = "maxExtreme";
+        const std::string name = mode == LoudnessMode::MaxExtreme ? "maxExtreme" : "maxNuke";
         auto r = gradeSession (3.0);
         if (! r.session) { ok (false, name + ": a session"); continue; }
         auto& s = *r.session;
