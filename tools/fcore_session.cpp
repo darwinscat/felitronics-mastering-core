@@ -133,6 +133,7 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::DamageSettled: return "DamageSettled";
         case Rejection::DamageQueued: return "DamageQueued";
         case Rejection::DamageQueueFull: return "DamageQueueFull";
+        case Rejection::ClippedGain: return "ClippedGain";
     }
     return "?";
 }
