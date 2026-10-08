@@ -170,6 +170,7 @@ std::string json (const Session& s)
     std::vector<Kept> kept (v.masters.begin(), v.masters.end());
     for (auto& k : kept) k.id = 0;
     v.masters = kept;
+    v.masterJobs = {};   // the jobs' ids and history (a cancelled one) are the process's, as the kept masters' ids are
     v.revision = 0;
     v.plan.fromFile = false;
     const auto need = Codec::encodedBytes (v);
