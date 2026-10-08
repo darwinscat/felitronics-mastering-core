@@ -84,11 +84,14 @@
 //                text::FactId::LoudestLowEnergy (458) and Observation.third 1 on loudestLowNote; the two diodes, cubic and
 //                asym, saturation types a person may pick, their words text::Term::SaturationTypeAsym and
 //                SaturationTypeCubic (152, 153). No entry point.
-//  16            the glue's five and the limiter's three by hand — GlueFieldsValue/Touched.thresholdDb, ratio, kneeDb,
-//                attackMs and releaseMs and LimiterFieldsValue/Touched.releaseMs, lookaheadMs and oversampling, in
+//  16            v0.21.0: the glue's five and the limiter's three by hand — GlueFieldsValue/Touched.thresholdDb, ratio,
+//                kneeDb, attackMs and releaseMs and LimiterFieldsValue/Touched.releaseMs, lookaheadMs and oversampling, in
 //                editDevice and revertEdits; their words text::Term::FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb,
 //                FieldGlueAttackMs and FieldGlueReleaseMs (154-158), FieldLimiterReleaseMs, FieldLimiterLookaheadMs and
-//                FieldLimiterOversampling (159-161). No entry point.
+//                FieldLimiterOversampling (159-161); LoudnessMode MaxExtreme (3) and MaxNuke (4) and their words (162,
+//                163); the waterfall — the glue's and the saturation's share and the limiter's cutShare, their words
+//                (164-166), MasterReport.waterfall (MasterWaterfall, MasterWaterfallZone, WaterfallStop); the masters'
+//                queue — Snapshot.masterJobs (MasterJobRow, MasterJobState). All appended; no entry point.
 #define FC_SESSION_ABI_VERSION 16u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
