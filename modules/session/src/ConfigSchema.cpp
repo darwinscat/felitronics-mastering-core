@@ -99,8 +99,9 @@ constexpr Name<CompressorMode> kModes[] = { { "downCompress", CompressorMode::Do
 constexpr Name<ThresholdFrom> kThresholdFrom[] = { { "shortTermP95", ThresholdFrom::ShortTermP95 } };
 constexpr Name<ConfidenceLabel> kConfidence[] = { { "low", ConfidenceLabel::Low }, { "medium", ConfidenceLabel::Medium },
                                                   { "high", ConfidenceLabel::High } };
-constexpr Name<PeakClipperPlace> kPlaces[] = { { "start", PeakClipperPlace::Start }, { "limiter", PeakClipperPlace::Limiter },
-                                                { "both", PeakClipperPlace::Both } };
+// [limiter.peakClipper] place: checked here, read by the master's plan alone (MasterJob::plan).
+enum class Place : std::uint8_t { Start, Limiter, Both };
+constexpr Name<Place> kPlaces[] = { { "start", Place::Start }, { "limiter", Place::Limiter }, { "both", Place::Both } };
 constexpr Name<Law> kLaws[] = { { "byDepth", Law::ByDepth }, { "linear", Law::Linear }, { "geometric", Law::Geometric } };
 constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh }, { "atan", SaturationShape::Atan },
                                               { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym },
@@ -382,7 +383,8 @@ R hpfDomain() { return { std::numeric_limits<double>::min(), 3999.999999999 }; }
 
 void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
 {
-    d.name (in, "place", o.place, kPlaces);
+    Place place = Place::Both;
+    d.name (in, "place", place, kPlaces);
     const R domain = readDomain (d, in, "manualDomain", o.manualDomain, R { 0.0, 6.0 });
     in.required ("littleNeedDb", o.littleNeedDb, R { 0.0, 24.0 });
     // The classes: short needles are shorter, carry less bass and come with more PLR than long ones; the short class's
@@ -738,7 +740,8 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     d.pair (in, "driveRange", o.driveRange, drive);
     in.required ("driveDb", o.driveDb, drive);
     in.required ("whenTicked", o.whenTickedDb, drive);
-    in.required ("steerDriveMaxDb", o.steerDriveMaxDb, drive);
+    double steerDriveMaxDb = 0.0;   // checked here, read by the master's plan alone (MasterJob::plan)
+    in.required ("steerDriveMaxDb", steerDriveMaxDb, drive);
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain
     in.required ("mixStep", o.mixStep, R { 0.001, 1.0 });
     const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });

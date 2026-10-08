@@ -7,10 +7,12 @@
 // candidate before the waterfall made it (commit 808c058) on every target.
 
 #include "MasterJob.h"
+#include "Devices.h"
 #include "Rules.h"
 #include "embedded/not-cleaner.h"     // the shipped engine, extreme written cleaner = false (CMakeLists.txt)
 #include "embedded/place-start.h"     // ... [limiter.peakClipper] place = "start"
 #include "embedded/place-limiter.h"   // ... place = "limiter"
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/core/DetMath.h>
@@ -224,6 +226,33 @@ void shareFields()
             && ! d.glue.hand.share && ! d.limiter.hand.cutShare
             && ! detail::MasterJob::plan (s, command::Master { 93 }, s.project()).request.waterfall(),
         "all three taken back: no waterfall");
+}
+
+//==============================================================================
+// ONE READER PER KEY: [limiter.peakClipper] place and [saturation] steerDriveMaxDb are read by the master's plan alone —
+// the schema checks them and the typed config holds no copy; and a share's rule is its own (0…1, no step, so the page's
+// 0.001 moves pass), not the glue mix's knob read from [glue] — a glue mix bounded otherwise leaves the shares as they are.
+template <class C> constexpr bool holdsPlace = requires (C c) { c.place; };
+template <class C> constexpr bool holdsDriveCeiling = requires (C c) { c.steerDriveMaxDb; };
+
+void oneReaderPerKey()
+{
+    felitronics::test::group ("one reader per key: place and steerDriveMaxDb in the plan alone, a share's rule its own");
+    constexpr bool placeCopied = holdsPlace<config::PeakClipper>, ceilingCopied = holdsDriveCeiling<config::Saturation>;
+    ok (! placeCopied && ! ceilingCopied, std::string ("the typed config holds no place (") + (placeCopied ? "holds" : "none")
+                                              + ") and no steerDriveMaxDb (" + (ceilingCopied ? "holds" : "none") + ")");
+    auto r = detail::rules();
+    r.glueMix.maximum = { 5, 1, false };   // a glue mix up to 0.5
+    detail::FieldRule glueShare {}, saturationShare {}, cutShare {};
+    detail::DeviceOf<GlueFields<Touched>>::each (r, [&] (unsigned i, const detail::FieldRule& rule, auto&&...) { if (i == 8) glueShare = rule; });
+    detail::DeviceOf<SaturationFields<Touched>>::each (r, [&] (unsigned i, const detail::FieldRule& rule, auto&&...) { if (i == 5) saturationShare = rule; });
+    detail::DeviceOf<LimiterFields<Touched>>::each (r, [&] (unsigned i, const detail::FieldRule& rule, auto&&...) { if (i == 5) cutShare = rule; });
+    bool fine = ! r.glueMix.accepts (0.8, 48000);
+    for (const auto* rule : { &glueShare, &saturationShare, &cutShare })
+        fine = fine && rule->kind == detail::FieldRule::Kind::Knob && rule->knob.accepts (0.0, 48000) && rule->knob.accepts (0.8, 48000)
+            && rule->knob.accepts (0.123, 48000) && rule->knob.accepts (1.0, 48000) && ! rule->knob.accepts (1.001, 48000)
+            && ! rule->knob.accepts (-0.001, 48000) && rule->knob.step.mantissa == 0;
+    ok (fine, "a glue mix bounded at 0.5: the three shares still take 0, 0.123, 0.8 and 1, refuse 1.001 and −0.001, with no step");
 }
 
 //==============================================================================
@@ -652,6 +681,7 @@ void defaultSharesAsBefore()
 int main()
 {
     shareFields();
+    oneReaderPerKey();
     waterfallReport();
     zeroZone();
     driveCeiling();
