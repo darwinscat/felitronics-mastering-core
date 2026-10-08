@@ -81,6 +81,22 @@ struct DamageJobEntry
 inline constexpr std::size_t kMaxDamageGrades = 32;
 static_assert (kMaxDamageGrades + kAnalyzers + 8 <= kEventBatch, "a new source's last words of every grade fit its batch");
 
+// THE MASTERS' QUEUE (MVP): every master accepted is a job; one asked while another is made, while the previous master's
+// PCM waits for its transfer, before the first measurement ended or while the plan it needs is pending is QUEUED with
+// the project as it is at that command (the recipe) and starts by itself, in the order asked, when its turn comes.
+// The snapshot's masterJobs lists the recent ones: Queued (position = how many jobs are ahead of it, the one being made
+// counted), Running (the session's master job: waiting for what its devices read, or rendering), Done (kept), Failed
+// (a contract fault or the heap's refusal at its start), Cancelled (cancel of its job id). A load clears the list.
+enum class MasterJobState : std::uint8_t { Queued, Running, Done, Failed, Cancelled };
+struct MasterJobRow
+{
+    JobId job = 0;
+    MasterJobState state = MasterJobState::Queued;
+    std::uint32_t position = 0;
+};
+inline constexpr std::size_t kMaxQueuedMasters = 8;   // a master asked past it is refused Busy
+inline constexpr std::size_t kMaxMasterJobs = 16;     // the rows the snapshot lists, the oldest finished one dropped first
+
 struct ProjectText
 {
     Rejection rejection = Rejection::None;
@@ -864,6 +880,29 @@ private:
     bool jobMasterAnyway_ = false;
     std::optional<double> jobBudgetResolutionDb_;
     bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
+    // THE MASTERS' QUEUE (MVP): the masters asked while one could not start, each with its job id, its request and the
+    // project at its command; the rows the snapshot lists.
+    struct QueuedMaster
+    {
+        JobId id = 0;
+        command::Master request {};
+        Project project {};
+        bool machineFromFile = false;
+    };
+    std::array<QueuedMaster, kMaxQueuedMasters> masterQueue_ {};
+    std::size_t queuedCount_ = 0;
+    std::array<MasterJobRow, kMaxMasterJobs> masterJobs_ {};
+    std::size_t masterJobCount_ = 0;
+    [[nodiscard]] bool masterQueues (const command::Master& master) const noexcept;
+    [[nodiscard]] bool queueReady() const noexcept;
+    [[nodiscard]] bool queued (JobId job) const noexcept;
+    [[nodiscard]] Checked masterStorage (const command::Master& master, const Project& project, bool queued) const noexcept;
+    void beginMaster (const command::Master& master, const Project& project, bool machineFromFile, JobId queuedId) noexcept;
+    [[nodiscard]] Rejection masterConsent (const command::Master& master, const Project& project) const noexcept;
+    void promoteQueuedMaster() noexcept;
+    void removeQueued (JobId job) noexcept;
+    void noteMasterJob (JobId job, MasterJobState state) noexcept;
+    void forgetMasterJob (JobId job) noexcept;
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};

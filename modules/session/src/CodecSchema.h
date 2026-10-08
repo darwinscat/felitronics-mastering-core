@@ -168,6 +168,15 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (LoudnessMode::MaxExtreme) == 3);
         return 3;
     }
+    else if constexpr (std::is_same_v<T, MasterJobState>)
+    {
+        static_assert (unsigned (MasterJobState::Queued) == 0);
+        static_assert (unsigned (MasterJobState::Running) == 1);
+        static_assert (unsigned (MasterJobState::Done) == 2);
+        static_assert (unsigned (MasterJobState::Failed) == 3);
+        static_assert (unsigned (MasterJobState::Cancelled) == 4);
+        return 4;
+    }
     else if constexpr (std::is_same_v<T, MaxStop>)
     {
         static_assert (unsigned (MaxStop::None) == 0);
@@ -647,6 +656,18 @@ constexpr void checkEnum (LoudnessMode value) noexcept
         case LoudnessMode::MaxClean: break;
         case LoudnessMode::MaxDense: break;
         case LoudnessMode::MaxExtreme: break;
+    }
+}
+
+constexpr void checkEnum (MasterJobState value) noexcept
+{
+    switch (value)
+    {
+        case MasterJobState::Queued: break;
+        case MasterJobState::Running: break;
+        case MasterJobState::Done: break;
+        case MasterJobState::Failed: break;
+        case MasterJobState::Cancelled: break;
     }
 }
 
@@ -1703,6 +1724,16 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, LandingReason>);
         v.field ("reason", x.reason);
     }
+    else if constexpr (std::is_same_v<U, MasterJobRow>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);
+        v.field ("job", x.job);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.position)>, std::uint32_t>);
+        v.field ("position", x.position);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.state)>, MasterJobState>);
+        v.field ("state", x.state);
+    }
     else if constexpr (std::is_same_v<U, MasterMedium>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
@@ -2395,7 +2426,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46, f47, f48, f49, f50, f51, f52, f53] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46, f47, f48, f49, f50, f51, f52, f53, f54] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.field ("canContinueMeasurement", x.canContinueMeasurement);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
@@ -2426,6 +2457,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("machineDifferences", x.machineDifferences);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mandatoryMeasurementsReady)>, bool>);
         v.field ("mandatoryMeasurementsReady", x.mandatoryMeasurementsReady);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterJobs)>, BoundedList<MasterJobRow, 16>>);
+        v.field ("masterJobs", x.masterJobs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterProgress)>, Phase>);
         v.field ("masterProgress", x.masterProgress);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterRowsIncluded)>, bool>);

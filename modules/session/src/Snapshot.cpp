@@ -252,8 +252,22 @@ SnapshotView Session::buildView() const noexcept
     v.tempoChoice = tempoForDevice();
     v.measurementsFromSidecar = measurementsFromSidecar_;
     v.sourceMissingAudio = source_.channels != 0 && ! samples_;
-    v.canMaster = mandatoryReady() && pendingMaster_.master == 0
-        && storageFor (command::Master {}).rejection == Rejection::None;
+    // A master is taken whenever it would be accepted: at once, or queued behind the one being made (MVP).
+    {
+        const bool startable = Table::commands[std::size_t (Command::Master)].cell[std::size_t (column())] == Rejection::None;
+        const bool queues = job_ != 0 || queuedCount_ != 0 || pendingMaster_.master != 0
+            || (startable && project_.manual && plan_.waiting != 0);
+        v.canMaster = ((mandatoryReady() && startable) || queues)
+            && storageFor (command::Master {}).rejection == Rejection::None;
+    }
+    for (std::size_t i = 0; i < masterJobCount_; ++i)
+    {
+        auto row = masterJobs_[i];
+        row.position = 0;
+        for (std::size_t q = 0; q < queuedCount_; ++q)
+            if (masterQueue_[q].id == row.job) row.position = std::uint32_t (q + (job_ != 0 ? 1u : 0u));
+        v.masterJobs.items[v.masterJobs.count++] = row;
+    }
     v.pendingMaster = pendingMaster_;
     v.pendingMasterBytes = double (masterAudioBytes (pendingMaster_));
     v.devicesPlaced = placed();
