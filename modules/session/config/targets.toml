@@ -115,11 +115,11 @@ op59         = { group = "streaming", class = "specification", lufs = -24, tp = 
 # mode starts from when a person switches to it, about what the mode reaches on a home mix (−13, −11).
 maxClean     = { group = "streaming", class = "streaming", lufs = -13, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxClean" }
 maxDense     = { group = "streaming", class = "streaming", lufs = -11, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxDense" }
-# The third max mode (owner, 07.10, MVP): "extreme" lands as loud as a limiter budget of 3 dB allows, with a higher high-pass
+# The third max mode (owner, 07.10): "extreme" lands as loud as a limiter budget of 3 dB allows, with a higher high-pass
 # (50 Hz, the machine's top: its cutoff is always 50 Hz, owner 08.10) and a wider mono bass (150 Hz) so the low end leaves the
 # limiter room; its lufs is the manual mode's start.
 maxExtreme   = { group = "streaming", class = "streaming", lufs = -9, tp = -1, monoBass = 150, hpfFloor = 50, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxExtreme" }
-# The fourth max mode (MVP): "nuke" is extreme's row with a limiter budget of 5 dB ([landing.max]); its lufs,
+# The fourth max mode: "nuke" is extreme's row with a limiter budget of 7 dB ([landing.max]); its lufs,
 # the manual mode's start, is −7.
 maxNuke      = { group = "streaming", class = "streaming", lufs = -7, tp = -1, monoBass = 150, hpfFloor = 50, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxNuke" }
 

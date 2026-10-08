@@ -146,7 +146,7 @@ void theSchemaRefuses()
     mustRefuse (E, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0", "0", Fault::OutOfRange, "landing.limiterSlopeSpacingDb");
     mustRefuse (E, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.01", "0.01", Fault::OutOfRange,
                 "landing.max.budgetResolutionDb");
-    // A max mode's `cleaner` (MVP): true when absent, so it is written only as false; written as false it is read so.
+    // A max mode's `cleaner`: true when absent, so it is written only as false; written as false it is read so.
     mustRefuse (E, "dense = { budgetDb = 1.75 }", "dense = { budgetDb = 1.75, cleaner = true }", "true", Fault::Refused,
                 "landing.max.dense.cleaner", Refusal::WrittenDefault);
     {

@@ -138,14 +138,14 @@ struct Landing
     // active-window P95, a whole number of quarter dB).
     double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
     double cleanBudgetDb = 0.0, denseBudgetDb = 0.0, extremeBudgetDb = 0.0, nukeBudgetDb = 0.0;
-    // Each max mode's `cleaner` (MVP): true (absent) — a wish lands its zones at the loudness the master without the
+    // Each max mode's `cleaner`: true (absent) — a wish lands its zones at the loudness the master without the
     // wishes reached; false — the zones land on the mode's budget.
     bool cleanCleaner = true, denseCleaner = true, extremeCleaner = true, nukeCleaner = true;
     double maxBudgetResolutionDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
-// Where the cut zone's clipper stands (MVP, [limiter.peakClipper] place): at the start of the chain (ahead of the glue,
+// Where the cut zone's clipper stands ([limiter.peakClipper] place): at the start of the chain (ahead of the glue,
 // where the glue or the saturation sounds), inside the limiter, or both — the start one takes the cut, the limiter's keeps
 // its needles for the peaks the glue and the saturation regrow.
 enum class PeakClipperPlace : std::uint8_t { Start, Limiter, Both };
@@ -346,7 +346,7 @@ struct Saturation
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
     double whenTickedDb = 0.0;                 // `whenTicked`: the drive a person's tick gives an untouched drive of 0
-    double steerDriveMaxDb = 0.0;              // `steerDriveMaxDb`: the waterfall's (MVP) ceiling of a steered drive, knob dB
+    double steerDriveMaxDb = 0.0;              // `steerDriveMaxDb`: the waterfall's ceiling of a steered drive, knob dB
     Span driveRange;
     double driveStep = 0.0;
     Comfort driveComfort;                      // the drive's field

@@ -80,7 +80,7 @@ struct MasteringChainConfig
     // which is bit-identical to the three-argument form.
     double sidechainHpfHz = 0.0;
 
-    // THE PEAK CLIPPER AT THE START (MVP, StartClipper): after the EQ and the mono bass, ahead of the compressor, on its
+    // THE PEAK CLIPPER AT THE START (StartClipper): after the EQ and the mono bass, ahead of the compressor, on its
     // own oversampler at `oversampleFactor` / `tapsPerPhase`. Off by default: a chain without it renders as it did.
     bool startClipper = false;
 };
@@ -622,7 +622,7 @@ public:
         return true;
     }
 
-    // THE SOFT CLIPPER AT OTHER SETTINGS, FORESEEN (the waterfall's steering, MVP): what clipperPeaks() would read for
+    // THE SOFT CLIPPER AT OTHER SETTINGS, FORESEEN (the waterfall's steering): what clipperPeaks() would read for
     // `p` over the same input — the loud places' middle bin, its input peak at the bin's centre, its measured ratio
     // scaled by the settled curve's ratio there at `p` against the curve's at the settings in force. `takeDb` is the
     // usual cut, 20·log10 (quietGain / ratio), `peakShiftDb` how much louder the loud places' peak leaves the stage at
@@ -1404,7 +1404,7 @@ private:
         // used to be a hard switch with a reset on the edge: -21.5 dBFS max|Δ²y| into bypass, -48.7 out of it.
         if (cfg_.monoBass || cfg_.stereoAir) stageRefused_ |= ! monoBass_.process (ch, nch_, K_);
 
-        // --- the start clipper (MVP): after the low end is settled, ahead of the glue ---------------
+        // --- the start clipper: after the low end is settled, ahead of the glue ---------------
         if (cfg_.startClipper) start_.process (ch, nch_, K_);
 
         // --- compressor: WARM bypass through its own curve, so nothing has to be aligned --------

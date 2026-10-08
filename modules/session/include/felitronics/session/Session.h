@@ -81,7 +81,7 @@ struct DamageJobEntry
 inline constexpr std::size_t kMaxDamageGrades = 32;
 static_assert (kMaxDamageGrades + kAnalyzers + 8 <= kEventBatch, "a new source's last words of every grade fit its batch");
 
-// THE MASTERS' QUEUE (MVP): every master accepted is a job; one asked while another is made, while the previous master's
+// THE MASTERS' QUEUE: every master accepted is a job; one asked while another is made, while the previous master's
 // PCM waits for its transfer, before the first measurement ended or while the plan it needs is pending is QUEUED with
 // the project as it is at that command (the recipe) and starts by itself, in the order asked, when its turn comes.
 // The snapshot's masterJobs lists the recent ones: Queued (position = how many jobs are ahead of it, the one being made
@@ -880,7 +880,7 @@ private:
     bool jobMasterAnyway_ = false;
     std::optional<double> jobBudgetResolutionDb_;
     bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
-    // THE MASTERS' QUEUE (MVP): the masters asked while one could not start, each with its job id, its request and the
+    // THE MASTERS' QUEUE: the masters asked while one could not start, each with its job id, its request and the
     // project at its command; the rows the snapshot lists.
     struct QueuedMaster
     {

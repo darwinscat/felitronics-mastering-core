@@ -163,7 +163,7 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
             if (f.cutting) f.overDb = *answer.overDb;
             break;
     }
-    // A wished cut share (the waterfall, MVP) cuts needles no person set: from the knob's amount, the landing steers it.
+    // A wished cut share (the waterfall) cuts needles no person set: from the knob's amount, the landing steers it.
     // A wished cut share of 0 takes the needles' clipper out of the chain — a zone at 0 % does not sound.
     if (devices.limiter.hand.cutShare && ! (*devices.limiter.hand.cutShare > detail::kZeroShare)) f.cutting = false;
     else if (devices.limiter.hand.cutShare && ! devices.limiter.hand.needles && ! f.cutting) { f.cutting = true; f.overDb = knob.overDb; }

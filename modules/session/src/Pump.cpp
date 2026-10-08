@@ -392,7 +392,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
 {
     eventCount_ = 0; oldWorldEvents_ = 0;
     // With no work there is no arithmetic to refuse and no publication to number.
-    // A queue waiting only for the previous master's PCM to be taken keeps the shell stepping (MVP).
+    // A queue waiting only for the previous master's PCM to be taken keeps the shell stepping.
     if (! hasWork()) return { queuedCount_ != 0 && pendingMaster_.master != 0 ? StepState::More : StepState::Done, 0, false };
     if (checkFloatingPointEnvironment() != Status::Ok)
     {
@@ -427,7 +427,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
     // The foreground master takes priority over phase two; phase two resumes after it.
     while (units < std::min (budget, kStepUnits) && hasWork())
     {
-        // THE MASTERS' QUEUE (MVP): the head starts when the session's master slot is free and a master may start.
+        // THE MASTERS' QUEUE: the head starts when the session's master slot is free and a master may start.
         if (queueReady()) { promoteQueuedMaster(); ++units; continue; }
         Notification event;
         event.kind = EventKind::Phase;
@@ -614,7 +614,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
                 rows.workedReady.params = masterJob_->winningParams();
-                // THE GLUE'S TRACE THROUGH ITS MIX (MVP): what the glue took off the song — the compressor's reduction
+                // THE GLUE'S TRACE THROUGH ITS MIX: what the glue took off the song — the compressor's reduction
                 // blended with the dry path at the mix that sounded (detail::glueTakenDb, the report's own law), not the
                 // detector's reduction before the mix. The law is monotonic: a bucket's least and most stay exact.
                 if (rows.glueTrace)

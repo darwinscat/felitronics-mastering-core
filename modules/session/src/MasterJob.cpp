@@ -146,7 +146,7 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     h.flag (p.bypassEq); h.flag (p.bypassMonoBass); h.flag (p.bypassCompressor);
     h.flag (p.bypassClipper); h.flag (p.bypassLimiter); h.flag (p.bypassDither);
     h.f64 (p.compressorMix);
-    // The start clipper (MVP): hashed only where it is in the chain, so a chain without it keeps its fingerprint.
+    // The start clipper: hashed only where it is in the chain, so a chain without it keeps its fingerprint.
     if (t.startClipper)
     { h.flag (true); h.f64 (p.startClipCutDb); h.f64 (p.startClipPeakDb); h.flag (p.bypassStartClipper); }
     return h.value;
@@ -438,7 +438,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             || ! std::isfinite (result.floorLufs))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
-    // THE WATERFALL (MVP): a person's wishes, a master the session decides only.
+    // THE WATERFALL: a person's wishes, a master the session decides only.
     if (input.ready.version == 0)
     {
         const auto& d = project.devices;
@@ -459,7 +459,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             result.request.waterfallSaturationDriveMaxDb = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (ceiling / 20.0) - 1.0) * scale);
             result.saturationDriveScale = scale;
         }
-        // TWO CLIPPERS (MVP, owner 08.10: [limiter.peakClipper] place): with a cut wish, where the glue or the saturation
+        // TWO CLIPPERS (owner 08.10: [limiter.peakClipper] place): with a cut wish, where the glue or the saturation
         // sounds, the cut zone is a clipper at the start of the chain — after the high-pass and the mono bass, ahead of
         // the glue, on its own oversampler — steered from the cut the wish starts at. The limiter's clipper stays as the
         // wish set it, unsteered, and catches the peaks the glue and the saturation regrow ("both"), or is off ("start").
@@ -1064,7 +1064,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                 20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudUsualRatio), clipPeaks.loudQuanta };
         }
         else costResult.saturationCutMaxDb.reason = costResult.saturationCutUsualDb.reason = shaping ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
-        // THE WATERFALL (MVP): each zone's take on the delivered render — the glue's P95 through its mix, the saturation's
+        // THE WATERFALL: each zone's take on the delivered render — the glue's P95 through its mix, the saturation's
         // usual cut, the needles' clipper's P95 over what it clipped, the limiter's P95 on its active windows — its share
         // of their total, beside the share asked (the limiter's: the rest), and the mixes and the cut that took it.
         if (waterfall)

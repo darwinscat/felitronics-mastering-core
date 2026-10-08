@@ -198,7 +198,7 @@ struct MasterDamage
     std::optional<double> sourceLraLu, masterLraLu, lraChangeLu, lraChangePercent;
     MeasurementReason lraReason = MeasurementReason::NotImplemented;
 };
-// THE WATERFALL (MVP): what stopped a zone short of (or past) its asked share, by more than 0.1 dB of the total's share
+// THE WATERFALL: what stopped a zone short of (or past) its asked share, by more than 0.1 dB of the total's share
 // (or 3 % of the total, where that is more): its mix at 1 or at 0,
 // the clipper's cut at its domain's end or at 0, its comfort window's red (no moved knob has one yet), a stage that did
 // not sound, or the steering out of moves (Passes). Reached within that; Rest, the limiter's; NoWish, no share asked.
@@ -225,7 +225,7 @@ struct MasterWaterfall
     // A max mode with a wish (cleaner, not louder): the loudness the landing without the wishes reached, and its
     // limiter's take there (P95 on the active windows) — the master with the zones stands on the same loudness.
     std::optional<double> aloneLufs, limiterAloneDb;
-    // Two clippers ([limiter.peakClipper] place, MVP): the cut zone was the start clipper's, and this is what the
+    // Two clippers ([limiter.peakClipper] place): the cut zone was the start clipper's, and this is what the
     // limiter's own clipper took off the peaks the glue and the saturation regrew (a P95 over what it clipped) — a part
     // of the limiter's rest. Absent where the cut zone was the limiter's clipper.
     std::optional<double> regrownDb;

@@ -211,7 +211,7 @@ Checked Session::storageFor (const Request& request) const noexcept
     if (checkFloatingPointEnvironment() != Status::Ok) return rejected (Rejection::FloatingPointEnvironment);
     // 2. STATE
     const auto which = Command (request.index());
-    // THE MASTERS' QUEUE (MVP): a master that cannot start now is queued with the project as it is, never refused for
+    // THE MASTERS' QUEUE: a master that cannot start now is queued with the project as it is, never refused for
     // its timing; what it is asked with is checked now, its demand when its turn comes.
     if (const auto* master = std::get_if<command::Master> (&request); master && masterQueues (*master))
     {
@@ -763,7 +763,7 @@ Answer Session::apply (const Request& request) noexcept
 }
 
 //==============================================================================
-// THE MASTERS' QUEUE (MVP)
+// THE MASTERS' QUEUE
 
 // The consent a clipped source needs before loudness is added — asked at the command, queued or not.
 Rejection Session::masterConsent (const command::Master& master, const Project& project) const noexcept

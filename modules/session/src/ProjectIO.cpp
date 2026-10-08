@@ -309,7 +309,7 @@ struct Writer
                         return;
                     }
                 }
-                // The waterfall (MVP): the mixes and the cut as the landing steered them, the machine's.
+                // The waterfall: the mixes and the cut as the landing steered them, the machine's.
                 if (chain && master.report && master.report->waterfall)
                 {
                     const auto name = Of::fields[field];
@@ -344,7 +344,7 @@ struct Writer
                 else workedLine (Of::fields[field], sounded, origin);
             }, settings, layers.machine, layers.hand, def);
         });
-        // THE WATERFALL (MVP): per zone the share asked, the share reached and the dB taken; the limiter's asked is the rest.
+        // THE WATERFALL: per zone the share asked, the share reached and the dB taken; the limiter's asked is the rest.
         if (chain && master.report && master.report->waterfall)
         {
             const auto& w = *master.report->waterfall;

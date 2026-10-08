@@ -79,8 +79,8 @@ limiterSlopeSpacingDb = 0.5
 # ladder (allStreaming, TP −1), medians of the home mixes / the Cambridge corpus:
 #   clean   budget 0.5 dB — −13.05 / −12.04 LUFS, a little above streaming
 #   dense   budget 1.75 dB — −11.22 / −10.53 LUFS
-#   extreme budget 3 dB (owner, 07.10, MVP) — not yet measured on the ladder
-#   nuke    budget 7 dB — asked for about −8 LUFS on Cold Gaze; not measured on the ladder. With its zones (10/40/10) on
+#   extreme budget 3 dB (owner, 07.10) — by ear, not measured on the ladder
+#   nuke    budget 7 dB — by ear (about −8 LUFS asked on Cold Gaze), not measured on the ladder. With its zones (10/40/10) on
 #           three songs: Cold Gaze −8.03, cat-in-space −7.89, Deny Control −7.08 LUFS, worst-window ODG −0.75 / −0.43 / −0.85
 # cleaner: with a wish of shares, true (absent) lands the master without the wishes on the budget first and the zones at
 #   that loudness (cleaner, not louder); false lands the zones on the budget at once. Written only as false. Measured
@@ -161,7 +161,7 @@ oversamplingDomain = [2, 16]
 # manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel — 0 to 6 dB, the whole domain — and step, 0.1 dB (owner,
 #   02.10); 0 since 07.10 — no step, a typed cut is kept as typed (owner: «все ручки недискретные»). The manual cut
 #   starts at betweenCutDb, the "between" class, inside manualDomain.
-# place (MVP, owner 08.10): where the cut zone's clipper stands — "start" (after the high-pass and the mono bass, ahead of the
+# place (owner 08.10): where the cut zone's clipper stands — "start" (after the high-pass and the mono bass, ahead of the
 #   glue, on its own x4 oversampler; only where the glue or the saturation sounds, else the limiter's takes the cut),
 #   "limiter" (inside the limiter, as before), "both" (the start one takes the cut zone, the limiter's keeps its needles for
 #   the peaks the glue and the saturation regrow, reported apart within the limiter's rest).
@@ -545,8 +545,8 @@ mixDomain = [0, 1]
 shape = "tape"
 driveDb = 0
 whenTicked = 6
-# steerDriveMaxDb (owner, 08.10): the waterfall (MVP) raises the drive, on the knob's dB, when the mix at 100 % takes less
-#   than the wished share — up to this, never a person's drive. The comfort's red warns a person; it does not stop the machine.
+# steerDriveMaxDb (owner, 08.10): the waterfall raises the drive, on the knob's dB, when the mix at 100 % takes less
+#   than the wished share — up to this, never a person's drive; 10 dB is by ear, not measured on the ladder. The comfort's red warns a person; it does not stop the machine.
 steerDriveMaxDb = 10
 driveRange = [0, 12]
 driveStep = 0

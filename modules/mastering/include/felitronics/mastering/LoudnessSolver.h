@@ -884,7 +884,7 @@ struct LoudnessRequest
     // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
     // Appended so positional initialisers written against the older public aggregate retain their meaning.
     double clipperLoudShare = std::numeric_limits<double>::quiet_NaN();
-    // THE WATERFALL (MVP), `productLanding` only: a person's wish of the share of the peak work at the landing — the glue's
+    // THE WATERFALL, `productLanding` only: a person's wish of the share of the peak work at the landing — the glue's
     // reduction (P95, through its mix), the saturation's usual cut, the needles' clipper's cut (P95 of what it clipped)
     // and the limiter's P95 on its active windows, together — each stage takes; the limiter takes the rest. NaN: no wish
     // (all three NaN, the landing is exactly the one without them). LandingSearch steers the compressor's mix, the
