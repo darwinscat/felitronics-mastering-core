@@ -456,6 +456,9 @@ enum class Term : std::uint16_t
     LoudnessModeMaxExtreme,
     // The fourth max mode (08.10, MVP), as a max mode's verdict names it.
     LoudnessModeMaxNuke,
+    // The waterfall's three shares as the fields a refusal names: the glue's ninth, the saturation's sixth and the
+    // limiter's sixth field, in Project.h's order.
+    FieldGlueShare, FieldSaturationShare, FieldLimiterCutShare,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };
