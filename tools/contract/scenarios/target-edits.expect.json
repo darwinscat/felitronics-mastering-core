@@ -159,7 +159,12 @@
       "value": {
         "mix": null,
         "on": null,
-        "upToDb": null
+        "upToDb": null,
+        "thresholdDb": null,
+        "ratio": null,
+        "kneeDb": null,
+        "attackMs": null,
+        "releaseMs": null
       },
       "session": "main"
     },
@@ -191,7 +196,10 @@
       "path": "project.devices.limiter.hand",
       "value": {
         "needles": null,
-        "needlesDb": null
+        "needlesDb": null,
+        "releaseMs": null,
+        "lookaheadMs": null,
+        "oversampling": null
       },
       "session": "main"
     },

@@ -1,4 +1,5 @@
 create left 67108864
+command {"kind":"setTarget","commandId":"3","target":"allStreaming"}
 load 1 mono
 step 2 work units
 snapshot
