@@ -1373,9 +1373,8 @@ including wasm32, runs its own probe; codec field/type lines are frozen beside t
 frozen line to remain and permits additions. Its control deletes and changes each line and requires rejection.
 CI runs the gate and control. The Windows Debug selection includes the session ABI suites.
 Every `fc_session_*` declaration is frozen whatever it returns: one the generator cannot read stops it. Two lines are
-floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSION`: after the first release, each batch
-of additions that lands together in one release moves it up by one and adds one row to the header's VERSION HISTORY; a
-lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
+floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSION`: the frozen line holds when the
+compiled value is at least it; a lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
 `SessionStatus` union is read from `fc_session_status` by both generators, and a wire record that mirrors a C struct
 (`SessionCapabilities`) must carry each of its fields. The manifest itself only grows from its declared base: its line
 `base v0.6.0` names the release it starts from, and on a pull request CI compares it with the base branch's

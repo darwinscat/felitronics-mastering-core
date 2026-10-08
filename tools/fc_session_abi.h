@@ -25,10 +25,8 @@
 // values may be appended. tools/session-abi-check.mjs compares a compiled probe to the v1 manifest
 // on every tier, including wasm32; its mutation control must fail on a changed or missing line.
 //
-// FC_SESSION_ABI_VERSION IS A FLOOR, as FC_MASTER_ABI_VERSION is: after the first release that carries this surface,
-// each batch of additions that lands together in one release — entry points, fields, values — moves the number up by
-// one and adds one row below, so a page's "module version >= page version" gate is its protection against calling an
-// export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
+// FC_SESSION_ABI_VERSION IS A FLOOR, as FC_MASTER_ABI_VERSION is: a page's "module version >= page version" gate is
+// its protection against calling an export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
 // manifest's `define FC_SESSION_ABI_VERSION=4` is therefore checked as "at least 4", like a boundary struct's size;
 // a lower number is a change. The manifest itself only grows from its declared base (`base v0.6.0`): CI refuses a pull
 // request that removes or edits a line under the same base, or declares an older one.
