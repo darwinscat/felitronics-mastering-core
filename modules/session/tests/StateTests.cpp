@@ -1067,12 +1067,15 @@ void theMachinePlacesWhatAPersonCouldSet()
                     if constexpr (std::is_same_v<T, double>)
                     {
                         const auto x = detail::decimalOf (v);
-                        good = x && detail::compare (*x, rule.knob.from) >= 0 && detail::compare (*x, rule.knob.to) <= 0
-                            && (rule.knob.step.mantissa == 0 || detail::onGrid (*x, rule.knob.from, rule.knob.step))
+                        // The glue's five (fields 3…7) are the law's numbers at the amount, not a typed value: inside
+                        // their domain, at any precision.
+                        const bool law = device == Device::Glue && i >= 3;
+                        good = (law ? rule.knob.accepts (v, 48000) : x && detail::compare (*x, rule.knob.from) >= 0 && detail::compare (*x, rule.knob.to) <= 0
+                            && (rule.knob.step.mantissa == 0 || detail::onGrid (*x, rule.knob.from, rule.knob.step)))
                             && std::bit_cast<std::uint64_t> (v) != std::bit_cast<std::uint64_t> (-0.0);
                     }
                     else if constexpr (std::is_same_v<T, std::int32_t>)
-                        good = r.slope (v);
+                        good = rule.kind == detail::FieldRule::Kind::Oversampling ? r.oversampling (v) : r.slope (v);
                     else if constexpr (std::is_same_v<T, Needles>)
                         good = std::uint8_t (v) <= std::uint8_t (Needles::Off);
                     if (! good)

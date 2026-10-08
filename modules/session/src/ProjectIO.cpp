@@ -589,13 +589,17 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         fail (Rejection::PlanPending, t.find ("name")->position);
         return out;
     }
-    eachDevice (out.project.devices, [&] (Device device, const auto& layers)
+    eachDevice (out.project.devices, [&] (Device device, auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
         const auto* section = root.find (Of::name);
         const auto* table = section ? std::get_if<toml::Table> (&section->data) : nullptr;
-        Of::each (rules, [&] (std::uint8_t i, const FieldRule&, const auto& machine, const auto& hand, const auto& current)
+        Of::each (rules, [&] (std::uint8_t i, const FieldRule&, auto& machine, const auto& hand, const auto& current)
         {
+            // The glue's five follow the amount by the law and are no decision: a machine value a file wrote for them (an
+            // earlier build's numbers of its own input) gives way to the machine's for this source and is no difference.
+            if constexpr (std::is_same_v<std::remove_cvref_t<decltype (layers.machine)>, GlueFields<Value>>)
+                if (i >= 3) machine = current;
             const auto at = [&] (std::string_view author)
             {
                 const auto* v = table ? table->find (Of::fields[i]) : nullptr;
