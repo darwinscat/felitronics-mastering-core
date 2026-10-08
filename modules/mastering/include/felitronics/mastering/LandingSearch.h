@@ -177,7 +177,7 @@ public:
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;
         waterfallOn_ = request.productLanding && request.waterfall();
-        waterfallFrozen_ = false; waterfallSteps_ = 0;
+        waterfallFrozen_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
         wall_ = false; wallSlope_ = std::numeric_limits<double>::quiet_NaN();
         records_ = {};
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
@@ -570,7 +570,17 @@ private:
             peakProbe_ = true;
             params_.peakClipPeakDb = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
             if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
-            chooseNext (valid);
+            // The waterfall steers the glue and the saturation on this pass too (their takes do not depend on the
+            // clipper's threshold); the needles' cut waits for a pass that cut by the measured peak.
+            double shift = 0.0;
+            if (waterfallOn_ && ! waterfallFrozen_ && valid && steerWaterfall (rec, true, shift))
+            {
+                if (budgetOn_) (void) keepsBudget (rec);
+                const double excess = budgetExcess_[(std::size_t) (passes_ - 1)];
+                forgetBeforeSteer();
+                aimAfterSteer (valid, excess, shift);
+            }
+            else chooseNext (valid);
             phase_ = Phase::PassBegin;
             return StepResult::More;
         }
@@ -580,13 +590,14 @@ private:
         // and the landing goes on as any landing, from this pass.
         if (waterfallOn_ && ! waterfallFrozen_)
         {
-            if (valid && steerWaterfall (rec))
+            double shift = 0.0;
+            if (valid && steerWaterfall (rec, false, shift))
             {
                 if (budgetOn_) (void) keepsBudget (rec);
-                haveBest_ = haveOverBudget_ = haveUnsafe_ = haveBelow_ = haveAbove_ = wall_ = false;
-                bestError_ = std::numeric_limits<double>::infinity(); bestPass_ = 0;
+                const double excess = budgetExcess_[(std::size_t) (passes_ - 1)];
+                forgetBeforeSteer();
                 if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
-                chooseNext (valid);
+                aimAfterSteer (valid, excess, shift);
                 phase_ = Phase::PassBegin;
                 return StepResult::More;
             }
@@ -603,7 +614,7 @@ private:
             && request_.limiterSlopeBelow > 0 && ! request_.budgetAimsAtCrossing)
         {
             double spacing = std::numeric_limits<double>::infinity();
-            for (int i = 0; i + 1 < passes_; ++i)
+            for (int i = waterfallFrom_; i + 1 < passes_; ++i)
             {
                 const auto& prior = records_[(std::size_t) i];
                 const double cut = rec.limiterP95Db - prior.limiterP95Db;
@@ -841,8 +852,9 @@ private:
     // glue's and the saturation's mix by the blend's own law (the glue's compressed path does not move with its mix; the
     // saturation's full cut is read back through its present mix), the clipper's cut by the shortfall in dB. True where
     // anything moved; at most kWaterfallSteps moves, and none once fewer than four passes are left.
-    bool steerWaterfall (const SolvePassRecord& rec) noexcept
+    bool steerWaterfall (const SolvePassRecord& rec, bool probe, double& shift) noexcept
     {
+        shift = 0.0;
         if (waterfallSteps_ >= kWaterfallSteps || passes_ > request_.maxPasses - 4) return false;
         const auto& m = measurement_;
         const double glueFull = m.compressor.valid && std::isfinite (m.compressor.p95Db) ? std::fmax (0.0, m.compressor.p95Db) : 0.0;
@@ -877,10 +889,26 @@ private:
         }
         const bool clipping = params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb);
         const double cutEnd = std::fmax (0.0, request_.waterfallCutMaxDb);
-        // The most each zone can take: the glue's and the saturation's full path at a mix of 1, the clipper's take moved dB
-        // for dB with its cut to the domain's end; nothing for a stage that does not sound.
+        // THE SATURATION FORESEEN (MasteringChain::clipperForesee): its take and how much louder its loud places leave it
+        // at another mix and drive, read off this pass's counters — the steering lands it in one move, and the gain of the
+        // next pass is held back by the peak it adds. The drive rises from where it stands, up to the request's ceiling,
+        // by at most kWaterfallDriveStepDb a move.
+        const double drive0 = double (params_.clipper.driveDb), driveMax = request_.waterfallSaturationDriveMaxDb;
+        const double driveTop = std::isfinite (driveMax) ? std::fmax (drive0, std::fmin (driveMax, drive0 + kWaterfallDriveStepDb)) : drive0;
+        double topLift = 0.0;
+        const auto foresee = [&] (double mix, double drive, double& take, double& lift) noexcept
+        {
+            auto q = params_.clipper;
+            q.mix = float (mix); q.driveDb = float (drive);
+            return std::isfinite (request_.clipperLoudShare) && chain_->clipperForesee (request_.clipperLoudShare, q, take, lift, topLift);
+        };
+        double satTop = 0.0, liftTop = 0.0;
+        const bool foreseen = ! params_.bypassClipper && foresee (1.0, driveTop, satTop, liftTop);
+        // The most each zone can take: the glue's and the saturation's full path at a mix of 1 (the saturation's at the
+        // most drive this move may reach, where it is foreseen), the clipper's take moved dB for dB with its cut to the
+        // domain's end; nothing for a stage that does not sound.
         const double glueMost = params_.bypassCompressor ? 0.0 : glueFull;
-        const double satMost = params_.bypassClipper ? 0.0 : satFull;
+        const double satMost = params_.bypassClipper ? 0.0 : foreseen ? satTop : satFull;
         const double cutMost = clipping ? std::fmax (0.0, cut + cutEnd - params_.peakClipCutDb) : 0.0;
         // THE TOTAL WHERE EVERY WISH IS MET: the limiter's take and every zone with no wish as they are, every zone at its
         // most where its share of that total lies past it, the rest of the total shared by the wishes — T = held / (1 − free).
@@ -912,18 +940,75 @@ private:
             { return std::isfinite (share) && std::fabs (want (share) - taken) > near; };
         MasteringChainParams next = params_;
         bool moved = false;
+        // What the moves before the gain node add to the loudest peak, for the needles' threshold of the next pass.
+        double peakLift = 0.0;
         if (off (sGlue, glue) && ! params_.bypassCompressor)
         {
             const double mix = mixFor (glueFull, want (sGlue));
-            if (std::fabs (mix - params_.compressorMix) > 0.02) { next.compressorMix = mix; moved = true; }
+            // The glue's loud places come down by what it takes more: the next pass's gain rises by as much.
+            if (std::fabs (mix - params_.compressorMix) > 0.02)
+                { next.compressorMix = mix; moved = true; shift -= blendTakenDb (glueFull, mix) - glue; peakLift -= blendTakenDb (glueFull, mix) - glue; }
         }
-        if (off (sSaturation, saturation) && ! params_.bypassClipper)
+        // The foresight's own error, from the last move: the share of the change it foresaw that came (a secant on
+        // the curve) — the next aim is set so that share of it lands on the want.
+        double satAim = want (sSaturation);
+        if (satArmed_ && std::fabs (satForeseen_ - satFrom_) > 0.05)
+        {
+            const double came = std::clamp ((saturation - satFrom_) / (satForeseen_ - satFrom_), 0.25, 4.0);
+            satAim = saturation + (want (sSaturation) - saturation) / came;
+        }
+        satArmed_ = false;
+        if (off (sSaturation, saturation) && ! params_.bypassClipper && foreseen)
+        {
+            const double w = std::fmax (0.0, satAim);
+            double mix = 1.0, drive = drive0, take = 0.0, lift = 0.0;
+            double full = 0.0, fullLift = 0.0;
+            if (foresee (1.0, drive0, full, fullLift) && full > w)
+            {
+                // The mix at the drive in force: the take rises with it, from nothing at 0.
+                double lo = 0.0, hi = 1.0;
+                for (int i = 0; i < 40; ++i)
+                {
+                    const double mid = 0.5 * (lo + hi);
+                    double t = 0.0, l = 0.0;
+                    if (! foresee (mid, drive0, t, l)) break;
+                    (t < w ? lo : hi) = mid;
+                }
+                mix = 0.5 * (lo + hi);
+            }
+            else if (driveTop > drive0 + 0.05 && full + near < w)
+            {
+                // The mix at 1 and still short: the drive, up to this move's top, where the take meets the want.
+                if (satTop <= w) drive = driveTop;
+                else
+                {
+                    double lo = drive0, hi = driveTop;
+                    for (int i = 0; i < 40; ++i)
+                    {
+                        const double mid = 0.5 * (lo + hi);
+                        double t = 0.0, l = 0.0;
+                        if (! foresee (1.0, mid, t, l)) break;
+                        (t < w ? lo : hi) = mid;
+                    }
+                    drive = 0.5 * (lo + hi);
+                }
+            }
+            const bool mixMoves = std::fabs (mix - satMix) > 0.02, driveMoves = drive > drive0 + 0.1;
+            if ((mixMoves || driveMoves) && foresee (mixMoves ? mix : satMix, driveMoves ? drive : drive0, take, lift))
+            {
+                if (mixMoves) next.clipper.mix = float (mix);
+                if (driveMoves) next.clipper.driveDb = float (drive);
+                moved = true; shift += lift; peakLift += topLift;
+                satArmed_ = true; satFrom_ = saturation; satForeseen_ = take;
+            }
+        }
+        else if (off (sSaturation, saturation) && ! params_.bypassClipper)
         {
             const double mix = std::isfinite (satFull) ? mixFor (satFull, want (sSaturation)) : 1.0;
             if (std::fabs (mix - satMix) > 0.02) { next.clipper.mix = float (mix); moved = true; }
             // THE DRIVE (owner, 08.10): the mix at 1 and even the full path short of the want, the drive rises from where
             // it stands — the full path's take scaled near in proportion to it — up to the request's ceiling.
-            const double drive = double (params_.clipper.driveDb), driveMax = request_.waterfallSaturationDriveMaxDb;
+            const double drive = drive0;
             if (std::isfinite (driveMax) && mix >= 0.999 && std::isfinite (satFull) && satFull + near < want (sSaturation) && drive < driveMax - 0.05)
             {
                 const double to = std::fmin (driveMax, satFull > 0.05 && drive > 0.05 ? drive * want (sSaturation) / satFull
@@ -931,7 +1016,7 @@ private:
                 if (to > drive + 0.1) { next.clipper.driveDb = float (to); moved = true; }
             }
         }
-        if (off (sCut, cut) && clipping)
+        if (! probe && off (sCut, cut) && clipping)
         {
             // The clipper's take (a P95 over what it clipped) moves near in proportion to its cut, not dB for dB
             // (measured, Cold Gaze, 08.10: a cut of 3 dB took 1.5): the cut scaled by want / take where it takes
@@ -945,10 +1030,36 @@ private:
         // this pass's, at a gain of 0.
         if (params_.limiter.peakClip && std::isfinite (params_.peakClipPeakDb)
             && std::isfinite (m.limiterMaxReconstructedPeakDb) && m.limiterMaxReconstructedPeakDb > -180.0)
-            next.peakClipPeakDb = m.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
+            next.peakClipPeakDb = m.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb + peakLift;
         params_ = next;
         ++waterfallSteps_;
         return true;
+    }
+
+    // A move of the stages: every render before it ran with other stages, so none is a candidate, a bracket end, a
+    // slope or a budget reading any more — the landing goes on from the next pass, at the gain this pass's reading
+    // aims at, held back by what the move adds to the peak.
+    // The gain of the pass after a move: aimed as any (chooseNext), held — in a landing with a budget, this pass over
+    // it or within a dB of it — back from this pass's drive by its excess (a dB of the statistic per dB of drive, the
+    // half resolution more), and lowered by what the move adds to the loud places' peak. Call after forgetBeforeSteer.
+    void aimAfterSteer (bool valid, double excess, double shift) noexcept
+    {
+        const double drive = gain_ - ceiling_;
+        chooseNext (valid);
+        havePrevious_ = false;
+        double next = gain_ - ceiling_;
+        if (budgetOn_ && std::isfinite (excess) && excess > -1.0)
+            next = std::fmin (next, drive - excess - 0.5 * request_.budgetResolutionDb);
+        gain_ = std::clamp (next + ceiling_ - shift, -60.0, 60.0);
+    }
+
+    void forgetBeforeSteer() noexcept
+    {
+        haveBest_ = haveOverBudget_ = haveUnsafe_ = haveBelow_ = haveAbove_ = wall_ = false;
+        bestError_ = std::numeric_limits<double>::infinity(); bestPass_ = 0;
+        for (int k = 0; k < passes_; ++k) budgetExcess_[(std::size_t) k] = std::numeric_limits<double>::quiet_NaN();
+        chordOverDrive_ = std::numeric_limits<double>::quiet_NaN(); chordStale_ = 0;
+        waterfallFrom_ = passes_;
     }
 
     double driveOf (int pass) const noexcept
@@ -1180,8 +1291,12 @@ private:
     int chordStale_ = 0;
     static constexpr int kWaterfallSteps = 4;
     static constexpr double kWaterfallToleranceDb = 0.1, kWaterfallToleranceShare = 0.03;
+    static constexpr double kWaterfallDriveStepDb = 6.0;
     bool waterfallOn_ = false, waterfallFrozen_ = false;
     int waterfallSteps_ = 0;
+    int waterfallFrom_ = 0;
+    bool satArmed_ = false;               // the saturation moved last step: its take then and the take foreseen
+    double satFrom_ = 0.0, satForeseen_ = 0.0;   // the first pass that ran with the stages as they stand: what came before proves nothing
 };
 
 inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,
