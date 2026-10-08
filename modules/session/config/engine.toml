@@ -386,7 +386,7 @@ trustedConfidence = "high"
 # THE GLUE — one continuous knob for the whole compressor, "up to N dB" (owner decisions 3.8, 3.8а): what a person turns,
 # what a project holds and what every glue number below is written in. N IS THE LOSS ON THE LOUD PLACES: the static curve
 # takes exactly N dB at the short-term P95 of the input brought to [input] referenceLufs — not a ceiling on the live
-# reduction; what the compressor really did (its P95 and its maximum) is measured after the master and reported. The
+# reduction; what the glue really took (its P95 and its maximum, after its mix) is measured after the master and reported. The
 # machine sets it only on the targets in byTarget (cd alone), never above knobMaxDb; everywhere else it is a taste of the
 # manual mode. 0, the left end, takes the compressor out of the chain — not "a compressor at zero". The glue does not enter
 # the loudness path: with a 12…30 ms attack it lowers loudness, not peaks. Without a P95 the glue is unavailable to the

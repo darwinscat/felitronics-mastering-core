@@ -136,9 +136,10 @@ struct MasterCost
     std::uint64_t sourceFrames = 0, masterFrames = 0;
     std::span<const MasterSection> sections;
     std::span<const MasterWaveformBucket> waveform;
-    // WHAT THE GLUE AND THE SATURATION DID, each measured on its own stage (owner decisions 3.8, 3.9), dB, positive.
-    // The glue: the compressor's gain reduction over the programme in 4 ms windows — its P95, the loud places, and its
-    // largest sample. The saturation: how much less the peak of a loud place got than a quiet sound does — the peak
+    // WHAT THE GLUE AND THE SATURATION DID, each measured on its own stage after its own mix (owner decisions 3.8, 3.9),
+    // dB, positive. The glue: what its output lost against its input — the compressor's gain reduction over the
+    // programme in 4 ms windows, its P95, the loud places, and its largest sample, each carried through the parallel
+    // blend at the mix the stage applied (owner, 08.10); at mix 1 the compressor's own numbers. The saturation: how much less the peak of a loud place got than a quiet sound does — the peak
     // of the stage's input against the peak of its output, quantum by quantum, the mix and the output knob included;
     // the largest cut and the usual one, the median, over the loudest [saturation] cut.loudShare of the quanta. Never
     // the fall of the whole chain's true peak. A stage out of the chain has no number: NoSignal.
