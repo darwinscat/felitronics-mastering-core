@@ -317,6 +317,10 @@ void driveCeiling()
             && std::fabs (*w->saturation.drive - ceiling) <= 0.1 && w->saturation.setting && *w->saturation.setting >= 0.999,
         std::string (target) + ", asked 100 %: the mix at 1, the drive " + num (w && w->saturation.drive ? *w->saturation.drive : -1.0) + " dB at the ceiling "
             + num (ceiling) + " dB, stop " + std::to_string (w ? unsigned (w->saturation.stop) : 99u) + ", mix " + num (w && w->saturation.setting ? *w->saturation.setting : -1.0));
+    // The as-worked export names that stop as the codec does (its table once held one name fewer than the stops).
+    const std::string worked = k ? std::string (s.exportWorked (k->id).view()) : std::string();
+    ok (worked.find ("saturationStop = \"driveAtCeiling\"") != std::string_view::npos,
+        std::string (target) + ": the as-worked export says saturationStop = \"driveAtCeiling\"");
     }
 }
 
