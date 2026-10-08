@@ -533,6 +533,9 @@ mixDomain = [0, 1]
 shape = "tape"
 driveDb = 0
 whenTicked = 6
+# steerDriveMaxDb (owner, 08.10): the waterfall (MVP) raises the drive, on the knob's dB, when the mix at 100 % takes less
+#   than the wished share — up to this, never a person's drive. The comfort's red warns a person; it does not stop the machine.
+steerDriveMaxDb = 10
 driveRange = [0, 12]
 driveStep = 0
 driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }

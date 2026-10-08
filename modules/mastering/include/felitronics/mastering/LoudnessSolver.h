@@ -894,6 +894,8 @@ struct LoudnessRequest
     double waterfallSaturationShare = std::numeric_limits<double>::quiet_NaN();
     double waterfallCutShare = std::numeric_limits<double>::quiet_NaN();
     double waterfallCutMaxDb = 6.0;
+    // The saturation's drive ceiling for the waterfall, in the clipper's own (peak-aligned) dB: NaN, the drive stays.
+    double waterfallSaturationDriveMaxDb = std::numeric_limits<double>::quiet_NaN();
     bool waterfall() const noexcept
     {
         return std::isfinite (waterfallGlueShare) || std::isfinite (waterfallSaturationShare) || std::isfinite (waterfallCutShare);

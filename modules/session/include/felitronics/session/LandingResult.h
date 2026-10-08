@@ -202,8 +202,9 @@ struct MasterDamage
 // (or 3 % of the total, where that is more): its mix at 1 or at 0,
 // the clipper's cut at its domain's end or at 0, its comfort window's red (no moved knob has one yet), a stage that did
 // not sound, or the steering out of moves (Passes). Reached within that; Rest, the limiter's; NoWish, no share asked.
+// DriveAtCeiling: the saturation's mix at 1 and its steered drive at [saturation] steerDriveMaxDb.
 enum class WaterfallStop : std::uint8_t { Reached, MixAtOne, MixAtZero, CutAtEnd, CutAtZero, ComfortRed, NotSounding, Passes, Rest,
-                                          NoWish };
+                                          NoWish, DriveAtCeiling };
 // One zone: the share of the peak work a person asked (absent: no wish; the limiter's, the rest), the share the delivered
 // render reached, the dB the zone took — the glue's P95 through its mix, the saturation's usual cut, the needles' clipper's
 // P95 over what it clipped, the limiter's P95 on its active windows — the setting the landing steered to (the glue's and
@@ -212,6 +213,7 @@ struct MasterWaterfallZone
 {
     std::optional<double> asked, reached, db, setting;
     WaterfallStop stop = WaterfallStop::NoWish;
+    std::optional<double> drive;   // the saturation's drive as the landing steered it, the knob's dB; absent elsewhere
 };
 // The four zones, their total in dB, and the passes the fitting took beyond the landing's own (each a render the steering
 // moved the stages after, so never a candidate).
