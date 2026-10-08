@@ -191,7 +191,12 @@ void theSchemaRefuses()
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
     // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
-    mustRefuse (E, "whenTicked = 0.5", "whenTicked = 3.5", "3.5", Fault::OutOfRange, "glue.whenTicked");
+    mustRefuse (E, "whenTicked = 2.6", "whenTicked = 3.5", "3.5", Fault::OutOfRange, "glue.whenTicked");
+    // The tick's character lies in each field's own domain (ratio 1…10, attack within attackMsDomain), and the saturation's
+    // tick within the drive's domain.
+    mustRefuse (E, "ticked = { ratio = 2,", "ticked = { ratio = 11,", "11", Fault::OutOfRange, "glue.ticked.ratio");
+    mustRefuse (E, "attackMs = 30, releaseMs = 300 }", "attackMs = 0, releaseMs = 300 }", "0", Fault::OutOfRange, "glue.ticked.attackMs");
+    mustRefuse (E, "whenTicked = 6", "whenTicked = 13", "13", Fault::OutOfRange, "saturation.whenTicked");
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3 }");
     mustAccept (T, "lowDb = 0.5", "lowDb = 5.25");
     mustAccept (T, "monoBass = 150, hpfFloor = 32", "monoBass = 150, hpfFloor = 100.25");

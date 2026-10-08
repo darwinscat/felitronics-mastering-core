@@ -112,7 +112,11 @@ constexpr Golden kGolden[] = {
     // measured, every one of the 30 targets' untouched master of Cold Gaze of Eternity and of Cat in Space is byte for byte
     // v0.20.0's (PCM and WAV, native), so a v0.20.0 project keeps its sound and its import; it was 06ea4bbff433f2e6; updated
     // in place, as above.
-    { "2026-10", 0x3299e8a01bc682c9ull },
+    // ...and a person's tick (owner, 08.10): [glue] whenTicked 2.6 with its ticked character (ratio 2, knee 6 dB, attack
+    // 30 ms, release 300 ms) and [saturation] whenTicked 6 — a master a person ticked a glue or a saturation on for sounds
+    // otherwise; no untouched master moves (a tick is a person's: no target's untouched master has one); it was
+    // 3299e8a01bc682c9; updated in place, as above.
+    { "2026-10", 0x2b0de0cc2cc8ac7bull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -289,7 +293,11 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.0),
           "the glue knob runs 0…3 dB, stepless (owner, 07.10)");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
-    need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
+    need (same (e.glue.whenTickedUpToDb, 2.6), "ticked on untouched, the glue is up to 2.6 dB (owner, 08.10)");
+    need (same (e.glue.ticked.ratio, 2.0) && same (e.glue.ticked.kneeDb, 6.0) && same (e.glue.ticked.attackMs, 30.0)
+          && same (e.glue.ticked.releaseMs, 300.0),
+          "a tick on an untouched glue gives it ratio 2, knee 6 dB, attack 30 ms and release 300 ms — glue, not a compressor (owner, 08.10)");
+    need (same (e.saturation.whenTickedDb, 6.0), "ticked on untouched, the saturation drives 6 dB (owner, 08.10)");
     need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.0) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
           && same (e.glue.mixDomain.min, 0.0) && same (e.glue.mixDomain.max, 1.0),
           "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)");
@@ -485,7 +493,10 @@ void aDepartureIsNamed()
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
-        { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "whenTicked = 2.6", "whenTicked = 2.7", "ticked on untouched, the glue is up to 2.6 dB (owner, 08.10)" },
+        { false, "ticked = { ratio = 2,", "ticked = { ratio = 2.5,",
+          "a tick on an untouched glue gives it ratio 2, knee 6 dB, attack 30 ms and release 300 ms — glue, not a compressor (owner, 08.10)" },
+        { false, "whenTicked = 6", "whenTicked = 5", "ticked on untouched, the saturation drives 6 dB (owner, 08.10)" },
         { false, "aboveLufs = -12", "aboveLufs = -13",
           "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
         { false, "peakAboveDbTp = -1.5", "peakAboveDbTp = -2",

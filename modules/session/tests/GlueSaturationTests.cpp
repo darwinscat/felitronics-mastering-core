@@ -331,8 +331,10 @@ void theMachine()
     }
     ok (glue, "glue: ticked at 2.6 dB on cd, off at 0 everywhere else — and nowhere above the slider's 3 dB");
     ok (saturation, "saturation: off at 0 dB on every target — a taste of the manual mode");
-    ok (same (engine.glue.knobMaxDb, 3.0) && same (engine.glue.domain.max, 6.0) && same (engine.glue.whenTickedUpToDb, 0.5),
-        "the slider runs to 3, the core takes 6, a tick starts at 0.5");
+    ok (same (engine.glue.knobMaxDb, 3.0) && same (engine.glue.domain.max, 6.0) && same (engine.glue.whenTickedUpToDb, 2.6)
+        && same (engine.glue.ticked.ratio, 2.0) && same (engine.glue.ticked.kneeDb, 6.0) && same (engine.glue.ticked.attackMs, 30.0)
+        && same (engine.glue.ticked.releaseMs, 300.0) && same (engine.saturation.whenTickedDb, 6.0),
+        "the slider runs to 3, the core takes 6, a tick starts at 2.6 with ratio 2, knee 6 dB, attack 30 ms, release 300 ms; a saturation's at 6 dB");
     const Faked quiet ("cd", -56.0, -40.0, -50.0);
     Devices d; DevicePlans plans; detail::PlanFindings found;
     detail::propose (quiet.in, d, plans, found);
@@ -341,16 +343,16 @@ void theMachine()
 
 void aPersonsKnob()
 {
-    felitronics::test::group ("a person's glue: a tick starts at 0.5 dB; 0…6 as written; kept with the panel hidden, saved and imported");
+    felitronics::test::group ("a person's glue: a tick starts at 2.6 dB; 0…6 as written; kept with the panel hidden, saved and imported");
     const Mix mix;
     auto sp = measured (mix, "allStreaming"); auto& s = *sp;
     ok (! s.project().manual && s.snapshot().view().plan.glue.state == GlueState::Out, "PRECONDITION: the panel hidden, the glue out");
     GlueFields<Touched> tick; tick.on = true;
     ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "the glue is ticked with the panel hidden");
     auto v = s.snapshot();
-    ok (v.view().plan.glue.state == GlueState::Active && same (v.view().plan.glue.upToDb, 0.5) && ! s.project().devices.glue.hand.upToDb
+    ok (v.view().plan.glue.state == GlueState::Active && same (v.view().plan.glue.upToDb, 2.6) && ! s.project().devices.glue.hand.upToDb
         && v.view().plan.devices.glue.on && v.view().plan.devices.glue.tick == TickFrom::Hand,
-        "a tick without a knob compresses at [glue] whenTicked, 0.5 dB — and the project keeps the knob untouched");
+        "a tick without a knob compresses at [glue] whenTicked, 2.6 dB — and the project keeps the knob untouched");
     bool taken = true;
     for (const double n : { 0.0, 0.5, 1.25, 2.6, 3.0, 1.2345, 4.5, 6.0 })
     {
@@ -1364,10 +1366,87 @@ void theWorkedFive()
     ok (ofThePlan, "and they are the plan's five as the snapshot stated them before the master");
 }
 
+// A person's tick on a glue or a saturation the machine left at 0, nothing else touched (owner, 08.10): the glue takes
+// 2.6 dB and the character "glue, not a compressor" — ratio 2, attack 30 ms, release 300 ms, knee 6 dB, the threshold the
+// travel's at the amount — and the saturation 6 dB of drive, as the machine's layer, no field by hand. A person's own
+// field wins; where the machine places the glue itself (cd) the travel stands.
+void aTickTakesTheCharacter()
+{
+    felitronics::test::group ("a tick on an untouched glue gives 2.6 dB and ratio 2, attack 30, release 300, knee 6; on a saturation 6 dB — the machine's layer");
+    const Mix mix;
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "PRECONDITION: the glue ticked, nothing else");
+        settle (s);
+        const auto v = s.snapshot();
+        const auto& m = v.view().project.devices.glue.machine;
+        const auto& g = v.view().plan.glue;
+        const auto& h = s.project().devices.glue.hand;
+        ok (g.state == GlueState::Active && same (g.upToDb, 2.6) && same (m.upToDb, 2.6) && same (m.ratio, 2.0) && same (m.attackMs, 30.0)
+            && same (m.releaseMs, 300.0) && same (m.kneeDb, 6.0) && g.ratio && same (*g.ratio, 2.0) && g.attackMs && same (*g.attackMs, 30.0)
+            && g.releaseMs && same (*g.releaseMs, 300.0) && g.kneeDb && same (*g.kneeDb, 6.0) && g.thresholdDb && same (m.thresholdDb, *g.thresholdDb)
+            && ! h.upToDb && noHandFive (s) && ! PlanText::glueTempo (g) && ! PlanText::glueRelease (g),
+            "a tick alone: the machine's layer at 2.6 dB, ratio 2, attack 30 ms, release 300 ms, knee 6 dB, none by hand, no tempo said — it is "
+            + std::to_string (m.upToDb) + " dB, ratio " + std::to_string (m.ratio) + ", attack " + std::to_string (m.attackMs));
+        GlueFields<Touched> attack; attack.attackMs = 80.0;
+        ok (s.apply (command::EditDevice { 4, attack }).rejection == Rejection::None, "PRECONDITION: an attack of 80 ms by hand");
+        settle (s);
+        const auto w = s.snapshot();
+        const auto& wm = w.view().project.devices.glue.machine;
+        const auto& wg = w.view().plan.glue;
+        ok (wg.attackMs && same (*wg.attackMs, 80.0) && same (wm.attackMs, 30.0) && wg.ratio && same (*wg.ratio, 2.0)
+            && wg.releaseMs && same (*wg.releaseMs, 300.0) && same (wg.upToDb, 2.6),
+            "a person's attack of 80 ms wins for the attack alone; the machine's layer keeps 30, the rest of the character stands");
+    }
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        GlueFields<Touched> attack; attack.attackMs = 80.0;
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, attack }).rejection == Rejection::None && s.apply (command::EditDevice { 4, tick }).rejection == Rejection::None,
+            "PRECONDITION: an attack of 80 ms by hand, then the tick");
+        settle (s);
+        const auto& g = s.snapshot().view().plan.glue;
+        ok (g.attackMs && same (*g.attackMs, 80.0) && g.ratio && same (*g.ratio, 2.0) && same (g.upToDb, 2.6),
+            "a hand attack of 80 ms survives the tick");
+    }
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        SaturationFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "PRECONDITION: the saturation ticked, nothing else");
+        const auto v = s.snapshot();
+        ok (same (v.view().project.devices.saturation.machine.drive, 6.0) && ! s.project().devices.saturation.hand.drive
+            && same (v.view().plan.saturation.knobDb, 6.0) && v.view().plan.saturation.active,
+            "a saturation tick alone: the machine's layer at a drive of 6 dB, none by hand, and it shapes — it is "
+            + std::to_string (v.view().project.devices.saturation.machine.drive));
+        SaturationFields<Touched> zero; zero.drive = 0.0;
+        ok (s.apply (command::EditDevice { 4, zero }).rejection == Rejection::None, "PRECONDITION: a drive of 0 by hand");
+        const auto w = s.snapshot();
+        ok (s.project().devices.saturation.hand.drive && same (*s.project().devices.saturation.hand.drive, 0.0)
+            && same (w.view().plan.saturation.knobDb, 0.0) && ! w.view().plan.saturation.active
+            && same (w.view().project.devices.saturation.machine.drive, 0.0),
+            "a person's drive of 0 is kept: the saturation does not shape, and the machine's layer is the 0 placed");
+    }
+    {
+        auto sp = measured (mix, "cd"); auto& s = *sp;
+        settle (s);
+        const auto before = s.snapshot();
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "PRECONDITION: a tick on cd's glue");
+        settle (s);
+        const auto after = s.snapshot();
+        const auto& m = after.view().project.devices.glue.machine;
+        ok (sameFive (machineFive (before), machineFive (after)) && sameFive (plannedFive (before), plannedFive (after))
+            && same (m.upToDb, 2.6) && ! same (m.ratio, 2.0) && ! same (m.attackMs, 30.0),
+            "cd's glue, which the machine places: the travel's five at 2.6 dB, a tick or none — ratio " + std::to_string (m.ratio));
+    }
+}
+
 int main()
 {
     std::printf ("felitronics::session — glue and saturation from the normalised input\n");
     theCurve();
+    aTickTakesTheCharacter();
     theMachine();
     aPersonsKnob();
     withoutAP95();
