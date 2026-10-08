@@ -304,6 +304,9 @@ struct Glue
     Span domain;
     double defaultUpToDb = 0.0;                // `default`
     double whenTickedUpToDb = 0.0;             // `whenTicked`
+    // `ticked`: the character a person's tick gives a glue the machine left at 0 (owner, 08.10) — the threshold stays the
+    // travel's at the amount, the release follows no tempo.
+    struct Ticked { double ratio = 0.0, kneeDb = 0.0, attackMs = 0.0, releaseMs = 0.0; } ticked;
     std::vector<GlueAtTarget> byTarget;        // in the document's order
     GlueRamp ratio, threshOffset, attack, knee, divisor;
     double knobMinDb = 0.0, knobMaxDb = 0.0, knobStepDb = 0.0;
@@ -333,6 +336,7 @@ struct Saturation
     Span driveDomain, mixDomain;
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
+    double whenTickedDb = 0.0;                 // `whenTicked`: the drive a person's tick gives an untouched drive of 0
     Span driveRange;
     double driveStep = 0.0;
     Comfort driveComfort;                      // the drive's field

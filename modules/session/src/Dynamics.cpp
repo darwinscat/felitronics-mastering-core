@@ -167,14 +167,50 @@ TempoChoice tempoChoice (const Rules& rules, const MeasurementResult& result) no
     return { true, false, fallback, reason };
 }
 
+bool glueTicked (const Layers<GlueFields>& glue) noexcept
+{
+    // The five by hand take no part: the amount they are laid over never moves with them, so a field left alone keeps its
+    // value whatever another field holds.
+    const auto& h = glue.hand;
+    return h.on && *h.on && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
+}
+
 double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept
 {
-    const auto settings = settingsOf (rules, glue);
-    // A person's tick on a knob the machine left at 0 gives way to whenTicked. The five by hand take no part: the amount
-    // they are laid over never moves with them, so a field left alone keeps its value whatever another field holds.
-    const auto& h = glue.hand;
-    const bool tickedUntouched = h.on && *h.on && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
-    return tickedUntouched ? number (rules.engine.find ("glue").find ("whenTicked")) : settings.upToDb;
+    // A person's tick on a knob the machine left at 0 gives way to whenTicked.
+    return glueTicked (glue) ? number (rules.engine.find ("glue").find ("whenTicked")) : settingsOf (rules, glue).upToDb;
+}
+
+namespace
+{
+// The tick's character ([glue] ticked, owner 08.10) over the travel's numbers: the ratio, knee, attack and a fixed
+// release, which follows no tempo — so the finding names none. The threshold stays the travel's at the amount.
+void tickedCharacter (const Rules& rules, GlueFinding& f) noexcept
+{
+    const auto ticked = rules.engine.find ("glue").find ("ticked");
+    f.ratio = number (ticked.find ("ratio"));
+    f.kneeDb = number (ticked.find ("kneeDb"));
+    f.attackMs = number (ticked.find ("attackMs"));
+    f.releaseAskedMs = number (ticked.find ("releaseMs"));
+    f.releaseMs = f.releaseAskedMs;
+    f.releaseClamped = false;
+    f.bpm.reset();
+    f.tempoMeasured = false;
+    f.tempoUnsureBpm.reset();
+}
+} // namespace
+
+bool saturationTicked (const Layers<SaturationFields>& saturation) noexcept
+{
+    const auto& h = saturation.hand;
+    return h.on && *h.on && ! h.drive && ! (saturation.machine.drive > 0.0);
+}
+
+double saturationKnob (const Rules& rules, const Layers<SaturationFields>& saturation) noexcept
+{
+    // A person's tick on a drive the machine left at 0, the drive untouched, gives way to [saturation] whenTicked.
+    return saturationTicked (saturation) ? number (rules.engine.find ("saturation").find ("whenTicked"))
+                                         : settingsOf (rules, saturation).drive;
 }
 
 GlueFinding glueLaw (const PlanInputs& in, double upToDb, bool waitsForTempo) noexcept
@@ -232,6 +268,7 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     // compressor gets, or would get, from it. Out of the chain they reach no compressor (writeDynamics reads Active).
     const auto state = ticked ? GlueState::Active : GlueState::Out;
     f = glueLaw (in, upToDb, state != GlueState::Out);
+    if (glueTicked (devices.glue)) tickedCharacter (in.rules, f);
     f.state = state;
     f.mix = mix;
     // THE FIVE BY HAND: a person's field wins for that field alone, taken as written — the limits clamp the travel only.
@@ -255,21 +292,24 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
 
 GlueFinding glueMachine (const PlanInputs& in, const Devices& devices) noexcept
 {
-    return glueLaw (in, glueKnob (in.rules, devices.glue), false);
+    auto f = glueLaw (in, glueKnob (in.rules, devices.glue), false);
+    if (glueTicked (devices.glue)) tickedCharacter (in.rules, f);
+    return f;
 }
 
 SaturationFinding saturationFinding (const PlanInputs& in, const Devices& devices) noexcept
 {
     SaturationFinding f;
     const auto settings = settingsOf (in.rules, devices.saturation);
-    f.knobDb = settings.drive;
+    const double drive = saturationKnob (in.rules, devices.saturation);
+    f.knobDb = drive;
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Saturation))) != 0;
     const auto levels = inputLevels (in);
-    if (! offeredByShell || ! settings.on || ! (settings.drive > 0.0) || ! levels.truePeakDb) return f;
+    if (! offeredByShell || ! settings.on || ! (drive > 0.0) || ! levels.truePeakDb) return f;
     f.active = true;
     f.peakDbTp = levels.truePeakDb;
     // The shaper's gain aligned: the knob is the drive at 0 dBTP, k = 10^(drive/20) − 1 scaled by the peak.
-    f.driveDb = 20 * core::det::log10 (1 + (core::det::pow10 (settings.drive / 20) - 1) * core::det::pow10 (-*levels.truePeakDb / 20));
+    f.driveDb = 20 * core::det::log10 (1 + (core::det::pow10 (drive / 20) - 1) * core::det::pow10 (-*levels.truePeakDb / 20));
     return f;
 }
 
