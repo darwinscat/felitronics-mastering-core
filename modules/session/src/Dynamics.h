@@ -57,9 +57,17 @@ struct InputLevels
 // The tempo a ready result heard — its finite, positive headline BPM, whatever its label; none otherwise.
 [[nodiscard]] std::optional<double> tempoHeard (const MeasurementResult& tempo) noexcept;
 
-// The glue knob as it sounds: a person's value, or the machine's — and [glue] whenTicked when a person ticked the glue on
-// without touching a knob the machine left at 0.
+// A person ticked the glue on without touching a knob the machine left at 0: the knob takes [glue] whenTicked and the
+// five [glue] ticked's character (the threshold the travel's at the amount), as the machine's layer.
+[[nodiscard]] bool glueTicked (const Layers<GlueFields>& glue) noexcept;
+// The glue knob as it sounds: a person's value, or the machine's — and [glue] whenTicked where glueTicked.
 [[nodiscard]] double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept;
+// A person ticked the saturation on without touching a drive the machine left at 0: the drive takes [saturation]
+// whenTicked, as the machine's layer.
+[[nodiscard]] bool saturationTicked (const Layers<SaturationFields>& saturation) noexcept;
+// The saturation's drive as it sounds: a person's value, or the machine's — and [saturation] whenTicked where
+// saturationTicked.
+[[nodiscard]] double saturationKnob (const Rules& rules, const Layers<SaturationFields>& saturation) noexcept;
 
 // The travel's five at a knob of `upToDb` on this input: ratio, knee and attack always; the threshold where the P95 is
 // measured; the release once a tempo is decided, or at [compressor.tempo] bpmWhenUnsure when `waitsForTempo` is false.
@@ -67,8 +75,9 @@ struct InputLevels
 [[nodiscard]] GlueFinding glueLaw (const PlanInputs& in, double upToDb, bool waitsForTempo) noexcept;
 
 // The five a field left alone takes — the machine's layer as it applies: the law at the knob as it sounds, on this
-// input's P95 and decided tempo, the release at [compressor.tempo] bpmWhenUnsure until one is decided. No person's five
-// enter it, so no field's machine value moves with another's hand value.
+// input's P95 and decided tempo, the release at [compressor.tempo] bpmWhenUnsure until one is decided; where glueTicked,
+// [glue] ticked's character over it. No person's five enter it, so no field's machine value moves with another's hand
+// value.
 [[nodiscard]] GlueFinding glueMachine (const PlanInputs& in, const Devices& devices) noexcept;
 
 // What the project's glue and saturation come to on this input.

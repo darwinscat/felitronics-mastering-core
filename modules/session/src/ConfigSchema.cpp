@@ -678,6 +678,15 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     const R machine = hi ? R { knob.min, o.knobMaxDb } : knob;
     in.required ("default", o.defaultUpToDb, machine);
     in.required ("whenTicked", o.whenTickedUpToDb, machine);
+    // The tick's character (08.10): each number inside its field's domain, which a person's value also keeps to.
+    in.table ("ticked", Need::Required, [&] (Reader& t)
+    {
+        const auto within = [] (const Span& s) { return R { s.min, s.max }; };
+        t.required ("ratio", o.ticked.ratio, within (o.ratioKnob.domain));
+        t.required ("kneeDb", o.ticked.kneeDb, within (o.kneeDb.domain));
+        t.required ("attackMs", o.ticked.attackMs, within (o.attackMs.domain));
+        t.required ("releaseMs", o.ticked.releaseMs, within (o.releaseMs.domain));
+    });
     in.table ("byTarget", Need::Required, [&] (Reader& t)
     {
         for (const auto& e : t.data().entries())
@@ -719,6 +728,7 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     readComfort (d, in, "driveComfort", o.driveComfort, drive);
     d.pair (in, "driveRange", o.driveRange, drive);
     in.required ("driveDb", o.driveDb, drive);
+    in.required ("whenTicked", o.whenTickedDb, drive);
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain
     in.required ("mixStep", o.mixStep, R { 0.001, 1.0 });
     const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });

@@ -395,7 +395,13 @@ trustedConfidence = "high"
 # domain: what a command and a project accept, 0…6 dB. knobMinDb…knobMaxDb, knobStepDb: the slider's travel and step —
 #   hints (an owner decision: the slider runs 0…3); a value between steps or past the travel is taken as written.
 # default: the glue a target without an entry in byTarget starts with, dB on the knob.
-# whenTicked: what the knob takes when a person ticks the glue on without touching the knob, dB.
+# whenTicked: what the knob takes when a person ticks the glue on without touching the knob, where the machine left it at
+#   0, dB (owner, 08.10: 2.6, the page's default until then).
+# ticked: THE CHARACTER OF THAT TICK (owner, 08.10, «клей, а не компрессор» — the page's default until then): the ratio,
+#   the knee (dB), the attack and the release (ms) the glue takes there instead of the travel's; the threshold stays the
+#   travel's at the amount, and the release is fixed — it follows no tempo. They are the machine's layer as it sounds, not
+#   a person's: a person's own field still wins for that field alone. Where the machine places the glue itself (byTarget)
+#   the travel stands, whatever the tick. Each lies in its field's domain below.
 # byTarget: the machine's glue per target, dB on the knob (an owner decision: cd alone, 2.6).
 # THE TRAVEL — ONE SMOOTH FORMULA for the whole domain, no steps and no rounding. Every compressor value moves along a
 # travel g by its law, from `from` at g = 0 towards `to` at g = 1 and on by the same law past it:
@@ -426,7 +432,8 @@ trustedConfidence = "high"
 [glue]
 domain = [0, 6]
 default = 0
-whenTicked = 0.5
+whenTicked = 2.6
+ticked = { ratio = 2, kneeDb = 6, attackMs = 30, releaseMs = 300 }
 byTarget = { cd = 2.6 }
 detectorOverP95Db = 1.5
 ratio = { from = 1.0, to = 2.7, law = "byDepth" }
@@ -490,6 +497,9 @@ releaseMsComfort = { low = 50, high = 500, warningLow = 25, warningHigh = 800 }
 # driveRange 0…12 dB: above twelve tanh squares music rather than densifying it; driveStep 0.5 dB: less is not heard, more
 #   is a jerk. mix 0…1. No output knob: the landing sets the level before the limiter, so a trim would be undone.
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
+# whenTicked: the drive a person's tick gives a saturation whose drive the machine left at 0 and no one has touched, dB on
+#   the knob, as driveDb (owner, 08.10: 6, the page's default until then) — the machine's layer as it sounds, not a
+#   person's; a person's own drive, 0 included, wins. The machine never ticks the saturation itself.
 # shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
 #   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer, tape, cubic —
 #   the symmetric diode, a hard knee and flat past |x| = 1/k, odd harmonics — and asym — the asymmetric diode, a second
@@ -522,6 +532,7 @@ driveDomain = [0, 12]
 mixDomain = [0, 1]
 shape = "tape"
 driveDb = 0
+whenTicked = 6
 driveRange = [0, 12]
 driveStep = 0
 driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }

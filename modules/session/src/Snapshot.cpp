@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 #include "SnapshotStorage.h"
 #include "Devices.h"
+#include "Dynamics.h"
 #include "EqCurve.h"
 #include "Grid.h"
 #include "Needles.h"
@@ -273,6 +274,12 @@ SnapshotView Session::buildView() const noexcept
         if (law.attackMs) glue.attackMs = detail::kept (*law.attackMs);
         if (law.thresholdDb) glue.thresholdDb = detail::kept (*law.thresholdDb);
         if (law.releaseMs) glue.releaseMs = detail::kept (*law.releaseMs);
+        // A person's tick on a knob, or a drive, the machine left at 0 and no one touched: the machine's layer says the
+        // amount, or the drive, the tick gives ([glue] whenTicked, [saturation] whenTicked), not the 0 placed.
+        const auto tickRules = detail::rules();
+        if (detail::glueTicked (project_.devices.glue)) glue.upToDb = detail::kept (detail::glueKnob (tickRules, project_.devices.glue));
+        if (detail::saturationTicked (project_.devices.saturation))
+            v.project.devices.saturation.machine.drive = detail::kept (detail::saturationKnob (tickRules, project_.devices.saturation));
     }
     const auto rules = detail::rules();
     detail::eachDevice (project_.devices, [&] (Device, const auto& layers)
