@@ -169,7 +169,7 @@ every stage a device writes is named, the limiter's second release included.
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
   engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel (15…80 Hz) and the machine's 50 Hz top apart, its slopes and comfort window, the
-  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 2.6 dB with the tick's character when ticked and 2.6 dB on cd, the saturation's 6 dB when ticked, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a machine high-pass top of 51 or 80 Hz, a knob travel to 50 or 81 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
@@ -1942,6 +1942,16 @@ without them (v0.20.0) or with an earlier build's numbers opens with no machine 
 keeps the constants (`[limiter] releaseMs`, `lookaheadMs`, `[chain] oversampleFactor`); the catalogue names all eight
 fields in English in both languages (device knobs, owner). `[limiter] oversamplingDomain` is two integers, as the session
 reads them: a bound written with a decimal point stops the config build at its line and column (`WrongType`).
+
+A PERSON'S TICK (owner, 08.10). A person who ticks the glue on where the machine left its amount at 0, the amount
+untouched, gets `[glue] whenTicked` (2.6 dB) and the tick's character `[glue] ticked` — ratio 2, knee 6 dB, attack 30 ms,
+release 300 ms, «клей, а не компрессор» — with the threshold the travel's at the amount and a fixed release that follows
+no tempo (`plan.glue` names no tempo, so `PlanText::glueTempo` says nothing). A person who ticks the saturation on where the
+machine left the drive at 0, the drive untouched, gets `[saturation] whenTicked` (6 dB on the knob). Both are the machine's
+layer as it sounds — the snapshot's `project.devices.glue.machine` carries the amount and the five, `…saturation.machine`
+the drive — not a person's: no field is by hand, and the project keeps what was placed. A person's own field still wins for
+that field alone (a hand attack, a hand drive of 0). Where the machine places the glue itself (`byTarget`, cd) the travel
+stands, tick or none; the machine never ticks the saturation. No untouched master moves: a tick is a person's.
 
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
