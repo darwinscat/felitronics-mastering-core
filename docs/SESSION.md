@@ -697,7 +697,10 @@ the C/Wasm facade exposes `fc_session_worked_report_size/copy` and returns `FC_S
 does not keep. The `renderState` appendix records the exact winning topology and physical parameters (including an
 explicit ready caller's chain), while device tables name the flattened controls and actual on/off states. Derived
 physical parameters are marked `machine`, explicitly supplied ready parameters `hand`; the device controls retain
-individual provenance. `delivery.ceilingDbTp` is the effective delivery ceiling, separate from the target's request.
+individual provenance. The glue's five (threshold, ratio, knee, attack, release) are printed as they applied when the
+glue compressed — the numbers the render gave its compressor, a field by hand at its value and every other at the law at
+the amount as it sounded — never the values placed at the machine's own amount. `delivery.ceilingDbTp` is the effective
+delivery ceiling, separate from the target's request.
 
 ```toml
 defaults = "2026-10"
