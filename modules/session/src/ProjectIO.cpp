@@ -314,6 +314,8 @@ struct Writer
                     const auto& v = rendered.params;
                     if (device == Device::Glue && name == "mix") { workedLine (name, v.compressorMix, "machine"); return; }
                     if (device == Device::Saturation && name == "mix") { workedLine (name, double (v.clipper.mix), "machine"); return; }
+                    if (device == Device::Saturation && name == "drive" && master.report->waterfall->saturation.drive)
+                    { workedLine (name, *master.report->waterfall->saturation.drive, "machine"); return; }
                     if (device == Device::Limiter && name == "needlesDb" && std::isfinite (v.peakClipCutDb))
                     { workedLine (name, v.peakClipCutDb, "machine"); return; }
                 }

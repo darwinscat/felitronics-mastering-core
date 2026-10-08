@@ -10,6 +10,7 @@
 #include "MasterJob.h"
 #include "Planner.h"
 #include "Rules.h"
+#include "Dynamics.h"
 
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
@@ -613,6 +614,15 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
                 rows.workedReady.params = masterJob_->winningParams();
+                // THE GLUE'S TRACE THROUGH ITS MIX (MVP): what the glue took off the song — the compressor's reduction
+                // blended with the dry path at the mix that sounded (detail::glueTakenDb, the report's own law), not the
+                // detector's reduction before the mix. The law is monotonic: a bucket's least and most stay exact.
+                if (rows.glueTrace)
+                {
+                    const double mix = std::clamp (rows.workedReady.params.compressorMix, 0.0, 1.0);
+                    const auto through = [mix] (double db) noexcept { return db > 0.0 ? detail::glueTakenDb (db, mix) : db; };
+                    for (auto& b : std::span<LandingTraceBucket> (rows.glueRows.get(), rows.glueRows ? rows.glueTrace->rows.size() : 0u)) { b.minDb = through (b.minDb); b.maxDb = through (b.maxDb); b.meanDb = through (b.meanDb); }
+                }
                 // What its damage grade needs, kept with the master for a grade the shell asks (command::GradeDamage):
                 // the damage's line below says Pending — or why it cannot be graded.
                 if (masterJob_->damageFollows)

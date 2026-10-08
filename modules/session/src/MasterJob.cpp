@@ -434,6 +434,18 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         if (d.limiter.hand.cutShare) result.request.waterfallCutShare = *d.limiter.hand.cutShare;
         const double cutMax = number (engine.find ("limiter").find ("peakClipper").find ("manualDomain")[1]);
         if (std::isfinite (cutMax)) result.request.waterfallCutMaxDb = cutMax;
+        // THE DRIVE'S CEILING (owner, 08.10): [saturation] steerDriveMaxDb on the knob, aligned to the programme's peak as
+        // the placed drive is (k = 10^(knob/20) − 1 scaled by the peak: the scale read off the placed pair); never a
+        // person's drive.
+        const double knob0 = saturationKnob (ruleset, d.saturation), aligned0 = double (result.ready.params.clipper.driveDb);
+        const double ceiling = number (engine.find ("saturation").find ("steerDriveMaxDb"));
+        if (d.saturation.hand.share && ! d.saturation.hand.drive && ! result.ready.params.bypassClipper && knob0 > 0.01
+            && std::isfinite (aligned0) && aligned0 > 0.0 && std::isfinite (ceiling))
+        {
+            const double scale = (core::det::pow10 (aligned0 / 20.0) - 1.0) / (core::det::pow10 (knob0 / 20.0) - 1.0);
+            result.request.waterfallSaturationDriveMaxDb = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (ceiling / 20.0) - 1.0) * scale);
+            result.saturationDriveScale = scale;
+        }
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
@@ -550,6 +562,8 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     waterfallGlueShare = plan.request.waterfallGlueShare;
     waterfallSaturationShare = plan.request.waterfallSaturationShare;
     waterfallCutShare = plan.request.waterfallCutShare;
+    saturationDriveScale = plan.saturationDriveScale;
+    saturationDriveMaxDb = plan.request.waterfallSaturationDriveMaxDb;
     waterfallCutMaxDb = plan.request.waterfallCutMaxDb;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
@@ -979,7 +993,8 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                 z.asked = asked (share); z.reached = reached (db); z.db = db;
                 if (sounding) z.setting = setting;
                 if (! z.asked) z.stop = WaterfallStop::NoWish;
-                else if (! sounding || ! setting) z.stop = WaterfallStop::NotSounding;
+                // A zone asked 0 % whose stage is out of the chain reached it.
+                else if (! sounding || ! setting) z.stop = *z.asked <= detail::kZeroShare && db <= 0.05 ? WaterfallStop::Reached : WaterfallStop::NotSounding;
                 // Met as the landing counts it: within 0.1 dB of its want, or 3 % of the total where that is more.
                 else if (! z.reached || std::fabs (*z.asked * total - db) <= std::fmax (0.1, 0.03 * total)) z.stop = WaterfallStop::Reached;
                 else if (*z.reached < *z.asked)
@@ -993,6 +1008,13 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             MasterWaterfall w;
             w.glue = zone (waterfallGlueShare, glueDb, compressing, steered.compressorMix, false);
             w.saturation = zone (waterfallSaturationShare, saturationDb, shaping, double (steered.clipper.mix), false);
+            // The steered drive, back on the knob's dB; the mix at 1 with the drive at its ceiling stops there.
+            if (shaping && std::isfinite (saturationDriveScale) && saturationDriveScale > 0.0)
+            {
+                w.saturation.drive = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (double (steered.clipper.driveDb) / 20.0) - 1.0) / saturationDriveScale);
+                if (w.saturation.stop == WaterfallStop::MixAtOne)
+                    w.saturation.stop = double (steered.clipper.driveDb) >= saturationDriveMaxDb - 0.05 ? WaterfallStop::DriveAtCeiling : WaterfallStop::Passes;
+            }
             w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (steered.peakClipCutDb) : std::nullopt, true);
             w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb);
             w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;
@@ -1292,6 +1314,7 @@ void MasterJob::steer (mastering::MasteringChainParams& params) const noexcept
     if (! waterfall) return;
     params.compressorMix = steered.compressorMix;
     params.clipper.mix = steered.clipper.mix;
+    params.clipper.driveDb = steered.clipper.driveDb;
     params.peakClipCutDb = steered.peakClipCutDb;
 }
 

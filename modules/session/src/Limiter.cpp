@@ -7,6 +7,7 @@
 
 #include "Limiter.h"
 #include "Devices.h"
+#include "Dynamics.h"
 #include "Grid.h"
 #include "Observations.h"
 #include "BuildContract.h"
@@ -163,7 +164,9 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
             break;
     }
     // A wished cut share (the waterfall, MVP) cuts needles no person set: from the knob's amount, the landing steers it.
-    if (devices.limiter.hand.cutShare && ! devices.limiter.hand.needles && ! f.cutting) { f.cutting = true; f.overDb = knob.overDb; }
+    // A wished cut share of 0 takes the needles' clipper out of the chain — a zone at 0 % does not sound.
+    if (devices.limiter.hand.cutShare && ! (*devices.limiter.hand.cutShare > detail::kZeroShare)) f.cutting = false;
+    else if (devices.limiter.hand.cutShare && ! devices.limiter.hand.needles && ! f.cutting) { f.cutting = true; f.overDb = knob.overDb; }
     // Only a device the shell offers is a person's to turn; placement took a person's layer off one it does not.
     if (! offeredByShell (in, Device::Limiter)) { f.cutting = false; f.mode = Needles::Off; }
     const bool machineCuts = answer.proposed != NeedlesClass::None;
