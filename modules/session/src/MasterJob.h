@@ -46,6 +46,9 @@ struct MaxStopInputs
     mastering::MasteringConstraint binding = mastering::MasteringConstraint::None;
 };
 [[nodiscard]] MaxStop maxStopOf (const MaxStopInputs& in) noexcept;
+// What ended a max mode delivered by its landing with the zones (cleaner, not louder), from what ended the landing without
+// them (`alone`) and the delivered landing's own inputs (`floor` ignored): pulled up to the floor, as the floor pass says it.
+[[nodiscard]] MaxStop cleanStopOf (MaxStop alone, bool onFloor, MaxStopInputs delivered) noexcept;
 
 struct MasterPlan
 {

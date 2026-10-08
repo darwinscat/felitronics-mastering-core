@@ -174,6 +174,16 @@ MaxStop maxStopOf (const MaxStopInputs& in) noexcept
     return MaxStop::Passes;
 }
 
+MaxStop cleanStopOf (MaxStop alone, bool onFloor, MaxStopInputs delivered) noexcept
+{
+    // The landing with the zones has no budget: above the ceiling or out of passes, that is what ended the master; landed
+    // on the loudness the one without them reached, what ended that one is the verdict.
+    delivered.overBudget = false;
+    delivered.floor = onFloor && delivered.status == mastering::MasteringSolveStatus::Solved;
+    const MaxStop own = maxStopOf (delivered);
+    return onFloor || own != MaxStop::SearchCeiling ? own : alone;
+}
+
 std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     const auto master = engine.find ("progress").find ("master");
@@ -1294,7 +1304,10 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
                                          : std::numeric_limits<double>::quiet_NaN();
     clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
         && search.clipperPeaks (clipPeaks);
-    report.targetLufs = targetLufs;
+    // The target of the landing that delivered: a max mode's landing with the zones stood on the loudness the one without
+    // them reached, or on the floor it was pulled up to.
+    const double landedTarget = cleanDone ? (cleanOnFloor ? floorLufs : *aloneLufs) : targetLufs;
+    report.targetLufs = landedTarget;
     report.ceilingDbTp = targetTp;
     report.deliveryMode = DeliveryMode::Mastered;
     report.deliveryDithered = ready.topology.dither && ! ready.params.bypassDither;
@@ -1307,7 +1320,7 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         report.reason = MeasurementReason::None;
         report.achievedLufs = solved.measured.integratedLufs;
         report.truePeakDbTp = solved.measured.truePeakDbTp;
-        report.missLu = solved.measured.integratedLufs - targetLufs;
+        report.missLu = solved.measured.integratedLufs - landedTarget;
         report.gainFromSourceDb = solved.measured.integratedLufs - sourceLufs;
         if (std::isfinite (solved.measured.plrDb))
         { report.plrDb = solved.measured.plrDb; report.plrReason = MeasurementReason::None; }
@@ -1363,13 +1376,10 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
                                       floorPass && solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
                                       solved.binding });
-    // The landing with the zones stood on the loudness the one without them reached: what ended that one is the verdict.
-    // Pulled up to the floor, it is said as the floor pass would say it.
+    // The landing with the zones stood on the loudness the one without them reached: what ended that one is the verdict
+    // where it landed there (cleanStopOf). Pulled up to the floor, it is said as the floor pass would say it.
     if (cleanDone && mode != LoudnessMode::Manual && solved.deliverable)
-        report.maxStop = cleanOnFloor ? maxStopOf ({ solved.peaksAboveCeiling, false,
-                                                     solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
-                                                     solved.binding })
-                                      : aloneStop;
+        report.maxStop = cleanStopOf (aloneStop, cleanOnFloor, { solved.peaksAboveCeiling, false, false, solved.status, solved.binding });
     if (result == StepResult::Failed || ! solved.deliverable)
     {
         report.crest.status = MeasurementStatus::Unavailable;
