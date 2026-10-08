@@ -939,13 +939,17 @@ private:
             cap (sGlue, capGlue, glueMost); cap (sSaturation, capSaturation, satMost); cap (sCut, capCut, cutMost);
             if (! changed) break;
         }
-        // No work to share (a limiter at rest on a target its loudness reaches): every wish is 0 dB of nothing.
+        // No work to share (a limiter at rest on a target its loudness reaches): every wish is 0 dB of nothing. A limiter
+        // that works on this pass and comes to rest only as read at the target — the pass louder than the target by more
+        // than it takes, the zones having taken its peak work — is not that: such a reading moves no zone (it would send
+        // every wished stage to nothing, the next pass back, and the moves would run out on a mix of 0).
+        const bool restAtTarget = ! (total > 0.05) && limiter > 0.05;
         if (! (total > 0.05)) total = 0.0;
         const auto want = [&] (double share) noexcept { return share * total; };
         // A zone within kWaterfallToleranceDb, or that share of the total where it is larger, of its want is met: it stays.
         const double near = std::fmax (kWaterfallToleranceDb, kWaterfallToleranceShare * total);
         const auto off = [&] (double share, double taken) noexcept
-            { return std::isfinite (share) && std::fabs (want (share) - taken) > near; };
+            { return ! restAtTarget && std::isfinite (share) && std::fabs (want (share) - taken) > near; };
         MasteringChainParams next = params_;
         bool moved = false;
         // What the moves before the gain node add to the loudest peak, for the needles' threshold of the next pass.

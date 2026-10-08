@@ -300,7 +300,7 @@ void zeroZone()
 //==============================================================================
 // THE DRIVE'S CEILING: a saturation asked more of the peak work than its mix at 1 takes has its drive raised, up to
 // [saturation] steerDriveMaxDb on the knob, and stops there: DriveAtCeiling, its drive the ceiling (maxNuke, asked all
-// of it). Not asserted here: on maxExtreme the same wish ends with the mix at 0 (an open defect of the steering).
+// of it; maxExtreme's large wishes are saturationAtLargeShares).
 void driveCeiling()
 {
     felitronics::test::group ("the saturation's drive raised up to [saturation] steerDriveMaxDb, DriveAtCeiling there");
@@ -321,6 +321,40 @@ void driveCeiling()
     const std::string worked = k ? std::string (s.exportWorked (k->id).view()) : std::string();
     ok (worked.find ("saturationStop = \"driveAtCeiling\"") != std::string_view::npos,
         std::string (target) + ": the as-worked export says saturationStop = \"driveAtCeiling\"");
+    }
+}
+
+//==============================================================================
+// A LARGE SATURATION WISH IS NEVER TURNED INTO NONE: on maxDense and maxExtreme a saturation asked 80 % (maxDense) or
+// 60 % (maxExtreme) to all of the peak work has its drive raised, and the pass after that move finds the limiter louder
+// than the target by more than it takes — at rest as read at the target. That reading once counted as no work at all:
+// every wish 0 dB, the mix sent to 0, the next pass back to 1, and the moves ran out on a mix of 0 with the drive raised.
+// Now that reading moves nothing: the mix stays at 1 with the drive where it went (the ceiling on maxExtreme), and the
+// saturation takes at least its share — all of the work here, so a share under 1 is overshot (stop Passes; the steering's
+// total holds the limiter's take apart from the saturation's, which on this fixture takes the limiter's whole place).
+// maxDense asked 60 % is not here: the steering's first pass counts it met and the landing's limiter then takes less.
+void saturationAtLargeShares()
+{
+    felitronics::test::group ("a large saturation wish: its mix at 1 with the drive raised, never left at 0");
+    const double ceiling = number (detail::rules().engine.find ("saturation").find ("steerDriveMaxDb"));
+    const double tolerance = 0.03;
+    const auto pcm = fixture();
+    struct Row { std::string_view target; double share; };
+    for (const Row row : { Row { "maxDense", 0.8 }, Row { "maxDense", 0.9 }, Row { "maxExtreme", 0.6 }, Row { "maxExtreme", 0.8 },
+                           Row { "maxExtreme", 0.9 }, Row { "maxExtreme", 1.0 } })
+    {
+        auto made = loaded (pcm, row.target);
+        const Kept* k = made && editShares (*made, 10, std::nullopt, row.share, std::nullopt) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const auto& z = w ? w->saturation : MasterWaterfallZone {};
+        const double mix = z.setting.value_or (-1.0), drive = z.drive.value_or (-1.0), reached = z.reached.value_or (-1.0);
+        const bool extreme = row.target == "maxExtreme";
+        const bool atOne = mix >= 0.999 && drive > 6.5 /* the machine sets 6 */ && (! extreme || std::fabs (drive - ceiling) <= 0.1) && reached >= row.share - tolerance;
+        const bool stop = row.share < 1.0 || z.stop == WaterfallStop::Reached || z.stop == WaterfallStop::DriveAtCeiling;
+        ok (w && atOne && stop,
+            std::string (row.target) + ", saturation asked " + num (row.share) + ": reached " + num (reached) + " (" + num (z.db.value_or (-1.0))
+                + " dB of " + num (w ? w->totalDb.value_or (-1.0) : -1.0) + "), mix " + num (mix) + ", drive " + num (drive) + " dB, stop "
+                + std::to_string (unsigned (z.stop)) + ", " + std::to_string (w ? w->extraPasses : 0u) + " moves");
     }
 }
 
@@ -548,6 +582,7 @@ int main()
     waterfallReport();
     zeroZone();
     driveCeiling();
+    saturationAtLargeShares();
     convergence();
     cleaner();
     twoClippers();
