@@ -474,17 +474,16 @@ const masterCompleted = handle => {
         || M._fc_session_events_copy(handle, doneJson, jsonBytes, doneRows, rowBytes) !== STATUS.OK) return false;
     return /"kind":"done","payload":\{"masterId":[1-9]/.test(decoder.decode(heapBytes().subarray(doneJson, doneJson + jsonBytes)));
 };
+// The fixture names its target, All streaming — the one its native reference masters on — rather than lean on the one a
+// new session starts on; before the measurement's steps, so the ready events recorded are the last step's, as before.
+ok(cmd(masterSession, {kind:'setTarget', commandId:'5', target:'allStreaming'}).kind === 'accepted',
+   'the master smoke fixture names All streaming');
 let readySnapshot = null;
 for (let i = 0; i < 20000; ++i) {
     if (i % 32 === 0 && (readySnapshot = masterSnapshot())?.canMaster) break;
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
 ok(readySnapshot?.canMaster === true, 'mandatory readings make the ready command available');
-// The fixture names its target, All streaming — the one its native reference masters on — rather than lean on the one a
-// new session starts on.
-ok(cmd(masterSession, {kind:'setTarget', commandId:'5', target:'allStreaming'}).kind === 'accepted',
-   'the master smoke fixture names All streaming');
-readySnapshot = masterSnapshot();
 const readyWire = masterWire('snapshot'), readyEvents = masterWire('events');
 const sourceId = BigInt(readySnapshot?.source?.hash ?? '0');
 const revision = BigInt(readySnapshot?.revision ?? '0');
