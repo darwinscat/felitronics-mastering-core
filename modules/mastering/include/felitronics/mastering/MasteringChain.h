@@ -597,6 +597,55 @@ public:
         return true;
     }
 
+    // THE SOFT CLIPPER AT OTHER SETTINGS, FORESEEN (the waterfall's steering, MVP): what clipperPeaks() would read for
+    // `p` over the same input — the loud places' middle bin, its input peak at the bin's centre, its measured ratio
+    // scaled by the settled curve's ratio there at `p` against the curve's at the settings in force. `takeDb` is the
+    // usual cut, 20·log10 (quietGain / ratio), `peakShiftDb` how much louder the loud places' peak leaves the stage at
+    // `p`, and `topShiftDb` the same for the loudest bin counted. FALSE, all untouched, where clipperPeaks() is false.
+    // Reads the counters only.
+    bool clipperForesee (double loudShare, const saturation::Saturator::Params& p, double& takeDb, double& peakShiftDb,
+                         double& topShiftDb) const noexcept
+    {
+        if (! cfg_.clipper || ! (loudShare > 0.0) || ! (loudShare <= 1.0)) return false;
+        std::uint64_t total = 0;
+        for (const auto& b : clipBins_) total += b.count;
+        if (total == 0) return false;
+        const auto want = std::max<std::uint64_t> (1u, (std::uint64_t) std::ceil (loudShare * (double) total));
+        int low = kClipPeakBins;
+        std::uint64_t loud = 0;
+        while (low > 0 && loud < want) loud += clipBins_[(std::size_t) --low].count;
+        const std::uint64_t middle = (loud + 1u) / 2u;
+        std::uint64_t seen = 0;
+        int usualBin = -1;
+        for (int b = low; b < kClipPeakBins && usualBin < 0; ++b)
+        {
+            const auto& bin = clipBins_[(std::size_t) b];
+            if (bin.count == 0) continue;
+            if (seen < middle && seen + bin.count >= middle) usualBin = b;
+            seen += bin.count;
+        }
+        if (usualBin < 0) return false;
+        int topBin = kClipPeakBins - 1;
+        while (topBin > 0 && clipBins_[(std::size_t) topBin].count == 0) --topBin;
+        const auto& bin = clipBins_[(std::size_t) usualBin];
+        const double usual = bin.ratioSum / (double) bin.count;
+        const auto levelOf = [] (int b) noexcept
+            { return (float) std::ldexp (1.0 + ((double) (b % kClipPeakSteps) + 0.5) / (double) kClipPeakSteps, b / kClipPeakSteps + kClipPeakLowExp); };
+        const float level = levelOf (usualBin), top = levelOf (topBin);
+        const auto now = clipperDesign (params_.clipper), then = clipperDesign (p);
+        const double rNow = (double) clipperTransfer (now, level) / (double) level;
+        const double rThen = (double) clipperTransfer (then, level) / (double) level;
+        const double tNow = (double) clipperTransfer (now, top) / (double) top;
+        const double tThen = (double) clipperTransfer (then, top) / (double) top;
+        if (! (rNow > 0.0) || ! (rThen > 0.0) || ! (usual > 0.0) || ! (tNow > 0.0) || ! (tThen > 0.0)) return false;
+        topShiftDb = 20.0 * core::det::log10 (tThen / tNow);
+        const double quiet = then.trim * ((1.0 - (double) then.mix) + (double) then.mix * (double) then.comp * (double) then.shaper.slopeAtZero());
+        const double ratio = usual * rThen / rNow;
+        takeDb = std::fmax (0.0, 20.0 * core::det::log10 (quiet / ratio));
+        peakShiftDb = 20.0 * core::det::log10 (rThen / rNow);
+        return true;
+    }
+
     // THE SETTLED SOFT CLIPPER'S DESIGN — `Saturator`'s own design arithmetic on its parameters, with its clamps: its
     // WaveShaper at the shape, bias and k = 10^(driveDb/20) − 1, its drive compensation slopeAtZero^−autoComp, its
     // dry/wet share and its output trim. The one arithmetic clipperQuietGain() and clipperTransfer() read.
