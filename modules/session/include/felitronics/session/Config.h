@@ -143,14 +143,10 @@ struct Landing
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
-// Where the cut zone's clipper stands ([limiter.peakClipper] place): at the start of the chain (ahead of the glue,
-// where the glue or the saturation sounds), inside the limiter, or both — the start one takes the cut, the limiter's keeps
-// its needles for the peaks the glue and the saturation regrow.
-enum class PeakClipperPlace : std::uint8_t { Start, Limiter, Both };
-
 struct PeakClipper
 {
-    PeakClipperPlace place = PeakClipperPlace::Both;
+    // `place` (start, limiter or both: where the cut zone's clipper stands) is checked by the schema and read by the
+    // master's plan alone.
     Span manualDomain;
     double littleNeedDb = 0.0;
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
@@ -344,7 +340,8 @@ struct Saturation
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
     double whenTickedDb = 0.0;                 // `whenTicked`: the drive a person's tick gives an untouched drive of 0
-    double steerDriveMaxDb = 0.0;              // `steerDriveMaxDb`: the waterfall's ceiling of a steered drive, knob dB
+    // `steerDriveMaxDb` (the waterfall's ceiling of a steered drive, knob dB) is checked by the schema and read by the
+    // master's plan alone.
     Span driveRange;
     double driveStep = 0.0;
     Comfort driveComfort;                      // the drive's field
