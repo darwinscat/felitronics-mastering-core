@@ -350,6 +350,8 @@ void thePlansKey()
     felitronics::test::group ("the plan's key: equal inputs, one plan; one input changed, the planner runs again");
     Clicks audio;
     auto sp = fresh(); auto& s = *sp;
+    // On allStreaming, which the checks below name: a session starts on the config's default, Maximum · clean.
+    (void) s.apply (command::SetTarget { 1, "allStreaming" });
     (void) s.apply (audio.load (1));
     ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; }), "PRECONDITION: measured");
     const auto runs = [&] { return detail::Inspector::planRuns (s); };
@@ -592,6 +594,7 @@ void theNeedlesAreWaitedForAtTheirCeiling()
     felitronics::test::group ("a new ceiling measures the needles again; with the panel open the master waits for them");
     Clicks audio;
     auto sp = fresh(); auto& s = *sp;
+    (void) s.apply (command::SetTarget { 1, "allStreaming" });
     (void) s.apply (audio.load (1));
     ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; }), "PRECONDITION: measured");
     const auto before = s.snapshot();
@@ -773,6 +776,7 @@ void oneNeedOneMeasurement()
     felitronics::test::group ("one need, one measurement: a target with the same ceiling measures nothing; the source is measured once");
     Clicks audio;
     auto sp = fresh(); auto& s = *sp;
+    (void) s.apply (command::SetTarget { 1, "allStreaming" });
     (void) s.apply (audio.load (1));
     ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; }), "PRECONDITION: measured");
     const auto before = s.snapshot();

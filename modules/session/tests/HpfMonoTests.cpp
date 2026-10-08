@@ -225,14 +225,14 @@ void theCutoffOnTheChainsResponse()
     const auto r = detail::rules();
     // The machine's top is 50 Hz, never the knob's travel, which goes to 80 (owner, 01.10).
     ok (same (r.hpfTop.toDouble(), 50.0) && same (r.hpfFq.to.toDouble(), 80.0), "PRECONDITION: the machine's top 50 Hz, the knob's travel 80");
-    bool exact = true, stops = true, floors = true, unrounded = true, underTop = true;
+    bool exact = true, stops = true, floors = true, unrounded = true, underTop = true, aboveFloor = true;
     std::string worst;
     for (std::uint16_t row = 0; row < r.rows; ++row)
     {
         const auto target = r.row (row);
         const double loss = target.noteLossDb.toDouble(), floor = target.hpfFloor.toDouble();
         const int slope = target.hpfSlope;
-        floors = floors && same (floor, 32.0);
+        floors = floors && same (floor, target.key == "maxExtreme" ? 50.0 : 32.0);
         for (const std::uint32_t rate : { 44100u, 48000u, 96000u })
             for (int midi = 23; midi <= 62; ++midi)   // every band the note is sought in: from 30 Hz (30.87 Hz) to the table's top
             {
@@ -254,10 +254,12 @@ void theCutoffOnTheChainsResponse()
                 else stops = false;
                 stops = stops && p.devices.hpf.machine.on && p.devices.hpf.machine.slope == slope;
                 underTop = underTop && p.devices.hpf.machine.fq <= 50.0 && f.cutoffHz <= 50.0;
+                aboveFloor = aboveFloor && p.devices.hpf.machine.fq >= floor && f.cutoffHz >= floor;
             }
     }
-    ok (underTop, "the machine's cutoff is never above 50 Hz, on every target, note and rate — the knob's 80 is a person's");
-    ok (floors, "the floor is 32 Hz on every target");
+    ok (underTop, "the machine's cutoff is never above 50 Hz on every target, note and rate — the knob's 80 is a person's");
+    ok (aboveFloor, "the machine's cutoff is never below the target's floor on every target, note and rate");
+    ok (floors, "the floor is 32 Hz on every target but Maximum · extreme, 50 Hz (owner, 07.10 and 08.10)");
     ok (exact, "a note that decides: core's own high-pass takes exactly the target's loss there (1 dB, club 0.3), on every target, slope and rate" + (worst.empty() ? "" : " — not " + worst));
     ok (unrounded, "the cutoff is not rounded to the hertz");
     ok (stops, "a floor above the note's cutoff takes more of it, and says how much; a top below it takes less");
@@ -277,6 +279,20 @@ void theCutoffOnTheChainsResponse()
     ok (top.cut == HpfCut::Top && same (top.cutoffHz, 50.0), "a note whose cutoff is above 50 Hz: the top");
     const auto topText = text::Text::text (PlanText::hpf (top), text::Lang::Ru);
     ok (topText.find ("упёрся в 50,0") != std::string::npos, "and the report says it stopped there, at the machine's top: " + topText);
+    // Maximum · extreme's floor is the machine's top (owner, 08.10): a low note and a high one both get 50 Hz, never a
+    // cutoff below the target's floor — a floor above the top would let a high note's top undercut it.
+    double extremeFloor = 0.0;
+    for (std::uint16_t row = 0; row < r.rows; ++row)
+        if (r.row (row).key == "maxExtreme") extremeFloor = r.row (row).hpfFloor.toDouble();
+    for (const int midi : { 23, 45 })                         // 30.87 Hz, B0, and 110 Hz, A2
+    {
+        Readings in; in.occupy (midi, 0.5, 60, 6);
+        const auto p = plan (in.inputs ("maxExtreme", 60));
+        ok (extremeFloor > 0.0 && p.devices.hpf.machine.fq >= extremeFloor && p.found.hpf.cutoffHz >= extremeFloor
+            && same (p.devices.hpf.machine.fq, 50.0) && same (p.found.hpf.cutoffHz, 50.0),
+            "Maximum · extreme, a note at " + std::to_string (midiHz (midi)) + " Hz: the cutoff 50 Hz, never below the target's floor "
+            + std::to_string (extremeFloor) + " Hz — it is " + std::to_string (p.devices.hpf.machine.fq));
+    }
 }
 
 void quietAndUnmeasured()
@@ -741,7 +757,7 @@ void everyTargetFromOneMeasurement()
         const auto& d = s.project().devices;
         each = each && ! d.tilt.hand.db && d.hpf.machine.slope == target.hpfSlope && d.hpf.machine.on
             && same (v.view().plan.monoBass.crossoverHz, target.monoBass.toDouble()) && same (d.monoBass.machine.fq, target.monoBass.toDouble())
-            && (v.view().plan.hpf.cut == HpfCut::Note || v.view().plan.hpf.cut == HpfCut::Floor)
+            && (v.view().plan.hpf.cut == HpfCut::Note || v.view().plan.hpf.cut == HpfCut::Floor || v.view().plan.hpf.cut == HpfCut::BelowFloor)
             && v.view().measurements[std::size_t (Analyzer::LowEnd)].key == before.view().measurements[std::size_t (Analyzer::LowEnd)].key;
         if (v.view().plan.hpf.cut == HpfCut::Note)
             each = each && std::abs (coreLoss (d.hpf.machine.fq, target.hpfSlope, 48000, *v.view().plan.hpf.noteHz) - target.noteLossDb.toDouble()) < 1e-6;
