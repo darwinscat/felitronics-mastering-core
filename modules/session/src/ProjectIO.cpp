@@ -307,6 +307,16 @@ struct Writer
                         return;
                     }
                 }
+                // The waterfall (MVP): the mixes and the cut as the landing steered them, the machine's.
+                if (chain && master.report && master.report->waterfall)
+                {
+                    const auto name = Of::fields[field];
+                    const auto& v = rendered.params;
+                    if (device == Device::Glue && name == "mix") { workedLine (name, v.compressorMix, "machine"); return; }
+                    if (device == Device::Saturation && name == "mix") { workedLine (name, double (v.clipper.mix), "machine"); return; }
+                    if (device == Device::Limiter && name == "needlesDb" && std::isfinite (v.peakClipCutDb))
+                    { workedLine (name, v.peakClipCutDb, "machine"); return; }
+                }
                 if (isOn && chain)
                 {
                     bool active = truthOf (sounded);
@@ -330,6 +340,30 @@ struct Writer
                 else workedLine (Of::fields[field], sounded, origin);
             }, settings, layers.machine, layers.hand, def);
         });
+        // THE WATERFALL (MVP): per zone the share asked, the share reached and the dB taken; the limiter's asked is the rest.
+        if (chain && master.report && master.report->waterfall)
+        {
+            const auto& w = *master.report->waterfall;
+            text ("\n[waterfall]\n");
+            const auto zone = [&] (std::string_view name, const MasterWaterfallZone& z)
+            {
+                const auto out = [&] (std::string_view what, const auto& n, std::string_view origin)
+                { text (name); text (what); text (" = "); value (n); text (" # "); text (origin); put ('\n'); };
+                if (z.asked) out ("Asked", *z.asked, "hand");
+                if (z.reached) out ("Reached", *z.reached, "machine");
+                if (z.db) out ("Db", *z.db, "machine");
+                if (z.setting) out ("Setting", *z.setting, "machine");
+                constexpr std::string_view stops[] = { "reached", "mixAtOne", "mixAtZero", "cutAtEnd", "cutAtZero", "comfortRed",
+                                                       "notSounding", "passes", "rest", "noWish" };
+                out ("Stop", stops[std::size_t (z.stop)], "machine");
+            };
+            zone ("glue", w.glue);
+            zone ("saturation", w.saturation);
+            zone ("cut", w.cut);
+            zone ("limiter", w.limiter);
+            if (w.totalDb) workedLine ("totalDb", *w.totalDb, "machine");
+            workedLine ("extraPasses", w.extraPasses, "machine");
+        }
         if (chain) renderState (rendered);
     }
 };
