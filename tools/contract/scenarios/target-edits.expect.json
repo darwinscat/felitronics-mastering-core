@@ -164,7 +164,8 @@
         "ratio": null,
         "kneeDb": null,
         "attackMs": null,
-        "releaseMs": null
+        "releaseMs": null,
+        "share": null
       },
       "session": "main"
     },
@@ -176,7 +177,8 @@
         "on": null,
         "drive": null,
         "mix": null,
-        "type": null
+        "type": null,
+        "share": null
       },
       "session": "main"
     },
@@ -199,7 +201,8 @@
         "needlesDb": null,
         "releaseMs": null,
         "lookaheadMs": null,
-        "oversampling": null
+        "oversampling": null,
+        "cutShare": null
       },
       "session": "main"
     },
