@@ -1746,8 +1746,11 @@ allocator margin before any job allocation. `step` advances the search by bounde
 landing has at most twelve measured passes. A safe miss retains the best verified output and its typed
 reason. Unavailable mandatory readings yield no transferable PCM; a true peak above the ceiling does only where no render
 kept under it, the gentlest delivered and marked `peaksAboveCeiling`. Optional
-source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
-readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
+source analyzers continue independently. `canMaster` in the snapshot says whether a master asked now would be taken —
+at once or queued (`storageFor (Master {})` accepts it); capacity is reported by the preflight demand. A master is
+queued, never refused for its timing, except where its readings never come (a silent source) or come only if a person
+continues a measurement stopped before its first readings: there it is refused as the table says (`NotMeasured`), a
+queued one included, which ends `Failed`. The snapshot also exposes the pending transfer
 token and PCM byte count. Every field is present on decode; a missing key is a decode error.
 
 One session owns at most one pending delivery PCM. Its `MasterToken` names source, completion revision,
@@ -1996,7 +1999,10 @@ render's P95 beside the budget) and, delivered on the floor, `MasterMaxFloor` (6
 person is told of no budget) followed by `MasterMaxFloorDetail` (617), the numbers for the log only: where the first
 landing's file stopped, the floor, and the P95 the limiter took to reach it beside the mode's budget (above it printed
 above it, as 615's; within it as it is) — no claim of what held the first landing. A floor pass that cannot reach the
-floor (the true peak, the passes) says what held it instead (`TruePeak`, `Passes`), never `Floor`. A max row's `lufs` is where its
+floor (the true peak, the passes) says what held it instead (`TruePeak`, `Passes`), never `Floor`. A max mode delivered by
+its landing with the zones (cleaner, not louder) reports that landing: its `targetLufs` is the loudness the landing
+without them reached (or the floor it was pulled up to), its `missLu` and `targetMet` from there, and its `maxStop` what
+ended it where it did not land (`TruePeak`, `Passes`) — the first landing's stop only where it landed. A max row's `lufs` is where its
 manual mode starts (−13 clean, −11 dense): the planner reads it as before.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
