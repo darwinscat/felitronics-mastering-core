@@ -189,7 +189,13 @@ struct Staged
     bool counted = false;
     mastering::ClipperPeaks peaks {};
     double grMax = 0.0, grP95 = 0.0;
+    // The same two numbers of what the song got: the drop the stage's output takes against its input, sample by sample
+    // — the dry signal at 1 - mix under the compressed one at mix, the compressor's gain on the compressed one.
+    double blendMax = 0.0, blendP95 = 0.0;
 };
+// The drop a parallel stage at `mix` gives where its compressed path is reduced by `grDb`, dB, positive — written here
+// with the platform's libm, apart from the core's.
+double blendDb (double grDb, double mix) { return -20.0 * std::log10 ((1.0 - mix) + mix * std::pow (10.0, -grDb / 20.0)); }
 mastering::MasteringChainConfig twoStages (bool limiter = false)
 {
     mastering::MasteringChainConfig topology;
@@ -228,17 +234,28 @@ Staged stage (const Mix& mix, mastering::MasteringChainParams params, double gai
     }
     out.gr.resize (std::size_t (written));
     out.counted = chain.clipperPeaks (loudShare, out.peaks);
-    // The gain reduction as the report states it: the largest sample, and the P95 of the 4 ms windows' means.
-    std::vector<double> windows;
+    // The gain reduction as the stage applied it: the largest sample, and the P95 of the 4 ms windows' means; then the
+    // same of the drop through the mix the stage ran (the chain narrows it to a float).
+    const double mixed = double (float (params.compressorMix));
+    std::vector<double> windows, blended;
     const std::size_t window = 192;
     for (std::size_t at = 0; at < out.gr.size(); at += window)
     {
-        double sum = 0; const std::size_t end = std::min (out.gr.size(), at + window);
-        for (std::size_t i = at; i < end; ++i) { sum += std::fabs (double (out.gr[i])); out.grMax = std::max (out.grMax, std::fabs (double (out.gr[i]))); }
-        windows.push_back (sum / double (end - at));
+        double sum = 0, drop = 0; const std::size_t end = std::min (out.gr.size(), at + window);
+        for (std::size_t i = at; i < end; ++i)
+        {
+            const double gr = std::fabs (double (out.gr[i])), b = blendDb (gr, mixed);
+            sum += gr; drop += b;
+            out.grMax = std::max (out.grMax, gr); out.blendMax = std::max (out.blendMax, b);
+        }
+        windows.push_back (sum / double (end - at)); blended.push_back (drop / double (end - at));
     }
-    std::sort (windows.begin(), windows.end());
-    if (! windows.empty()) out.grP95 = windows[std::min (windows.size() - 1, std::size_t (std::ceil (0.95 * double (windows.size()))) - 1)];
+    const auto p95 = [] (std::vector<double>& v)
+    {
+        std::sort (v.begin(), v.end());
+        return v.empty() ? 0.0 : v[std::min (v.size() - 1, std::size_t (std::ceil (0.95 * double (v.size()))) - 1)];
+    };
+    out.grP95 = p95 (windows); out.blendP95 = p95 (blended);
     return out;
 }
 double cutDb (double quietGain, double ratio) { return 20.0 * felitronics::core::det::log10 (quietGain / ratio); }
@@ -815,10 +832,12 @@ void theReport()
     // The same two stages alone, the input brought up by the one gain: what the master's own stages did, to the bit.
     auto alone = request.ready.params;
     const auto staged = stage (mix, alone, gainDb, loudShare());
+    ok (same (request.ready.params.compressorMix, 0.4), "PRECONDITION: the tick's glue at its mix, 40 %");
     ok (cost.glueP95Db.value && cost.glueMaxDb.value && cost.glueP95Db.reason == MeasurementReason::None
-        && same (*cost.glueMaxDb.value, staged.grMax) && near (*cost.glueP95Db.value, staged.grP95, 0.1) && *cost.glueMaxDb.value >= *cost.glueP95Db.value,
+        && near (*cost.glueMaxDb.value, staged.blendMax, 1e-9) && near (*cost.glueP95Db.value, staged.blendP95, 0.1) && *cost.glueMaxDb.value >= *cost.glueP95Db.value,
         "the glue: " + std::to_string (*cost.glueP95Db.value) + " dB at its P95, " + std::to_string (*cost.glueMaxDb.value)
-        + " dB at most — the compressor's own trace (alone: " + std::to_string (staged.grP95) + " / " + std::to_string (staged.grMax) + ")");
+        + " dB at most — what the stage's output lost against its input, through its mix (alone: " + std::to_string (staged.blendP95) + " / "
+        + std::to_string (staged.blendMax) + "; the compressed path " + std::to_string (staged.grP95) + " / " + std::to_string (staged.grMax) + ")");
     ok (cost.saturationCutMaxDb.value && cost.saturationCutUsualDb.value
         && same (*cost.saturationCutMaxDb.value, cutDb (staged.peaks.quietGain, staged.peaks.loudLeastRatio))
         && same (*cost.saturationCutUsualDb.value, cutDb (staged.peaks.quietGain, staged.peaks.loudUsualRatio))
@@ -856,6 +875,101 @@ void theReport()
     ok (bareCost && ! bareCost->glueP95Db.value && bareCost->glueP95Db.reason == MeasurementReason::NoSignal && ! bareCost->saturationCutMaxDb.value
         && bareCost->saturationCutUsualDb.reason == MeasurementReason::NoSignal && silent,
         "with both stages out of the chain the report has no number for them — NoSignal — and no line");
+}
+// WHAT THE SONG GOT FROM THE GLUE (owner, 08.10): the report's glue line counts the glue's mix. Its two numbers are the
+// drop of the stage's OUTPUT — the dry signal at 1 - mix under the compressed one at mix — against its input, on the same
+// places and with the same statistics as the compressed path's: the P95 of the 4 ms windows and the largest sample. The
+// glue alone, with no lookahead, shows the drop is that, sample by sample; at mix 1 the numbers are the compressed path's.
+void theBlend()
+{
+    felitronics::test::group ("the glue's line counts its mix: the drop of the stage's output against its input — at 40 % about 0.4 of mix 1's, at 1 the same");
+    const Mix mix;
+    struct Took
+    {
+        bool taken = false;
+        double p95 = 0.0, max = 0.0;
+        Staged staged;
+        mastering::MasteringChainParams params;
+        double gainDb = 0.0;
+    };
+    const auto master = [&] (double share)
+    {
+        Took t;
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        GlueFields<Touched> knob; knob.on = true; knob.upToDb = 3.0; knob.mix = share;
+        if (s.apply (command::EditDevice { 3, knob }).rejection != Rejection::None) return t;
+        command::Master request { 4 };
+        request.ready.version = 1;
+        request.ready.topology = twoStages (true);
+        {
+            const auto snapshot = s.snapshot();
+            detail::writeDynamics (inputsOf (s, snapshot), s.project().devices, request.ready.params);
+            t.gainDb = *snapshot.view().plan.inputGainDb;
+        }
+        request.source = s.source().hash; request.revision = s.revision();
+        if (! same (request.ready.params.compressorMix, share) || s.apply (request).rejection != Rejection::None) return t;
+        (void) finish (s);
+        if (s.masters().size() != 1 || ! s.masters()[0].report || ! s.masters()[0].report->cost) return t;
+        const auto& cost = *s.masters()[0].report->cost;
+        if (! cost.glueP95Db.value || ! cost.glueMaxDb.value) return t;
+        t.p95 = *cost.glueP95Db.value; t.max = *cost.glueMaxDb.value;
+        t.params = request.ready.params;
+        t.staged = stage (mix, t.params, t.gainDb, loudShare());
+        t.taken = true;
+        return t;
+    };
+    const auto full = master (1.0), parallel = master (0.4), dry = master (0.0);
+    ok (full.taken && parallel.taken && dry.taken, "PRECONDITION: glue up to 3 dB mastered at mix 1, 0.4 and 0, each with its glue's two numbers");
+    ok (same (full.staged.grMax, parallel.staged.grMax) && same (full.staged.grP95, parallel.staged.grP95) && full.staged.grMax > 2.0,
+        "the compressed path is the same at every mix: " + std::to_string (full.staged.grP95) + " dB at its P95, " + std::to_string (full.staged.grMax)
+        + " at most — the mix moves no detector");
+    ok (same (full.max, full.staged.grMax) && near (full.p95, full.staged.grP95, 0.1),
+        "at mix 1 the line's numbers are the compressed path's, as before: " + std::to_string (full.p95) + " / " + std::to_string (full.max) + " dB");
+    const double shareP95 = parallel.p95 / full.p95, shareMax = parallel.max / full.max;
+    std::printf ("    mix 1: %.3f / %.3f dB; mix 0.4: %.3f / %.3f dB (%.3f and %.3f of it); the drop alone at 0.4: %.3f / %.3f dB\n",
+        full.p95, full.max, parallel.p95, parallel.max, shareP95, shareMax, parallel.staged.blendP95, parallel.staged.blendMax);
+    ok (shareP95 > 0.3 && shareP95 <= 0.4 && shareMax > 0.3 && shareMax <= 0.4,
+        "at mix 0.4 about 0.4 of mix 1's — " + std::to_string (shareP95) + " at the P95, " + std::to_string (shareMax) + " at most (a little under, the loss being in dB)");
+    ok (near (parallel.max, parallel.staged.blendMax, 1e-9) && near (parallel.p95, parallel.staged.blendP95, 0.1),
+        "and they are the drop of the stage's output, through the mix, on the same windows: " + std::to_string (parallel.p95) + " / "
+        + std::to_string (parallel.max) + " dB against " + std::to_string (parallel.staged.blendP95) + " / " + std::to_string (parallel.staged.blendMax));
+    ok (same (dry.max, 0.0) && same (dry.p95, 0.0) && ! std::signbit (dry.max) && ! std::signbit (dry.p95) && dry.staged.grMax > 2.0,
+        "at mix 0 the glue took nothing — 0 dB, not −0 — while its compressor works on a signal nobody hears");
+
+    // The premise, on the stage itself: the glue alone (no clipper, no limiter, no lookahead), its output against its
+    // input sample by sample where the input is loud enough to divide by, beside the drop its tap gives through the mix.
+    auto topology = twoStages();
+    topology.clipper = false;
+    auto params = parallel.params;
+    params.inputGainDb += parallel.gainDb;
+    mastering::MasteringChain chain;
+    chain.setParams (params);
+    felitronics::test::run (chain.prepare (double (Mix::rate), 2, topology));
+    const int latency = chain.latencySamples(), block = 1024, total = int (mix.frames) + latency;
+    std::vector<float> left (std::size_t (total), 0.0f), right (std::size_t (total), 0.0f), gr (std::size_t (total + block));
+    std::copy (mix.left.begin(), mix.left.end(), left.begin()); std::copy (mix.right.begin(), mix.right.end(), right.begin());
+    int written = 0;
+    for (int at = 0; at < total; at += block)
+    {
+        float* io[] { left.data() + at, right.data() + at };
+        mastering::MasteringChainTaps taps;
+        taps.compressorGrDb = gr.data() + written; taps.frameCapacity = int (gr.size()) - written;
+        felitronics::test::run (chain.process (io, 2, std::min (block, total - at), taps));
+        written += taps.framesWritten;
+    }
+    const double gain = std::pow (10.0, params.inputGainDb / 20.0), m = double (float (params.compressorMix));
+    double worst = 0.0, deepest = 0.0;
+    std::size_t compared = 0;
+    for (unsigned j = 0; j < mix.frames && int (j) < written; ++j)
+        for (const auto& [in, out] : { std::pair { mix.left[j], left[j + unsigned (latency)] }, std::pair { mix.right[j], right[j + unsigned (latency)] } })
+        {
+            if (std::fabs (in) < 1e-3f) continue;
+            const double drop = -20.0 * std::log10 (double (out) / (double (in) * gain)), expected = blendDb (std::fabs (double (gr[j])), m);
+            worst = std::max (worst, std::fabs (drop - expected)); deepest = std::max (deepest, drop); ++compared;
+        }
+    ok (compared > mix.frames && deepest > 0.5 && worst < 1e-3,
+        "the stage's output is its input times (1 - mix) + mix x the compressed path's gain: over " + std::to_string (compared)
+        + " samples, the deepest drop " + std::to_string (deepest) + " dB, within " + std::to_string (worst) + " dB of it");
 }
 void theType()
 {
@@ -1456,6 +1570,7 @@ int main()
     theCalibration();
     theCut();
     theReport();
+    theBlend();
     theType();
     outStatesItsNumbers();
     limiterAndDitherAsTheChainGetsThem();
