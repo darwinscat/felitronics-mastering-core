@@ -98,7 +98,7 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
     static constexpr Device device = Device::Glue;
     static constexpr std::string_view name = "glue";
     static constexpr std::string_view fields[] = { "on", "upToDb", "mix", "thresholdDb", "ratio", "kneeDb", "attackMs",
-                                                   "releaseMs" };
+                                                   "releaseMs", "share" };
     static auto& layers (Devices& d) noexcept { return d.glue; }
     static const auto& layers (const Devices& d) noexcept { return d.glue; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -111,6 +111,7 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
         v (5, knobRule (r.glueKnee), s.kneeDb...);
         v (6, knobRule (r.glueAttack), s.attackMs...);
         v (7, knobRule (r.glueRelease), s.releaseMs...);
+        v (8, knobRule (r.glueMix), s.share...);
     }
 };
 
@@ -118,7 +119,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
 {
     static constexpr Device device = Device::Saturation;
     static constexpr std::string_view name = "saturation";
-    static constexpr std::string_view fields[] = { "on", "drive", "mix", {}, "type" };   // 3 names nothing
+    static constexpr std::string_view fields[] = { "on", "drive", "mix", {}, "type", "share" };   // 3 names nothing
     static auto& layers (Devices& d) noexcept { return d.saturation; }
     static const auto& layers (const Devices& d) noexcept { return d.saturation; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -127,6 +128,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
         v (1, knobRule (r.drive), s.drive...);
         v (2, knobRule (r.mix), s.mix...);
         v (4, saturationTypeRule(), s.type...);
+        v (5, knobRule (r.glueMix), s.share...);
     }
 };
 
@@ -148,7 +150,8 @@ template <template <class> class F> struct DeviceOf<LimiterFields<F>>
 {
     static constexpr Device device = Device::Limiter;
     static constexpr std::string_view name = "limiter";
-    static constexpr std::string_view fields[] = { "needles", "needlesDb", "releaseMs", "lookaheadMs", "oversampling" };
+    static constexpr std::string_view fields[] = { "needles", "needlesDb", "releaseMs", "lookaheadMs", "oversampling",
+                                                   "cutShare" };
     static auto& layers (Devices& d) noexcept { return d.limiter; }
     static const auto& layers (const Devices& d) noexcept { return d.limiter; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -158,6 +161,7 @@ template <template <class> class F> struct DeviceOf<LimiterFields<F>>
         v (2, knobRule (r.limiterRelease), s.releaseMs...);
         v (3, knobRule (r.limiterLookahead), s.lookaheadMs...);
         v (4, oversamplingRule(), s.oversampling...);
+        v (5, knobRule (r.glueMix), s.cutShare...);
     }
 };
 

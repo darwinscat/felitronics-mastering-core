@@ -171,8 +171,9 @@ bool glueTicked (const Layers<GlueFields>& glue) noexcept
 {
     // The five by hand take no part: the amount they are laid over never moves with them, so a field left alone keeps its
     // value whatever another field holds.
+    // A wished share (the waterfall, MVP) ticks a glue no person turned on or off.
     const auto& h = glue.hand;
-    return h.on && *h.on && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
+    return (h.on ? *h.on : h.share.has_value()) && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
 }
 
 double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept
@@ -203,7 +204,7 @@ void tickedCharacter (const Rules& rules, GlueFinding& f) noexcept
 bool saturationTicked (const Layers<SaturationFields>& saturation) noexcept
 {
     const auto& h = saturation.hand;
-    return h.on && *h.on && ! h.drive && ! (saturation.machine.drive > 0.0);
+    return (h.on ? *h.on : h.share.has_value()) && ! h.drive && ! (saturation.machine.drive > 0.0);
 }
 
 double saturationKnob (const Rules& rules, const Layers<SaturationFields>& saturation) noexcept
@@ -261,7 +262,8 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
     const double upToDb = glueKnob (in.rules, devices.glue);
     const double mix = settingsOf (in.rules, devices.glue).mix;
-    const bool ticked = offeredByShell && settingsOf (in.rules, devices.glue).on && upToDb > 0.0;
+    const bool wished = ! devices.glue.hand.on && devices.glue.hand.share.has_value();
+    const bool ticked = offeredByShell && (settingsOf (in.rules, devices.glue).on || wished) && upToDb > 0.0;
     const auto levels = inputLevels (in);
     if (ticked && ! levels.p95Db) { f.upToDb = upToDb; f.mix = mix; f.state = GlueState::Unavailable; return f; }
     // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
@@ -305,7 +307,8 @@ SaturationFinding saturationFinding (const PlanInputs& in, const Devices& device
     f.knobDb = drive;
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Saturation))) != 0;
     const auto levels = inputLevels (in);
-    if (! offeredByShell || ! settings.on || ! (drive > 0.0) || ! levels.truePeakDb) return f;
+    const bool wished = ! devices.saturation.hand.on && devices.saturation.hand.share.has_value();
+    if (! offeredByShell || ! (settings.on || wished) || ! (drive > 0.0) || ! levels.truePeakDb) return f;
     f.active = true;
     f.peakDbTp = levels.truePeakDb;
     // The shaper's gain aligned: the knob is the drive at 0 dBTP, k = 10^(drive/20) − 1 scaled by the peak.

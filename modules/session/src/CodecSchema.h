@@ -428,6 +428,20 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (TickFrom::Touched) == 2);
         return 2;
     }
+    else if constexpr (std::is_same_v<T, WaterfallStop>)
+    {
+        static_assert (unsigned (WaterfallStop::Reached) == 0);
+        static_assert (unsigned (WaterfallStop::MixAtOne) == 1);
+        static_assert (unsigned (WaterfallStop::MixAtZero) == 2);
+        static_assert (unsigned (WaterfallStop::CutAtEnd) == 3);
+        static_assert (unsigned (WaterfallStop::CutAtZero) == 4);
+        static_assert (unsigned (WaterfallStop::ComfortRed) == 5);
+        static_assert (unsigned (WaterfallStop::NotSounding) == 6);
+        static_assert (unsigned (WaterfallStop::Passes) == 7);
+        static_assert (unsigned (WaterfallStop::Rest) == 8);
+        static_assert (unsigned (WaterfallStop::NoWish) == 9);
+        return 9;
+    }
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
 }
 
@@ -959,6 +973,23 @@ constexpr void checkEnum (TickFrom value) noexcept
     }
 }
 
+constexpr void checkEnum (WaterfallStop value) noexcept
+{
+    switch (value)
+    {
+        case WaterfallStop::Reached: break;
+        case WaterfallStop::MixAtOne: break;
+        case WaterfallStop::MixAtZero: break;
+        case WaterfallStop::CutAtEnd: break;
+        case WaterfallStop::CutAtZero: break;
+        case WaterfallStop::ComfortRed: break;
+        case WaterfallStop::NotSounding: break;
+        case WaterfallStop::Passes: break;
+        case WaterfallStop::Rest: break;
+        case WaterfallStop::NoWish: break;
+    }
+}
+
 template <class V, class T> void describe (V& v, T& x) noexcept
 {
     using U = std::remove_cv_t<T>;
@@ -1150,7 +1181,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, std::optional<double>>);
         v.field ("attackMs", x.attackMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, std::optional<double>>);
@@ -1163,6 +1194,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("ratio", x.ratio);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, std::optional<double>>);
         v.field ("releaseMs", x.releaseMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.share)>, std::optional<double>>);
+        v.field ("share", x.share);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.thresholdDb)>, std::optional<double>>);
         v.field ("thresholdDb", x.thresholdDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, std::optional<double>>);
@@ -1170,7 +1203,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, double>);
         v.field ("attackMs", x.attackMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, double>);
@@ -1183,6 +1216,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("ratio", x.ratio);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, double>);
         v.field ("releaseMs", x.releaseMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.share)>, double>);
+        v.field ("share", x.share);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.thresholdDb)>, double>);
         v.field ("thresholdDb", x.thresholdDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, double>);
@@ -1398,7 +1433,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LimiterFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cutShare)>, std::optional<double>>);
+        v.field ("cutShare", x.cutShare);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lookaheadMs)>, std::optional<double>>);
         v.field ("lookaheadMs", x.lookaheadMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needles)>, std::optional<Needles>>);
@@ -1412,7 +1449,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LimiterFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cutShare)>, double>);
+        v.field ("cutShare", x.cutShare);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lookaheadMs)>, double>);
         v.field ("lookaheadMs", x.lookaheadMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needles)>, Needles>);
@@ -1708,7 +1747,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterReport>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
@@ -1769,6 +1808,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("targetMet", x.targetMet);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, std::optional<double>>);
         v.field ("truePeakDbTp", x.truePeakDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.waterfall)>, std::optional<MasterWaterfall>>);
+        v.field ("waterfall", x.waterfall);
     }
     else if constexpr (std::is_same_v<U, MasterSection>)
     {
@@ -1797,6 +1838,36 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("revision", x.revision);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.source)>, std::uint64_t>);
         v.field ("source", x.source);
+    }
+    else if constexpr (std::is_same_v<U, MasterWaterfall>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cut)>, MasterWaterfallZone>);
+        v.field ("cut", x.cut);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.extraPasses)>, std::uint32_t>);
+        v.field ("extraPasses", x.extraPasses);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, MasterWaterfallZone>);
+        v.field ("glue", x.glue);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiter)>, MasterWaterfallZone>);
+        v.field ("limiter", x.limiter);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturation)>, MasterWaterfallZone>);
+        v.field ("saturation", x.saturation);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.totalDb)>, std::optional<double>>);
+        v.field ("totalDb", x.totalDb);
+    }
+    else if constexpr (std::is_same_v<U, MasterWaterfallZone>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.asked)>, std::optional<double>>);
+        v.field ("asked", x.asked);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.db)>, std::optional<double>>);
+        v.field ("db", x.db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reached)>, std::optional<double>>);
+        v.field ("reached", x.reached);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.setting)>, std::optional<double>>);
+        v.field ("setting", x.setting);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.stop)>, WaterfallStop>);
+        v.field ("stop", x.stop);
     }
     else if constexpr (std::is_same_v<U, MasterWaveformBucket>)
     {
@@ -2284,25 +2355,29 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SaturationFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.drive)>, std::optional<double>>);
         v.field ("drive", x.drive);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, std::optional<double>>);
         v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, std::optional<bool>>);
         v.field ("on", x.on);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.share)>, std::optional<double>>);
+        v.field ("share", x.share);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.type)>, std::optional<SaturationType>>);
         v.field ("type", x.type);
     }
     else if constexpr (std::is_same_v<U, SaturationFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.drive)>, double>);
         v.field ("drive", x.drive);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, double>);
         v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.share)>, double>);
+        v.field ("share", x.share);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.type)>, SaturationType>);
         v.field ("type", x.type);
     }

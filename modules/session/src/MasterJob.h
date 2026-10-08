@@ -209,6 +209,13 @@ struct MasterJob final
     int startedRenders() const noexcept { return int (floorFirstPasses) + search.startedRenders(); }
     double renderProgress() const noexcept { return double (floorFirstPasses) + std::max (0.0, search.renderProgress()); }
     mastering::LoudnessRequest floorRequest {};
+    // The waterfall (MVP): the wishes the landing was given, and the stages as its first landing steered them — the
+    // parameters the delivery, the floor pass and the report take the mixes and the cut from.
+    bool waterfall = false;
+    double waterfallGlueShare = 0.0, waterfallSaturationShare = 0.0, waterfallCutShare = 0.0, waterfallCutMaxDb = 0.0;
+    std::uint32_t waterfallSteps = 0;
+    mastering::MasteringChainParams steered {};
+    void steer (mastering::MasteringChainParams& params) const noexcept;
     [[nodiscard]] bool beginFloor() noexcept;
     [[nodiscard]] bool beginDeliveryRender() noexcept;
     mastering::StepResult settleLanding (mastering::StepResult result) noexcept;

@@ -198,6 +198,29 @@ struct MasterDamage
     std::optional<double> sourceLraLu, masterLraLu, lraChangeLu, lraChangePercent;
     MeasurementReason lraReason = MeasurementReason::NotImplemented;
 };
+// THE WATERFALL (MVP): what stopped a zone short of (or past) its asked share, by more than 0.1 dB of the total's share
+// (or 3 % of the total, where that is more): its mix at 1 or at 0,
+// the clipper's cut at its domain's end or at 0, its comfort window's red (no moved knob has one yet), a stage that did
+// not sound, or the steering out of moves (Passes). Reached within that; Rest, the limiter's; NoWish, no share asked.
+enum class WaterfallStop : std::uint8_t { Reached, MixAtOne, MixAtZero, CutAtEnd, CutAtZero, ComfortRed, NotSounding, Passes, Rest,
+                                          NoWish };
+// One zone: the share of the peak work a person asked (absent: no wish; the limiter's, the rest), the share the delivered
+// render reached, the dB the zone took — the glue's P95 through its mix, the saturation's usual cut, the needles' clipper's
+// P95 over what it clipped, the limiter's P95 on its active windows — the setting the landing steered to (the glue's and
+// the saturation's mix, the clipper's cut in dB; absent for the limiter and a stage that did not sound), and its stop.
+struct MasterWaterfallZone
+{
+    std::optional<double> asked, reached, db, setting;
+    WaterfallStop stop = WaterfallStop::NoWish;
+};
+// The four zones, their total in dB, and the passes the fitting took beyond the landing's own (each a render the steering
+// moved the stages after, so never a candidate).
+struct MasterWaterfall
+{
+    MasterWaterfallZone glue, saturation, cut, limiter;
+    std::optional<double> totalDb;
+    std::uint32_t extraPasses = 0;
+};
 struct MasterReport
 {
     MeasurementStatus status = MeasurementStatus::Unavailable;
@@ -229,6 +252,7 @@ struct MasterReport
     DeliveryMode deliveryMode = DeliveryMode::Mastered;
     double deliveryGainDb = 0.0;
     bool deliveryDithered = false;
+    std::optional<MasterWaterfall> waterfall;  // a person's wish of shares only
 };
 // What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
 // source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), the limiter's budget it was
