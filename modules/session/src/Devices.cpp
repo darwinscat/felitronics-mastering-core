@@ -83,6 +83,11 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     auto& limiter = devices.limiter.machine;
     limiter.needles = target.noClipper ? Needles::Off : Needles::Auto;
     limiter.needlesDb = number (rules.needlesDefault);
+    // The three by hand (08.10): the machine's are the constants the chain had — [limiter] releaseMs and lookaheadMs,
+    // [chain] oversampleFactor.
+    limiter.releaseMs = number (rules.limiterReleaseDefault);
+    limiter.lookaheadMs = number (rules.limiterLookaheadDefault);
+    limiter.oversampling = rules.oversamplingDefault;
 
     devices.dither.machine.on = rules.dither && offered (rules, row, channels, Device::Dither);
 

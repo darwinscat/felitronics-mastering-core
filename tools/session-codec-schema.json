@@ -481,14 +481,20 @@
       "cpp": "LimiterFields<Value>",
       "fields": {
         "needles": "Needles",
-        "needlesDb": "double"
+        "needlesDb": "double",
+        "releaseMs": "double",
+        "lookaheadMs": "double",
+        "oversampling": "int32"
       }
     },
     "LimiterFieldsTouched": {
       "cpp": "LimiterFields<Touched>",
       "fields": {
         "needles": "Needles?",
-        "needlesDb": "double?"
+        "needlesDb": "double?",
+        "releaseMs": "double?",
+        "lookaheadMs": "double?",
+        "oversampling": "int32?"
       }
     },
     "LimiterFieldsLayers": {
@@ -1640,7 +1646,10 @@
     },
     "EditDeviceLimiterFields": {
       "needles?": "Needles | null",
-      "needlesDb?": "WireNumber | null"
+      "needlesDb?": "WireNumber | null",
+      "releaseMs?": "WireNumber | null",
+      "lookaheadMs?": "WireNumber | null",
+      "oversampling?": "number | null"
     },
     "EditDeviceDitherCommand": {
       "kind": "\"editDevice\"",
@@ -1743,7 +1752,10 @@
     },
     "RevertEditsLimiterFields": {
       "needles?": "boolean",
-      "needlesDb?": "boolean"
+      "needlesDb?": "boolean",
+      "releaseMs?": "boolean",
+      "lookaheadMs?": "boolean",
+      "oversampling?": "boolean"
     },
     "RevertEditsDitherCommand": {
       "kind": "\"revertEdits\"",

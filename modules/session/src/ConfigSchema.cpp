@@ -206,6 +206,18 @@ struct Doc
         return true;
     }
 
+    // [min, max] of integers within `domain`, min < max: a bound written with a decimal point is the wrong type, at its
+    // line and column, for a reader that takes the two as integers.
+    bool intPair (Reader& in, std::string_view key, Span& out, const I& domain)
+    {
+        std::vector<std::int32_t> v;
+        if (! in.required (key, v, domain)) return false;
+        if (v.size() != 2) { refuse (in, key, Refusal::NotAPair); return false; }
+        if (! (v[0] < v[1])) { refuse (in, key, Refusal::OutOfOrder); return false; }
+        out = { double (v[0]), double (v[1]) };
+        return true;
+    }
+
     // { min = …, max = … } within `domain`, min < max.
     bool minMax (Reader& in, std::string_view key, Span& out, const R& domain)
     {
@@ -391,6 +403,8 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     d.below (in, between && sh, o.betweenCutDb, o.shortCutDb, "shortCutDb");
 }
 
+void readComfort (Doc& d, Reader& in, std::string_view key, Comfort& c, const R& domain);
+
 void readLimiter (Doc& d, Reader& in, Limiter& o)
 {
     in.required ("ceilingMarginDb", o.ceilingMarginDb, R { 0.0, 3.0 });
@@ -400,6 +414,22 @@ void readLimiter (Doc& d, Reader& in, Limiter& o)
     const bool slow = in.required ("slowReleaseMs", o.slowReleaseMs, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
     d.notAbove (in, fast && slow, o.releaseMs, o.slowReleaseMs, "slowReleaseMs");   // the slow envelope is not the faster
     in.table ("peakClipper", Need::Required, [&] (Reader& t) { readPeakClipper (d, t, o.peakClipper); });
+    // The three by hand (08.10): the release and the lookahead, each its domain inside what felitronics-core's limiter
+    // takes (a release of at least 8 samples at the lowest source rate, a lookahead of at most 20 ms), its travel inside
+    // the domain, its step, its field; the oversampling's domain inside the limiter's factors, 2 to 16, two integers — the
+    // session reads them as integers (Rules::oversampling).
+    const auto hand = [&] (std::string_view domainKey, std::string_view rangeKey, std::string_view stepKey,
+                           std::string_view comfortKey, Limiter::HandKnob& k, const R& limits)
+    {
+        const R domain = readDomain (d, in, domainKey, k.domain, limits);
+        d.pair (in, rangeKey, k.range, domain);
+        in.required (stepKey, k.step, R { 0.0, 1000.0 });   // 0: no step
+        readComfort (d, in, comfortKey, k.comfort, domain);
+    };
+    hand ("releaseMsDomain", "releaseMsRange", "releaseMsStep", "releaseMsComfort", o.releaseKnob,
+          R { 8000.0 / kSourceRates[0], 5000.0 });
+    hand ("lookaheadMsDomain", "lookaheadMsRange", "lookaheadMsStep", "lookaheadMsComfort", o.lookaheadKnob, R { 0.0, 20.0 });
+    d.intPair (in, "oversamplingDomain", o.oversamplingDomain, I { 2, 16 });
 }
 
 // The low end (analysis::LowEnd): the main run and the infra-low run — the same geometry, split at infraLowCrossoverHz —

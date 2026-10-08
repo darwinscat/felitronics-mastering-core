@@ -129,6 +129,13 @@ template <template <class> class F> struct LimiterFields
 {
     F<Needles> needles {};
     F<double> needlesDb {};
+    // The three by hand (08.10): the limiter's release (ms), its lookahead (ms) and the oversampling its detector and gain
+    // run at (a factor, one of [limiter] oversamplingDomain's powers of two). The machine's layer holds [limiter]
+    // releaseMs and lookaheadMs and [chain] oversampleFactor; a person's field wins for that field alone. The oversampling
+    // is the chain's: the saturation stage, when it sounds, runs at the same factor.
+    F<double> releaseMs {};
+    F<double> lookaheadMs {};
+    F<std::int32_t> oversampling {};
 };
 
 // [dither]: on a delivery of 16 bits.

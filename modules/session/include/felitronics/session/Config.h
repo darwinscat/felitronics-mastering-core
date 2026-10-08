@@ -156,6 +156,13 @@ struct PeakClipper
     double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual cut starts at betweenCutDb
 };
 
+// A knob's coloured window (owner, 07.10): neutral from low to high, shading out to warningLow / warningHigh. A side that
+// does not exist is an edge at the domain's end.
+struct Comfort
+{
+    double low = 0.0, high = 0.0, warningLow = 0.0, warningHigh = 0.0;
+};
+
 struct Limiter
 {
     double ceilingMarginDb = 0.0;
@@ -164,13 +171,16 @@ struct Limiter
     bool dualRelease = false;
     double slowReleaseMs = 0.0;
     PeakClipper peakClipper;
-};
-
-// A knob's coloured window (owner, 07.10): neutral from low to high, shading out to warningLow / warningHigh. A side that
-// does not exist is an edge at the domain's end.
-struct Comfort
-{
-    double low = 0.0, high = 0.0, warningLow = 0.0, warningHigh = 0.0;
+    // The three by hand (08.10): the release and the lookahead as a person sets them — `<name>Domain`, `<name>Range`,
+    // `<name>Step`, `<name>Comfort` — and the oversampling's domain, whose powers of two a person may pick.
+    struct HandKnob
+    {
+        Span domain, range;
+        double step = 0.0;
+        Comfort comfort;
+    };
+    HandKnob releaseKnob, lookaheadKnob;
+    Span oversamplingDomain;
 };
 
 struct LowEndRun

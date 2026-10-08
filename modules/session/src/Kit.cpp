@@ -62,7 +62,7 @@ bool bandsAccepted (const BandsFields<Value>& bands, const Rules& r) noexcept
 // The knob a field turns — the one the commands check that field with — or null.
 const Knob* knobOf (const Rules& r, Term field) noexcept
 {
-    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for twenty-three of them.
+    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for twenty-five of them.
     if (field == Term::FieldTargetLufs) return &r.lufs;
     if (field == Term::FieldTargetTp) return &r.tp;
     if (field == Term::FieldHpfFq) return &r.hpfFq;
@@ -79,6 +79,8 @@ const Knob* knobOf (const Rules& r, Term field) noexcept
     if (field == Term::FieldSaturationMix) return &r.mix;
     if (field == Term::FieldTiltDb) return &r.tilt;
     if (field == Term::FieldLimiterNeedlesDb) return &r.needles;
+    if (field == Term::FieldLimiterReleaseMs) return &r.limiterRelease;
+    if (field == Term::FieldLimiterLookaheadMs) return &r.limiterLookahead;
     if (field == Term::FieldLowDb) return &r.low;
     if (field == Term::FieldBandsBody) return &r.bands[0];
     if (field == Term::FieldBandsMud) return &r.bands[1];
@@ -140,6 +142,17 @@ std::optional<Window> windowOf (const Rules& r, Term field) noexcept
             w.outHigh = number (comfort.find ("warningHigh"));
             return w;
         }
+    // The limiter's release and lookahead by hand (08.10): [limiter] <name>Comfort, read as the glue's.
+    if (field == Term::FieldLimiterReleaseMs || field == Term::FieldLimiterLookaheadMs)
+    {
+        const View comfort = r.engine.find ("limiter").find (field == Term::FieldLimiterReleaseMs ? "releaseMsComfort"
+                                                                                                  : "lookaheadMsComfort");
+        w.low = number (comfort.find ("low"));
+        w.high = number (comfort.find ("high"));
+        w.outLow = number (comfort.find ("warningLow"));
+        w.outHigh = number (comfort.find ("warningHigh"));
+        return w;
+    }
     if (field == Term::FieldTiltDb || field == Term::FieldLowDb)
     {
         const View device = r.engine.find (field == Term::FieldTiltDb ? "tilt" : "low");

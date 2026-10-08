@@ -104,6 +104,23 @@ releaseMs = 50
 dualRelease = false
 slowReleaseMs = 200
 lookaheadMs = 1
+# THE THREE BY HAND (owner, 08.10): the limiter's release, its lookahead and its oversampling, each a field a person may
+# set; the machine keeps the constants above (releaseMs, lookaheadMs) and [chain] oversampleFactor. The oversampling is
+# the chain's: the saturation stage, when it sounds, runs at the same factor.
+# <name>Domain: what a command and a project accept. <name>Range, <name>Step: the knob's travel and step — hints (0: no
+#   step). <name>Comfort: the knob's field — neutral over the whole domain until the owner sets one. A lookahead under two
+#   samples of the source rate is taken as two (felitronics-core's floor).
+# oversamplingDomain: a person may pick a power of two within it. felitronics-core's TruePeakLimiter takes 2 to 16 and
+#   refuses more, so 32 is not offered.
+releaseMsDomain = [1, 1000]
+releaseMsRange = [1, 1000]
+releaseMsStep = 0
+releaseMsComfort = { low = 20, high = 300, warningLow = 5, warningHigh = 600 }
+lookaheadMsDomain = [0, 10]
+lookaheadMsRange = [0, 10]
+lookaheadMsStep = 0
+lookaheadMsComfort = { low = 0.5, high = 3, warningLow = 0.2, warningHigh = 6 }
+oversamplingDomain = [2, 16]
 
 # THE PEAK CLIPPER INSIDE THE LIMITER, in the limiter's oversampler, its threshold relative to the ceiling. For a person it
 # is part of the limiter, not a device: the report has one limiter line (the ceiling and the master's true peak), the

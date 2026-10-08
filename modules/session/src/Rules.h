@@ -75,6 +75,9 @@ struct Rules
     Knob bands[5] {};                          // [bands] body, mud, forward, brightness, air: hard / step / domain
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
     Decimal needlesDefault {};                 // [limiter.peakClipper] betweenCutDb: where the manual cut starts
+    Knob limiterRelease {}, limiterLookahead {};   // [limiter] releaseMs…, lookaheadMs… by hand (08.10)
+    Decimal limiterReleaseDefault {}, limiterLookaheadDefault {};   // [limiter] releaseMs, lookaheadMs: the machine's
+    std::int32_t oversamplingDefault = 0;      // [chain] oversampleFactor: the machine's oversampling
     bool eq = false, monoBass = false, compressor = false, clipper = false, dither = false;   // [stages]
     std::int32_t ditherUpToBits = 0;           // [dither] onUpToBits
 
@@ -84,6 +87,8 @@ struct Rules
     [[nodiscard]] std::optional<std::uint16_t> find (std::string_view key) const noexcept;
     // Is dbPerOct in the filter order domain (multiples of 6, 6 through 96)?
     [[nodiscard]] bool slope (std::int32_t dbPerOct) const noexcept;
+    // [limiter] oversamplingDomain: a power of two within it — a factor the limiter's oversampler takes by hand.
+    [[nodiscard]] bool oversampling (std::int32_t factor) const noexcept;
 };
 
 // Read two build-checked documents without allocations.

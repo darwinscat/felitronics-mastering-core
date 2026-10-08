@@ -359,7 +359,8 @@ template <class T> bool field (toml::Reader& in, std::string_view key, const Rul
     {
         if (! in.optional (key, out)) return false;
         if constexpr (std::is_same_v<T, std::int32_t>)
-            if (! rules.slope (out)) in.refuse (key, unsigned (Rejection::NotOneOf));
+            if (! (rule.kind == detail::FieldRule::Kind::Oversampling ? rules.oversampling (out) : rules.slope (out)))
+                in.refuse (key, unsigned (Rejection::NotOneOf));
     }
     return true;
 }

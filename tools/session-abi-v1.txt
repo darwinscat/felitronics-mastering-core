@@ -2116,3 +2116,20 @@ enum felitronics::session::text::Term::FieldGlueRatio=155
 enum felitronics::session::text::Term::FieldGlueKneeDb=156
 enum felitronics::session::text::Term::FieldGlueAttackMs=157
 enum felitronics::session::text::Term::FieldGlueReleaseMs=158
+# The limiter's three by hand (08.10): its release, lookahead and oversampling as fields of the limiter device, a
+# person's layer over the machine's; their words.
+codec LimiterFieldsValue.releaseMs double
+codec LimiterFieldsValue.lookaheadMs double
+codec LimiterFieldsValue.oversampling int32
+codec LimiterFieldsTouched.releaseMs double?
+codec LimiterFieldsTouched.lookaheadMs double?
+codec LimiterFieldsTouched.oversampling int32?
+wire EditDeviceLimiterFields.releaseMs? WireNumber | null
+wire EditDeviceLimiterFields.lookaheadMs? WireNumber | null
+wire EditDeviceLimiterFields.oversampling? number | null
+wire RevertEditsLimiterFields.releaseMs? boolean
+wire RevertEditsLimiterFields.lookaheadMs? boolean
+wire RevertEditsLimiterFields.oversampling? boolean
+enum felitronics::session::text::Term::FieldLimiterReleaseMs=159
+enum felitronics::session::text::Term::FieldLimiterLookaheadMs=160
+enum felitronics::session::text::Term::FieldLimiterOversampling=161

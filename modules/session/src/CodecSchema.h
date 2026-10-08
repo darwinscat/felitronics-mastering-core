@@ -1396,19 +1396,31 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LimiterFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lookaheadMs)>, std::optional<double>>);
+        v.field ("lookaheadMs", x.lookaheadMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needles)>, std::optional<Needles>>);
         v.field ("needles", x.needles);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesDb)>, std::optional<double>>);
         v.field ("needlesDb", x.needlesDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.oversampling)>, std::optional<std::int32_t>>);
+        v.field ("oversampling", x.oversampling);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, std::optional<double>>);
+        v.field ("releaseMs", x.releaseMs);
     }
     else if constexpr (std::is_same_v<U, LimiterFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lookaheadMs)>, double>);
+        v.field ("lookaheadMs", x.lookaheadMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needles)>, Needles>);
         v.field ("needles", x.needles);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesDb)>, double>);
         v.field ("needlesDb", x.needlesDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.oversampling)>, std::int32_t>);
+        v.field ("oversampling", x.oversampling);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, double>);
+        v.field ("releaseMs", x.releaseMs);
     }
     else if constexpr (std::is_same_v<U, LimiterFinding>)
     {
