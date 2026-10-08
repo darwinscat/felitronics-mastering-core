@@ -146,6 +146,9 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     h.flag (p.bypassEq); h.flag (p.bypassMonoBass); h.flag (p.bypassCompressor);
     h.flag (p.bypassClipper); h.flag (p.bypassLimiter); h.flag (p.bypassDither);
     h.f64 (p.compressorMix);
+    // The start clipper (MVP): hashed only where it is in the chain, so a chain without it keeps its fingerprint.
+    if (t.startClipper)
+    { h.flag (true); h.f64 (p.startClipCutDb); h.f64 (p.startClipPeakDb); h.flag (p.bypassStartClipper); }
     return h.value;
 }
 
@@ -453,6 +456,31 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             result.request.waterfallSaturationDriveMaxDb = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (ceiling / 20.0) - 1.0) * scale);
             result.saturationDriveScale = scale;
         }
+        // TWO CLIPPERS (MVP, owner 08.10: [limiter.peakClipper] place): with a cut wish, where the glue or the saturation
+        // sounds, the cut zone is a clipper at the start of the chain — after the high-pass and the mono bass, ahead of
+        // the glue, on its own oversampler — steered from the cut the wish starts at. The limiter's clipper stays as the
+        // wish set it, unsteered, and catches the peaks the glue and the saturation regrow ("both"), or is off ("start").
+        const auto place = engine.find ("limiter").find ("peakClipper").find ("place").string();
+        if (place && *place != "limiter" && std::isfinite (result.request.waterfallCutShare)
+            && result.request.waterfallCutShare > detail::kZeroShare)
+        {
+            auto& t = result.ready.topology;
+            auto& p = result.ready.params;
+            const bool glue = t.compressor && ! p.bypassCompressor, saturation = t.clipper && ! p.bypassClipper;
+            if (glue || saturation)
+            {
+                t.startClipper = true;
+                p.startClipCutDb = std::isfinite (p.peakClipCutDb) ? p.peakClipCutDb
+                                 : number (engine.find ("limiter").find ("peakClipper").find ("betweenCutDb"));
+                p.startClipPeakDb = std::numeric_limits<double>::quiet_NaN();
+                p.bypassStartClipper = false;
+                if (*place == "start")
+                {
+                    p.limiter.peakClip = false;
+                    p.peakClipCutDb = p.peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();
+                }
+            }
+        }
         // CLEANER, NOT LOUDER (owner, 08.10): in a max mode the zones buy a cleaner master, not a louder one. The chain
         // the project writes without the wishes lands first (today's automat on its budget); the zones then take their
         // shares at that loudness. Both run on one topology: a stage only one of them has is bypassed in the other.
@@ -469,6 +497,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             else if (t.compressor && ! bare.topology.compressor) bare.params.bypassCompressor = true;
             if (bare.topology.clipper && ! t.clipper) { t.clipper = true; result.ready.params.bypassClipper = true; }
             else if (t.clipper && ! bare.topology.clipper) bare.params.bypassClipper = true;
+            if (t.startClipper && ! bare.topology.startClipper) bare.params.bypassStartClipper = true;
             result.clean = true;
             result.aloneParams = bare.params;
         }
@@ -1039,9 +1068,14 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             const auto take = [] (const MasterCostValue& v) noexcept { return v.reason == MeasurementReason::None && v.value ? std::fmax (0.0, *v.value) : 0.0; };
             const double glueDb = take (costResult.glueP95Db), saturationDb = take (costResult.saturationCutUsualDb);
-            const double cutDb = std::fmax (0.0, solution.measured.peakClipReductionP95Db);
+            // Two clippers: the cut zone is the start clipper's take, and the limiter's own clipper's is the regrown peaks,
+            // a part of the limiter's rest.
+            const bool startCut = std::isfinite (startTakeDb);
+            const double needlesDb = std::fmax (0.0, solution.measured.peakClipReductionP95Db);
+            const double cutDb = startCut ? startTakeDb : needlesDb;
+            const double regrownDb = startCut ? needlesDb : 0.0;
             const double limiterDb = take (costResult.limiterP95Db);
-            const double total = glueDb + saturationDb + cutDb + limiterDb;
+            const double total = glueDb + saturationDb + cutDb + limiterDb + regrownDb;
             double sum = 0.0;
             for (const double share : { waterfallGlueShare, waterfallSaturationShare, waterfallCutShare })
                 if (std::isfinite (share)) sum += std::clamp (share, 0.0, 1.0);
@@ -1067,7 +1101,9 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                                   : (*setting <= 0.001 ? WaterfallStop::MixAtZero : WaterfallStop::Passes);
                 return z;
             };
-            const bool clipping = ready.params.limiter.peakClip && std::isfinite (steered.peakClipCutDb);
+            const bool clipping = startCut ? std::isfinite (steered.startClipCutDb)
+                                           : ready.params.limiter.peakClip && std::isfinite (steered.peakClipCutDb);
+            const double cutSetting = startCut ? steered.startClipCutDb : steered.peakClipCutDb;
             MasterWaterfall w;
             w.glue = zone (waterfallGlueShare, glueDb, compressing, steered.compressorMix, false);
             w.saturation = zone (waterfallSaturationShare, saturationDb, shaping, double (steered.clipper.mix), false);
@@ -1078,8 +1114,9 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                 if (w.saturation.stop == WaterfallStop::MixAtOne)
                     w.saturation.stop = double (steered.clipper.driveDb) >= saturationDriveMaxDb - 0.05 ? WaterfallStop::DriveAtCeiling : WaterfallStop::Passes;
             }
-            w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (steered.peakClipCutDb) : std::nullopt, true);
-            w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb);
+            w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (cutSetting) : std::nullopt, true);
+            w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb + regrownDb);
+            if (startCut) w.regrownDb = regrownDb;
             w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;
             w.totalDb = total;
             w.extraPasses = waterfallSteps;
@@ -1245,6 +1282,9 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
 {
     using mastering::StepResult;
     const auto& solved = search.result();
+    // The start clipper's take on the delivered render — the chain's last (MasteringChain::startClipReductionP95Db).
+    startTakeDb = chain.startClipperOn() ? std::fmax (0.0, chain.startClipReductionP95Db())
+                                         : std::numeric_limits<double>::quiet_NaN();
     clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
         && search.clipperPeaks (clipPeaks);
     report.targetLufs = targetLufs;
@@ -1406,6 +1446,8 @@ void MasterJob::steer (mastering::MasteringChainParams& params) const noexcept
     params.clipper.mix = steered.clipper.mix;
     params.clipper.driveDb = steered.clipper.driveDb;
     params.peakClipCutDb = steered.peakClipCutDb;
+    params.startClipCutDb = steered.startClipCutDb;
+    params.startClipPeakDb = steered.startClipPeakDb;
 }
 
 // THE LOUDNESS RANGE, INPUT AGAINST MASTER: the source's programme report beside the report's own; the change in LU and

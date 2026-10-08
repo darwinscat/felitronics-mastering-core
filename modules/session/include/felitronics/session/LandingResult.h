@@ -225,6 +225,10 @@ struct MasterWaterfall
     // A max mode with a wish (cleaner, not louder): the loudness the landing without the wishes reached, and its
     // limiter's take there (P95 on the active windows) — the master with the zones stands on the same loudness.
     std::optional<double> aloneLufs, limiterAloneDb;
+    // Two clippers ([limiter.peakClipper] place, MVP): the cut zone was the start clipper's, and this is what the
+    // limiter's own clipper took off the peaks the glue and the saturation regrew (a P95 over what it clipped) — a part
+    // of the limiter's rest. Absent where the cut zone was the limiter's clipper.
+    std::optional<double> regrownDb;
 };
 struct MasterReport
 {
