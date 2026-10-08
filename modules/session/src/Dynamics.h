@@ -103,4 +103,7 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
 // a window's mean stands for the mean of its blend). `mix` is the share the stage applies
 // (MasteringChainResolved::compressorMix). At mix 1 the reduction as it is, to the bit; at mix 0, +0.
 [[nodiscard]] double glueTakenDb (double reductionDb, double mix) noexcept;
+// THE WATERFALL (MVP): a wished share at or under this is 0 % — the zone's stage leaves the chain (the page sends shares
+// rounded to 0.001).
+inline constexpr double kZeroShare = 0.0005;
 } // namespace felitronics::session::detail

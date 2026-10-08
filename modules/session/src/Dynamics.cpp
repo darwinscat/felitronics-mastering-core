@@ -263,7 +263,9 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     const double upToDb = glueKnob (in.rules, devices.glue);
     const double mix = settingsOf (in.rules, devices.glue).mix;
     const bool wished = ! devices.glue.hand.on && devices.glue.hand.share.has_value();
-    const bool ticked = offeredByShell && (settingsOf (in.rules, devices.glue).on || wished) && upToDb > 0.0;
+    // THE WATERFALL (MVP): a wished share of 0 takes the glue out of the chain — a zone at 0 % does not sound.
+    const bool zeroShare = devices.glue.hand.share.has_value() && ! (*devices.glue.hand.share > kZeroShare);
+    const bool ticked = offeredByShell && (settingsOf (in.rules, devices.glue).on || wished) && upToDb > 0.0 && ! zeroShare;
     const auto levels = inputLevels (in);
     if (ticked && ! levels.p95Db) { f.upToDb = upToDb; f.mix = mix; f.state = GlueState::Unavailable; return f; }
     // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
@@ -308,7 +310,9 @@ SaturationFinding saturationFinding (const PlanInputs& in, const Devices& device
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Saturation))) != 0;
     const auto levels = inputLevels (in);
     const bool wished = ! devices.saturation.hand.on && devices.saturation.hand.share.has_value();
-    if (! offeredByShell || ! (settings.on || wished) || ! (drive > 0.0) || ! levels.truePeakDb) return f;
+    // A wished share of 0 (the waterfall, MVP) takes the saturation out of the chain, as the glue's.
+    const bool zeroShare = devices.saturation.hand.share.has_value() && ! (*devices.saturation.hand.share > kZeroShare);
+    if (! offeredByShell || ! (settings.on || wished) || ! (drive > 0.0) || ! levels.truePeakDb || zeroShare) return f;
     f.active = true;
     f.peakDbTp = levels.truePeakDb;
     // The shaper's gain aligned: the knob is the drive at 0 dBTP, k = 10^(drive/20) − 1 scaled by the peak.

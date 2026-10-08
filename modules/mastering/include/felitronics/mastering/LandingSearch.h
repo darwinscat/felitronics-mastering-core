@@ -921,10 +921,23 @@ private:
         {
             const double mix = std::isfinite (satFull) ? mixFor (satFull, want (sSaturation)) : 1.0;
             if (std::fabs (mix - satMix) > 0.02) { next.clipper.mix = float (mix); moved = true; }
+            // THE DRIVE (owner, 08.10): the mix at 1 and even the full path short of the want, the drive rises from where
+            // it stands — the full path's take scaled near in proportion to it — up to the request's ceiling.
+            const double drive = double (params_.clipper.driveDb), driveMax = request_.waterfallSaturationDriveMaxDb;
+            if (std::isfinite (driveMax) && mix >= 0.999 && std::isfinite (satFull) && satFull + near < want (sSaturation) && drive < driveMax - 0.05)
+            {
+                const double to = std::fmin (driveMax, satFull > 0.05 && drive > 0.05 ? drive * want (sSaturation) / satFull
+                                                                                    : drive + (want (sSaturation) - satFull));
+                if (to > drive + 0.1) { next.clipper.driveDb = float (to); moved = true; }
+            }
         }
         if (off (sCut, cut) && clipping)
         {
-            const double to = std::clamp (params_.peakClipCutDb + (want (sCut) - cut), 0.0, cutEnd);
+            // The clipper's take (a P95 over what it clipped) moves near in proportion to its cut, not dB for dB
+            // (measured, Cold Gaze, 08.10: a cut of 3 dB took 1.5): the cut scaled by want / take where it takes
+            // anything — one step lands near — else dB for dB from where it stands.
+            const double from = params_.peakClipCutDb;
+            const double to = std::clamp (cut > 0.05 && from > 0.05 ? from * (want (sCut) / cut) : from + (want (sCut) - cut), 0.0, cutEnd);
             if (std::fabs (to - params_.peakClipCutDb) > 0.1) { next.peakClipCutDb = to; moved = true; }
         }
         if (! moved) return false;

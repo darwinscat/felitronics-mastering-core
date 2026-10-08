@@ -337,6 +337,7 @@ struct Saturation
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
     double whenTickedDb = 0.0;                 // `whenTicked`: the drive a person's tick gives an untouched drive of 0
+    double steerDriveMaxDb = 0.0;              // `steerDriveMaxDb`: the waterfall's (MVP) ceiling of a steered drive, knob dB
     Span driveRange;
     double driveStep = 0.0;
     Comfort driveComfort;                      // the drive's field
