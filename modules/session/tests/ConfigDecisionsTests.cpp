@@ -116,7 +116,12 @@ constexpr Golden kGolden[] = {
     // 30 ms, release 300 ms) and [saturation] whenTicked 6 — a master a person ticked a glue or a saturation on for sounds
     // otherwise; no untouched master moves (a tick is a person's: no target's untouched master has one); it was
     // 3299e8a01bc682c9; updated in place, as above.
-    { "2026-10", 0x2b0de0cc2cc8ac7bull },
+    // ...and the waterfall and the fourth max mode (09.10): [saturation] steerDriveMaxDb 10 (the drive the steering may
+    // raise), [limiter.peakClipper] place both (the start clipper beside the limiter's), a max mode's cleaner (true when
+    // absent, written by none) and Maximum · nuke (a target row appended, its 7 dB budget, its expected passes) — numbers
+    // added, none of an existing target's changed: each moves a master only where a person asks a share or picks nuke,
+    // so no untouched master moves (the WAV contract's recording holds); it was 2b0de0cc2cc8ac7b; updated in place, as above.
+    { "2026-10", 0xbe07aaa73e1c26bfull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
