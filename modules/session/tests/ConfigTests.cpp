@@ -198,7 +198,7 @@ void theSchemaRefuses()
     // Wrong types.
     mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
     mustRefuse (T, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
-    mustRefuse (T, "default = \"allStreaming\"", "default = 14", "14", Fault::WrongType, "default");
+    mustRefuse (T, "default = \"maxClean\"", "default = 14", "14", Fault::WrongType, "default");
     mustRefuse (E, "dualRelease = false", "dualRelease = 0", "0", Fault::WrongType, "limiter.dualRelease");
     // The oversampling's bounds are integers — the session reads them so (Rules::oversampling): a bound written with a
     // decimal point stops the config here, at its line and column, not the session when a factor is checked.
@@ -210,7 +210,7 @@ void theSchemaRefuses()
     mustAccept (E, "hzMax = 80", "hzMax = 500");
     mustRefuse (E, "passes = 12", "passes = 0", "0", Fault::OutOfRange, "landing.passes");
     mustAccept (T, "lufs = -23", "lufs = -30");
-    mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
+    mustRefuse (T, "monoBass = 150, hpfFloor = 32", "monoBass = 400, hpfFloor = 32", "400", Fault::OutOfRange, "targets.lp.monoBass");
     mustRefuse (E, "betweenCutDb = 1.5", "betweenCutDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenCutDb");
     // A bound the ranges cannot say: above zero, above the core's own number, a hole in a range.
     mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 4000, bitDepth = 24 }\n# YouTube Music",
@@ -228,7 +228,7 @@ void theSchemaRefuses()
     mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", class = \"specification\", lufs = -23", Fault::Refused, "targets.\"\"",
                 Refusal::EmptyKey);
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cdd = 2.6 }", "2.6", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
-    mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
+    mustRefuse (T, "default = \"maxClean\"", "default = \"maxClea\"", "\"maxClea\"", Fault::Refused, "default",
                 Refusal::NotATarget);
     mustAccept (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18");
     mustRefuse (E, "detector = \"rms\"", "detector = \"rsm\"", "\"rsm\"", Fault::Refused, "compressor.detector", Refusal::NotOneOf);
@@ -404,7 +404,8 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "monoBass.comfort", "glue.comfort", "glue.mixComfort", "saturation.driveComfort", "saturation.cut",
+    "monoBass.zones", "monoBass.comfort", "glue.comfort", "glue.mixComfort", "glue.thresholdDbComfort", "glue.ratioComfort",
+    "glue.kneeDbComfort", "glue.attackMsComfort", "glue.releaseMsComfort", "limiter.releaseMsComfort", "limiter.lookaheadMsComfort", "saturation.driveComfort", "saturation.cut",
     "tilt.normal", "low.normal",
     "bands.body.normal", "bands.mud.normal", "bands.forward.normal", "bands.brightness.normal", "bands.air.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
@@ -535,7 +536,7 @@ void theSoundIsWhatCanChangeAMaster()
     const std::string rows = spotifyRow + loudRow, swapped = loudRow + spotifyRow;
     const Case cases[] = {
         { config::Document::Targets, rows, swapped, "two target rows swapped: the order a shell lists them in", false },
-        { config::Document::Targets, "default = \"allStreaming\"", "default = \"spotify\"",
+        { config::Document::Targets, "default = \"maxClean\"", "default = \"spotify\"",
           "the default target: a project that omits an unchanged target reopens on it", true },
         { config::Document::Targets, "lufs = { domain = \"finite\", from = -25,", "lufs = { domain = \"finite\", from = -26,", "the hand edit's travel", false },
         { config::Document::Targets, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.05 }",

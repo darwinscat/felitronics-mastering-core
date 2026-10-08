@@ -166,6 +166,8 @@ constexpr Row kRows[] = {
     // the max modes as targets (owner, 04.10, v0.15.0): allStreaming's medium; lufs is where the manual mode starts
     { "maxClean",      S, -13,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxClean },
     { "maxDense",      S, -11,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxDense },
+    // the third (owner, 07.10): as loud as a limiter budget of 3 dB allows, the high-pass from 50 Hz (08.10), mono bass to 150 Hz
+    { "maxExtreme",    S, -9,   -1,   150,  50,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxExtreme },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -207,7 +209,7 @@ std::vector<std::string> departures (const config::Config& c)
                                       : x.album.has_value() && same (x.album->lufs, r.albumLufs) && x.album->desktopOnly,
               at + ".album");
     }
-    need (t.defaultTarget == "allStreaming", "a session starts on allStreaming");
+    need (t.defaultTarget == "maxClean", "a session starts on Maximum · clean (owner, 07.10)");
     need (t.main == std::vector<std::string> { "allStreaming", "lp", "cdDynamic", "cd", "bandcamp", "club" }, "the main targets");
 
     // THE ENGINE'S DECIDED NUMBERS.
