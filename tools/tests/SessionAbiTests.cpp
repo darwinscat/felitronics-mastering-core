@@ -61,7 +61,7 @@ void theVersion()
 {
     felitronics::test::group ("the version is the header's, a floor that starts at v1");
     ok (fc_session_abi_version() == FC_SESSION_ABI_VERSION, "fc_session_abi_version() == FC_SESSION_ABI_VERSION");
-    ok (FC_SESSION_ABI_VERSION >= 1u, "and it is at least the frozen version 1: each release that adds moves it up by one");
+    ok (FC_SESSION_ABI_VERSION >= 1u, "and it is at least the frozen version 1: the version is a floor");
 }
 
 void createChecksItsOutPointer()
