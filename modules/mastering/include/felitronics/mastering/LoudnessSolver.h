@@ -884,6 +884,20 @@ struct LoudnessRequest
     // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
     // Appended so positional initialisers written against the older public aggregate retain their meaning.
     double clipperLoudShare = std::numeric_limits<double>::quiet_NaN();
+    // THE WATERFALL (MVP), `productLanding` only: a person's wish of the share of the peak work at the landing — the glue's
+    // reduction (P95, through its mix), the saturation's usual cut, the needles' clipper's cut (P95 of what it clipped)
+    // and the limiter's P95 on its active windows, together — each stage takes; the limiter takes the rest. NaN: no wish
+    // (all three NaN, the landing is exactly the one without them). LandingSearch steers the compressor's mix, the
+    // saturation's mix and the clipper's cut (within 0 … waterfallCutMaxDb) over its first passes, never past a mix of 1
+    // or that cut; what a stage cannot take the limiter takes.
+    double waterfallGlueShare = std::numeric_limits<double>::quiet_NaN();
+    double waterfallSaturationShare = std::numeric_limits<double>::quiet_NaN();
+    double waterfallCutShare = std::numeric_limits<double>::quiet_NaN();
+    double waterfallCutMaxDb = 6.0;
+    bool waterfall() const noexcept
+    {
+        return std::isfinite (waterfallGlueShare) || std::isfinite (waterfallSaturationShare) || std::isfinite (waterfallCutShare);
+    }
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to

@@ -162,6 +162,8 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
             if (f.cutting) f.overDb = *answer.overDb;
             break;
     }
+    // A wished cut share (the waterfall, MVP) cuts needles no person set: from the knob's amount, the landing steers it.
+    if (devices.limiter.hand.cutShare && ! devices.limiter.hand.needles && ! f.cutting) { f.cutting = true; f.overDb = knob.overDb; }
     // Only a device the shell offers is a person's to turn; placement took a person's layer off one it does not.
     if (! offeredByShell (in, Device::Limiter)) { f.cutting = false; f.mode = Needles::Off; }
     const bool machineCuts = answer.proposed != NeedlesClass::None;

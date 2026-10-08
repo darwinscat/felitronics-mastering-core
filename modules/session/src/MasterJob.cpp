@@ -425,6 +425,16 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             || ! std::isfinite (result.floorLufs))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
+    // THE WATERFALL (MVP): a person's wishes, a master the session decides only.
+    if (input.ready.version == 0)
+    {
+        const auto& d = project.devices;
+        if (d.glue.hand.share) result.request.waterfallGlueShare = *d.glue.hand.share;
+        if (d.saturation.hand.share) result.request.waterfallSaturationShare = *d.saturation.hand.share;
+        if (d.limiter.hand.cutShare) result.request.waterfallCutShare = *d.limiter.hand.cutShare;
+        const double cutMax = number (engine.find ("limiter").find ("peakClipper").find ("manualDomain")[1]);
+        if (std::isfinite (cutMax)) result.request.waterfallCutMaxDb = cutMax;
+    }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
     result.ready.params.dither.bits = deliveryBits;
@@ -533,7 +543,14 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     floorRequest.targetLufs = plan.floorLufs;
     floorRequest.limiterGr = {};
     floorRequest.landingOnSourceGate = false;
+    floorRequest.waterfallGlueShare = floorRequest.waterfallSaturationShare = floorRequest.waterfallCutShare
+        = std::numeric_limits<double>::quiet_NaN();
     floorPass = false; floorFirstPasses = 0; floorFirstWork = 0;
+    waterfall = plan.request.waterfall(); waterfallSteps = 0; steered = plan.ready.params;
+    waterfallGlueShare = plan.request.waterfallGlueShare;
+    waterfallSaturationShare = plan.request.waterfallSaturationShare;
+    waterfallCutShare = plan.request.waterfallCutShare;
+    waterfallCutMaxDb = plan.request.waterfallCutMaxDb;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -696,6 +713,8 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
+        if (! floorPass && search.waterfallOn())
+        { steered = search.currentParams(); waterfallSteps = std::uint32_t (search.waterfallSteps()); }
         // A MAX MODE NEVER DELIVERS A FILE QUIETER THAN [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"),
         // whichever target it sits on: a first landing whose file — by its BS.1770 reading, the number a person reads —
         // stands under that floor by more than the landing's own tolerance ([landing] toleranceLu: a file within it of a
@@ -936,6 +955,51 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                 20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudUsualRatio), clipPeaks.loudQuanta };
         }
         else costResult.saturationCutMaxDb.reason = costResult.saturationCutUsualDb.reason = shaping ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
+        // THE WATERFALL (MVP): each zone's take on the delivered render — the glue's P95 through its mix, the saturation's
+        // usual cut, the needles' clipper's P95 over what it clipped, the limiter's P95 on its active windows — its share
+        // of their total, beside the share asked (the limiter's: the rest), and the mixes and the cut that took it.
+        if (waterfall)
+        {
+            const auto take = [] (const MasterCostValue& v) noexcept { return v.reason == MeasurementReason::None && v.value ? std::fmax (0.0, *v.value) : 0.0; };
+            const double glueDb = take (costResult.glueP95Db), saturationDb = take (costResult.saturationCutUsualDb);
+            const double cutDb = std::fmax (0.0, solution.measured.peakClipReductionP95Db);
+            const double limiterDb = take (costResult.limiterP95Db);
+            const double total = glueDb + saturationDb + cutDb + limiterDb;
+            double sum = 0.0;
+            for (const double share : { waterfallGlueShare, waterfallSaturationShare, waterfallCutShare })
+                if (std::isfinite (share)) sum += std::clamp (share, 0.0, 1.0);
+            const double scale = sum > 1.0 ? 1.0 / sum : 1.0;
+            const auto asked = [scale] (double share) noexcept -> std::optional<double>
+                { return std::isfinite (share) ? std::optional<double> (std::clamp (share, 0.0, 1.0) * scale) : std::nullopt; };
+            const auto reached = [total] (double db) noexcept -> std::optional<double>
+                { return total > 0.0 ? std::optional<double> (db / total) : std::nullopt; };
+            const auto zone = [&] (double share, double db, bool sounding, std::optional<double> setting, bool cut) noexcept
+            {
+                MasterWaterfallZone z;
+                z.asked = asked (share); z.reached = reached (db); z.db = db;
+                if (sounding) z.setting = setting;
+                if (! z.asked) z.stop = WaterfallStop::NoWish;
+                else if (! sounding || ! setting) z.stop = WaterfallStop::NotSounding;
+                // Met as the landing counts it: within 0.1 dB of its want, or 3 % of the total where that is more.
+                else if (! z.reached || std::fabs (*z.asked * total - db) <= std::fmax (0.1, 0.03 * total)) z.stop = WaterfallStop::Reached;
+                else if (*z.reached < *z.asked)
+                    z.stop = cut ? (*setting >= waterfallCutMaxDb - 0.01 ? WaterfallStop::CutAtEnd : WaterfallStop::Passes)
+                                 : (*setting >= 0.999 ? WaterfallStop::MixAtOne : WaterfallStop::Passes);
+                else z.stop = cut ? (*setting <= 0.01 ? WaterfallStop::CutAtZero : WaterfallStop::Passes)
+                                  : (*setting <= 0.001 ? WaterfallStop::MixAtZero : WaterfallStop::Passes);
+                return z;
+            };
+            const bool clipping = ready.params.limiter.peakClip && std::isfinite (steered.peakClipCutDb);
+            MasterWaterfall w;
+            w.glue = zone (waterfallGlueShare, glueDb, compressing, steered.compressorMix, false);
+            w.saturation = zone (waterfallSaturationShare, saturationDb, shaping, double (steered.clipper.mix), false);
+            w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (steered.peakClipCutDb) : std::nullopt, true);
+            w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb);
+            w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;
+            w.totalDb = total;
+            w.extraPasses = waterfallSteps;
+            report.waterfall = w;
+        }
         costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
         stage = Stage::CostWave;
         return StepResult::More;
@@ -1199,9 +1263,11 @@ bool MasterJob::beginFloor() noexcept
 {
     auto request = floorRequest;
     request.initialGainDb = search.result().preLimiterGainDb;
-    chain.setParams (ready.params);
+    auto params = ready.params;
+    steer (params);
+    chain.setParams (params);
     const bool convert = deliveryRate != sourceRate;
-    return search.begin (chain, renderer, ready.params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
+    return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
                          channels, frames, request, {}, convert ? &converter : nullptr);
 }
 
@@ -1211,11 +1277,22 @@ mastering::MasteringChainParams MasterJob::winningParams() const noexcept
 {
     if (deliveryMode != DeliveryMode::Mastered) return ready.params;
     auto winning = ready.params;
+    steer (winning);
     winning.inputGainDb += search.result().normalizationGainDb;
     winning.preLimiterGainDb = search.result().preLimiterGainDb;
     winning.limiter.ceilingDbTp = search.result().ceilingDbTp;
     winning.peakClipPeakDb = search.peakClipPeakDb();
     return winning;
+}
+
+// The waterfall's moves over the ready parameters: the glue's and the saturation's mix and the clipper's cut as the first
+// landing left them. Nothing without a wish.
+void MasterJob::steer (mastering::MasteringChainParams& params) const noexcept
+{
+    if (! waterfall) return;
+    params.compressorMix = steered.compressorMix;
+    params.clipper.mix = steered.clipper.mix;
+    params.peakClipCutDb = steered.peakClipCutDb;
 }
 
 // THE LOUDNESS RANGE, INPUT AGAINST MASTER: the source's programme report beside the report's own; the change in LU and
