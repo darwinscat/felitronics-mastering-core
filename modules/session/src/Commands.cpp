@@ -225,6 +225,8 @@ Checked Session::storageFor (const Request& request) const noexcept
         if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
         return {};
     }
+    // A queued master is forgotten wherever it waits, the first analysis included, where the table has no master to forget.
+    if (const auto* forget = std::get_if<command::Forget> (&request); forget && queued (forget->master)) return {};
     if (const Rejection r = Table::commands[index (which)].cell[index (column())]; r != Rejection::None) return rejected (r);
 
     // The config, read in place after the build gate established its contract.
@@ -332,7 +334,6 @@ Checked Session::storageFor (const Request& request) const noexcept
                 if (lateMasterId_ == forget->master) freed.releasedBytes += lateMasterJobBytes_;
                 return freed;
             }
-        if (queued (forget->master)) return {};
         return rejected (Rejection::UnknownMaster);
     }
     if (const auto* grade = std::get_if<command::GradeDamage> (&request))
@@ -785,12 +786,13 @@ Rejection Session::masterConsent (const command::Master& master, const Project& 
 }
 
 // A master queues when another is made or waits its turn, when the previous master's PCM is not taken yet, before the
-// first measurement ended (or with it stopped), or — the panel open — while the plan it needs is pending.
+// first measurement ended, or — the panel open — while the plan it needs is pending.
 bool Session::masterQueues (const command::Master& master) const noexcept
 {
     if (! samples_ || state_ == State::Empty) return false;
-    // A refusal for the source's content stays a refusal: where the readings never come, the table answers.
-    if (readingsNeverCome()) return false;
+    // A refusal for the source's content stays a refusal: where the readings never come, the table answers; and where
+    // they come only if a person continues the measurement, a master would wait for nothing — the table answers too.
+    if (readingsNeverCome() || readingsHalted()) return false;
     if (job_ != 0 || queuedCount_ != 0 || pendingMaster_.master != 0) return true;
     if (Table::commands[index (Command::Master)].cell[index (column())] != Rejection::None) return true;
     return master.ready.version == 0 && project_.manual && plan_.waiting != 0;
@@ -803,10 +805,17 @@ bool Session::readingsNeverCome() const noexcept
     return (sourceMeasurements_ ? sourceMeasurements_->firstPublished : measurementsFromSidecar_) && ! mandatoryReady();
 }
 
+// THE FIRST MEASUREMENT STOPPED BEFORE ITS FIRST READINGS: they come only if a person continues it (ContinueMeasurement).
+bool Session::readingsHalted() const noexcept
+{
+    return column() == Column::Stopped;
+}
+
 bool Session::queueReady() const noexcept
 {
     return job_ == 0 && queuedCount_ != 0 && pendingMaster_.master == 0
-        && (Table::commands[index (Command::Master)].cell[index (column())] == Rejection::None || readingsNeverCome());
+        && (Table::commands[index (Command::Master)].cell[index (column())] == Rejection::None || readingsNeverCome()
+            || readingsHalted());
 }
 
 bool Session::queued (JobId job) const noexcept
@@ -863,9 +872,11 @@ void Session::promoteQueuedMaster() noexcept
     for (std::size_t i = 0; i + 1 < queuedCount_; ++i) masterQueue_[i] = std::move (masterQueue_[i + 1]);
     masterQueue_[--queuedCount_] = {};
     if (! next.machineFromFile && devicesPlaced_) place (next.project);
-    // Where the readings never come, the head is refused as a master asked now is (the table's code) and the queue moves on.
+    // Where the readings never come, or come only if a person continues the stopped measurement, the head is refused as
+    // a master asked now is (the table's code) and the queue moves on.
     const Rejection cell = Table::commands[index (Command::Master)].cell[index (column())];
-    auto checked = readingsNeverCome() && cell != Rejection::None ? rejected (cell) : masterStorage (next.request, next.project, true);
+    auto checked = (readingsNeverCome() || readingsHalted()) && cell != Rejection::None ? rejected (cell)
+                                                                                      : masterStorage (next.request, next.project, true);
     if (checked.rejection == Rejection::None) checked = demand (checked);
     if (checked.rejection != Rejection::None)
     {

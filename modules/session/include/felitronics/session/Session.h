@@ -895,6 +895,7 @@ private:
     std::size_t masterJobCount_ = 0;
     [[nodiscard]] bool masterQueues (const command::Master& master) const noexcept;
     [[nodiscard]] bool readingsNeverCome() const noexcept;
+    [[nodiscard]] bool readingsHalted() const noexcept;
     [[nodiscard]] bool queueReady() const noexcept;
     [[nodiscard]] bool queued (JobId job) const noexcept;
     [[nodiscard]] Checked masterStorage (const command::Master& master, const Project& project, bool queued) const noexcept;
