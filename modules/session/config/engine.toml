@@ -80,6 +80,8 @@ limiterSlopeSpacingDb = 0.5
 #   clean   budget 0.5 dB — −13.05 / −12.04 LUFS, a little above streaming
 #   dense   budget 1.75 dB — −11.22 / −10.53 LUFS
 #   extreme budget 3 dB (owner, 07.10, MVP) — not yet measured on the ladder
+# cleaner: with a wish of shares, true (absent) lands the master without the wishes on the budget first and the zones at
+#   that loudness (cleaner, not louder); false lands the zones on the budget at once. Written only as false.
 # ceilingLufs: how high a max mode searches — no goal, a bound well above any landing a budget allows.
 # floorLufs: how low a max master ever lands, whichever target the mode sits on (owner, 04.10: "always pulled up to −14"):
 #   a mix so dense the budget holds it under is landed again there, with no budget, and delivered there.
