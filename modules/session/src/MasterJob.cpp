@@ -475,8 +475,9 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         }
         // TWO CLIPPERS (owner 08.10: [limiter.peakClipper] place): with a cut wish, where the glue or the saturation
         // sounds, the cut zone is a clipper at the start of the chain — after the high-pass and the mono bass, ahead of
-        // the glue, on its own oversampler — steered from the cut the wish starts at. The limiter's clipper stays as the
-        // wish set it, unsteered, and catches the peaks the glue and the saturation regrow ("both"), or is off ("start").
+        // the glue, on an oversampler of its own at the chain's factor (the limiter's oversampling) — steered from the cut
+        // the wish starts at. The limiter's clipper stays as the wish set it, unsteered, and catches the peaks the glue and
+        // the saturation regrow ("both"), or is off ("start").
         const auto place = engine.find ("limiter").find ("peakClipper").find ("place").string();
         if (place && *place != "limiter" && std::isfinite (result.request.waterfallCutShare)
             && result.request.waterfallCutShare > detail::kZeroShare)
