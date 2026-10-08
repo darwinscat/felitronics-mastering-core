@@ -502,6 +502,9 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldLimiterOversampling, "field", "limiterOversampling" },
     { Term::LoudnessModeMaxExtreme, "loudnessMode", "maxExtreme" },
     { Term::LoudnessModeMaxNuke, "loudnessMode", "maxNuke" },
+    { Term::FieldGlueShare, "field", "glueShare" },
+    { Term::FieldSaturationShare, "field", "saturationShare" },
+    { Term::FieldLimiterCutShare, "field", "limiterCutShare" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -623,7 +626,8 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq) return Unit::Hz;
     if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope
         || field == Term::FieldTargetLoudnessMode || field == Term::FieldGlueMix || field == Term::FieldGlueRatio
-        || field == Term::FieldLimiterOversampling)
+        || field == Term::FieldLimiterOversampling || field == Term::FieldGlueShare || field == Term::FieldSaturationShare
+        || field == Term::FieldLimiterCutShare)
         return Unit::None;
     if (field == Term::FieldGlueThresholdDb) return Unit::DbFs;
     if (field == Term::FieldGlueAttackMs || field == Term::FieldGlueReleaseMs || field == Term::FieldLimiterReleaseMs
@@ -646,12 +650,13 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
         case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb, Term::FieldGlueMix, Term::FieldGlueThresholdDb,
                                         Term::FieldGlueRatio, Term::FieldGlueKneeDb, Term::FieldGlueAttackMs,
-                                        Term::FieldGlueReleaseMs });
+                                        Term::FieldGlueReleaseMs, Term::FieldGlueShare });
         case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix, Term {},
-                                              Term::FieldSaturationType });
+                                              Term::FieldSaturationType, Term::FieldSaturationShare });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb, Term::FieldLimiterReleaseMs,
-                                           Term::FieldLimiterLookaheadMs, Term::FieldLimiterOversampling });
+                                           Term::FieldLimiterLookaheadMs, Term::FieldLimiterOversampling,
+                                           Term::FieldLimiterCutShare });
         case Device::Dither: return at ({ Term {} });
         case Device::Low: return at ({ Term {}, Term::FieldLowDb });
         case Device::Bands: return at ({ Term::FieldBandsBody, Term::FieldBandsMud, Term::FieldBandsForward,
