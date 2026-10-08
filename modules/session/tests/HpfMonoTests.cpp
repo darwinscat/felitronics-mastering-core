@@ -1094,7 +1094,8 @@ void masterAtLoudnessAndPeak()
     ok (hasFact (plan, Device::Hpf, text::FactId::DeviceUnmeasured) && hasFact (plan, Device::MonoBass, text::FactId::DeviceUnmeasured),
         "the card's words are the core's fact");
     ok (s.apply (command::SetManual { 3, true }).rejection == Rejection::None
-        && s.apply (command::Master { 4 }).rejection == Rejection::PlanPending, "with the panel open the master waits for what the devices read");
+        && s.apply (command::Master { 4 }).rejection == Rejection::None && s.job() == 0,
+        "with the panel open a master is queued and waits for what the devices read");
     ok (s.apply (command::SetManual { 5, false }).rejection == Rejection::None, "PRECONDITION: the panel hidden again");
     MonoBassFields<Touched> width; width.width = 0.25;
     HpfFields<Touched> slope; slope.slope = 12;

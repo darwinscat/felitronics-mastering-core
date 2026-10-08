@@ -306,10 +306,11 @@ void masterAtTheCeilingWithADamage()
     (void) s.setCapacity ({});
 }
 
-// THE PROGRAMME REPORT HAS ENDED WHENEVER A MASTER IS TAKEN: the master's loudness range reads the input's from it, so a
-// master that could be asked before it would leave its range's change Pending for good. The table never lets one: the
-// first measurement — which a master waits for — ends after the programme report, on a fresh load, after a measurement
-// stopped between the loudness and the report and continued, and after the same source loaded again.
+// THE PROGRAMME REPORT HAS ENDED WHENEVER A MASTER STARTS: the master's loudness range reads the input's from it, so a
+// master that started before it would leave its range's change Pending for good. A master asked earlier is queued — never
+// refused for its timing — and its turn comes after the first measurement, which ends after the programme report: on a
+// fresh load, after a measurement stopped between the loudness and the report and continued, and after the same source
+// loaded again.
 void programmeBeforeAnyMaster()
 {
     const auto pcm = struck (48000, 1.0);
@@ -333,16 +334,18 @@ void programmeBeforeAnyMaster()
             if (path == 1) (void) s.apply (command::ContinueMeasurement { 3 });
             else (void) s.apply (command::Load { 3, { planes, 2, frames, 48000 }, { "programme.wav", 48000, true, 24 } });
         }
-        unsigned taken = 0, early = 0;
-        for (unsigned i = 0; i < 200000; ++i)
+        const auto asked = s.apply (readyMaster (s, 9));
+        const bool queued = asked.rejection == Rejection::None && asked.job != 0 && s.job() == 0
+            && status (Analyzer::Programme) == MeasurementStatus::Pending;
+        bool started = false, early = false;
+        for (unsigned i = 0; i < 400000 && ! started; ++i)
         {
-            if (s.check (readyMaster (s, 9)).rejection == Rejection::None)
-            { ++taken; early += status (Analyzer::Programme) == MeasurementStatus::Pending ? 1u : 0u; }
-            if (s.step (1).state == StepState::Done) break;
+            (void) s.step (1);
+            if (s.job() == asked.job) { started = true; early = status (Analyzer::Programme) != MeasurementStatus::Ready; }
         }
-        ok (between && taken > 0 && early == 0,
-            "path " + std::to_string (path) + ": a master is taken " + std::to_string (taken) + " times and never before the "
-            "programme report has ended");
+        ok (between && queued && started && ! early,
+            "path " + std::to_string (path) + ": a master asked before the programme report is queued, and starts only once "
+            "the report has ended");
     }
 }
 

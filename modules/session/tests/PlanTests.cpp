@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -530,15 +531,17 @@ void theOpenPanelWaits()
     ok (stepUntil (s, [&] { return s.state() != State::Loaded; }) && s.state() == State::Measured1, "PRECONDITION: the first measurement ends");
     auto v = s.snapshot();
     ok (v.view().plan.status == PlanStatus::Pending && v.view().plan.awaited == Analyzer::Tempo && v.view().plan.awaitedBy == Device::Glue
-        && ! v.view().plan.readOnly && ! v.view().canMaster && v.view().devicesPlaced == false
+        && ! v.view().plan.readOnly && v.view().canMaster && v.view().devicesPlaced == false
         && same (v.view().project.devices.glue.machine.upToDb, 2.6),
-        "cd's glue reads the tempo: the panel takes edits meanwhile (owner, 02.10), and the master button waits for the tempo the glue reads");
-    const auto revision = s.revision();
-    ok (s.check (command::Master { 4 }).rejection == Rejection::PlanPending && s.apply (command::Master { 4 }).rejection == Rejection::PlanPending
-        && s.revision() == revision && s.job() == 0, "a master asked for anyway is refused whole: PlanPending");
+        "cd's glue reads the tempo: the panel takes edits meanwhile (owner, 02.10), and the master button takes a master that waits for it");
+    const auto asked = s.apply (command::Master { 4 });
+    bool queued = false;
+    const auto jobs = s.snapshot().view().masterJobs; for (const auto& row : std::span (jobs.items.data(), jobs.count)) queued = queued || (row.job == asked.job && row.state == MasterJobState::Queued);
+    ok (asked.rejection == Rejection::None && asked.job != 0 && s.job() == 0 && queued,
+        "a master asked meanwhile is queued, not refused (never for its timing), and is not made yet");
     bool rejectedEvent = false;
     for (const auto& e : s.events()) rejectedEvent = rejectedEvent || (e.kind == EventKind::Rejected && e.payload.rejected.code == Rejection::PlanPending);
-    ok (rejectedEvent, "and the refusal is published");
+    ok (! rejectedEvent, "and no refusal is published");
     Answer refused; refused.rejection = Rejection::PlanPending;
     const auto fact = text::Text::rejected (refused, command::Master { 4 });
     const auto shown = fact ? text::Text::text (*fact, text::Lang::Ru) : std::string {};
@@ -606,7 +609,8 @@ void theNeedlesAreWaitedForAtTheirCeiling()
     auto v = s.snapshot();
     ok (v.view().plan.status == PlanStatus::Pending && v.view().plan.awaited == Analyzer::Excursions && v.view().plan.awaitedBy == Device::Limiter,
         "the plan waits for the needles the limiter's peak clipper reads");
-    ok (s.apply (command::Master { 4 }).rejection == Rejection::PlanPending, "with the panel open the master waits for them");
+    const auto waiting = s.apply (command::Master { 4 });
+    ok (waiting.rejection == Rejection::None && waiting.job != 0 && s.job() == 0, "with the panel open a master asked now is queued and waits for them");
     double furthest = 0;
     ok (stepUntil (s, [&] { furthest = std::max (furthest, s.snapshot().view().plan.awaitedFraction); return s.snapshot().view().plan.waiting == 0; }),
         "the needles end");
