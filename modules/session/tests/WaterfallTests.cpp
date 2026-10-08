@@ -502,6 +502,59 @@ void snapshotAtTheCommand()
 }
 
 //==============================================================================
+// THE QUEUE AT THE FIRST ANALYSIS: right after a load a master is taken (queued), and canMaster says so; a master queued
+// then is forgotten as any queued one is; and a measurement stopped before its first readings never leaves a master
+// waiting for them — asked after the stop it is refused as the table says (NotMeasured), queued before it, it ends
+// Failed with that code once the pump runs.
+std::size_t queuedRows (const Session& s)
+{
+    const auto snap = s.snapshot();
+    const auto& v = snap.view();
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < v.masterJobs.count; ++i) n += v.masterJobs.items[i].state == MasterJobState::Queued ? 1u : 0u;
+    return n;
+}
+
+void queueAtTheFirstAnalysis()
+{
+    felitronics::test::group ("the queue at the first analysis: canMaster, forget, and a stopped measurement never leaves a master waiting");
+    const auto pcm = fixture();
+    {
+        auto made = loaded (pcm, "spotify", false);
+        if (! made) { ok (false, "PRECONDITION: a loaded session"); return; }
+        Session& s = *made;
+        const bool takes = s.storageFor (command::Master { 3 }).rejection == Rejection::None;
+        ok (takes && s.snapshot().view().canMaster, std::string ("right after the load a master is taken (queued), and canMaster says so: ")
+                                                 + (takes ? "taken" : "refused") + ", canMaster " + (s.snapshot().view().canMaster ? "true" : "false"));
+        const auto asked = s.apply (command::Master { 3 });
+        ok (asked.rejection == Rejection::None && queuedRows (s) == 1, "PRECONDITION: a master queued during the first analysis");
+        const auto forgot = s.apply (command::Forget { 4, MasterId (asked.job) });
+        ok (forgot.rejection == Rejection::None && queuedRows (s) == 0,
+            "forgetting it during the first analysis takes it out of the queue (rejection " + std::to_string (unsigned (forgot.rejection)) + ")");
+    }
+    for (const bool queuedFirst : { false, true })
+    {
+        auto made = loaded (pcm, "spotify", false);
+        if (! made) { ok (false, "PRECONDITION: a loaded session"); return; }
+        Session& s = *made;
+        const auto first = queuedFirst ? s.apply (command::Master { 3 }) : Answer {};
+        const bool stopped = s.apply (command::Cancel { 4, s.measurementJob() }).rejection == Rejection::None;
+        const auto later = queuedFirst ? Answer {} : s.apply (command::Master { 5 });
+        for (unsigned i = 0; i < 100000 && s.step (64).state != StepState::Done; ++i) {}
+        const auto snap = s.snapshot();
+        const auto& v = snap.view();
+        bool failed = false;
+        for (std::size_t i = 0; i < v.masterJobs.count; ++i)
+            failed = failed || (v.masterJobs.items[i].job == first.job && v.masterJobs.items[i].state == MasterJobState::Failed);
+        const bool settled = queuedFirst ? first.rejection == Rejection::None && failed : later.rejection == Rejection::NotMeasured;
+        ok (stopped && settled && queuedRows (s) == 0,
+            std::string (queuedFirst ? "queued, then the measurement stopped: the master ends Failed" : "the measurement stopped, then a master: refused NotMeasured")
+                + " — " + std::to_string (queuedRows (s)) + " left queued, rejection "
+                + std::to_string (unsigned (queuedFirst ? first.rejection : later.rejection)));
+    }
+}
+
+//==============================================================================
 // A MASTER WITH NO WISH IS THE CANDIDATE BEFORE THE WATERFALL, TO THE BIT: the digests below are commit 808c058's — the
 // same noWishDigest, built from that commit's tree — on every target it had (maxNuke is new).
 void noWishAsBefore()
@@ -588,6 +641,7 @@ int main()
     twoClippers();
     nuke();
     snapshotAtTheCommand();
+    queueAtTheFirstAnalysis();
     noWishAsBefore();
     defaultSharesAsBefore();
     return felitronics::test::report();

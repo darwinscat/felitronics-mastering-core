@@ -252,14 +252,9 @@ SnapshotView Session::buildView() const noexcept
     v.tempoChoice = tempoForDevice();
     v.measurementsFromSidecar = measurementsFromSidecar_;
     v.sourceMissingAudio = source_.channels != 0 && ! samples_;
-    // A master is taken whenever it would be accepted: at once, or queued behind the one being made.
-    {
-        const bool startable = Table::commands[std::size_t (Command::Master)].cell[std::size_t (column())] == Rejection::None;
-        const bool queues = job_ != 0 || queuedCount_ != 0 || pendingMaster_.master != 0
-            || (startable && project_.manual && plan_.waiting != 0);
-        v.canMaster = ((mandatoryReady() && startable) || queues)
-            && storageFor (command::Master {}).rejection == Rejection::None;
-    }
+    // A master is taken whenever it would be accepted: at once, or queued — behind the one being made, or until the first
+    // measurement's readings come.
+    v.canMaster = storageFor (command::Master {}).rejection == Rejection::None;
     for (std::size_t i = 0; i < masterJobCount_; ++i)
     {
         auto row = masterJobs_[i];
