@@ -7,6 +7,7 @@
 #include "Chain.h"
 #include "MeasurementPlan.h"
 #include "Cost.h"
+#include "Dynamics.h"
 #include "Limiter.h"
 #include "Observations.h"
 #include <felitronics/analysis/BandCrestResult.h>
@@ -912,15 +913,18 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             costResult.limiterActiveShare = { MeasurementReason::None,
                 solution.limiterActive.stats.activeFraction, solution.limiterActive.stats.frames };
         else costResult.limiterActiveShare.reason = MeasurementReason::Unsupported;
-        // WHAT THE GLUE AND THE SATURATION DID, each on its own stage (owner decisions 3.8, 3.9): the compressor's gain
-        // reduction — its P95 over the programme's 4 ms windows and its largest sample — and the soft clipper's cut of
-        // peaks against its own gain on a quiet sound. A stage out of the chain has no number.
+        // WHAT THE GLUE AND THE SATURATION DID, each on its own stage (owner decisions 3.8, 3.9), each after its own mix:
+        // what the glue's output lost against its input — the compressor's gain reduction, its P95 over the programme's
+        // 4 ms windows and its largest sample, carried through the parallel blend at the mix the stage applied (owner,
+        // 08.10: the song's take, not the compressed path's) — and the soft clipper's cut of peaks against its own gain on
+        // a quiet sound. A stage out of the chain has no number.
         const bool compressing = ready.topology.compressor && ! ready.params.bypassCompressor;
         const auto& glue = solution.measured.compressor;
         if (compressing && glue.valid && std::isfinite (glue.maxDb) && solution.grQuantile (mastering::GrStage::Compressor, .95, quantile))
         {
-            costResult.glueP95Db = { MeasurementReason::None, quantile, glue.frames };
-            costResult.glueMaxDb = { MeasurementReason::None, glue.maxDb, glue.frames };
+            const double mix = chain.resolved().compressorMix;
+            costResult.glueP95Db = { MeasurementReason::None, detail::glueTakenDb (quantile, mix), glue.frames };
+            costResult.glueMaxDb = { MeasurementReason::None, detail::glueTakenDb (glue.maxDb, mix), glue.frames };
         }
         else costResult.glueP95Db.reason = costResult.glueMaxDb.reason = compressing ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
         const bool shaping = ready.topology.clipper && ! ready.params.bypassClipper;

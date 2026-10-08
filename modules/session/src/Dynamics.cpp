@@ -366,4 +366,11 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
     params.clipper = clipperParams (in.rules, settings.type, shaped.driveDb.value_or (0.0), settings.mix);
     params.bypassClipper = ! shaped.active;
 }
+
+double glueTakenDb (double reductionDb, double mix) noexcept
+{
+    if (core::exactlyEqual (mix, 1.0)) return reductionDb;
+    const double kept = (1.0 - mix) + mix * core::det::pow10 (-reductionDb / 20.0);
+    return 0.0 - 20.0 * core::det::log10 (kept);
+}
 } // namespace felitronics::session::detail

@@ -94,4 +94,13 @@ struct InputLevels
 // core's. A glue that is out, unavailable or still waiting for its tempo, and a saturation that is off, are bypassed.
 // The chain's input gain is not touched: the normalising gain is the landing search's to add, once.
 void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::MasteringChainParams& params) noexcept;
+
+// WHAT THE SONG GOT FROM THE GLUE (owner, 08.10), dB, positive: the drop of the parallel stage's output — the dry signal
+// at 1 - mix under the compressed one at mix — against its input, where the compressed path is reduced by `reductionDb`.
+// The compressor applies a gain and no makeup, and the dry path is aligned to it, so sample by sample the output is the
+// input times (1 - mix) + mix * 10^(-reductionDb / 20). The drop grows with the reduction, so the largest sample of one is
+// the largest of the other, and a P95 of one is the other's P95 (the report's 4 ms windows average in dB, and the blend of
+// a window's mean stands for the mean of its blend). `mix` is the share the stage applies
+// (MasteringChainResolved::compressorMix). At mix 1 the reduction as it is, to the bit; at mix 0, +0.
+[[nodiscard]] double glueTakenDb (double reductionDb, double mix) noexcept;
 } // namespace felitronics::session::detail
