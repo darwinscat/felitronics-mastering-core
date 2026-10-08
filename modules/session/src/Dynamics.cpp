@@ -171,7 +171,7 @@ bool glueTicked (const Layers<GlueFields>& glue) noexcept
 {
     // The five by hand take no part: the amount they are laid over never moves with them, so a field left alone keeps its
     // value whatever another field holds.
-    // A wished share (the waterfall, MVP) ticks a glue no person turned on or off.
+    // A wished share (the waterfall) ticks a glue no person turned on or off.
     const auto& h = glue.hand;
     return (h.on ? *h.on : h.share.has_value()) && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
 }
@@ -263,7 +263,7 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     const double upToDb = glueKnob (in.rules, devices.glue);
     const double mix = settingsOf (in.rules, devices.glue).mix;
     const bool wished = ! devices.glue.hand.on && devices.glue.hand.share.has_value();
-    // THE WATERFALL (MVP): a wished share of 0 takes the glue out of the chain — a zone at 0 % does not sound.
+    // THE WATERFALL: a wished share of 0 takes the glue out of the chain — a zone at 0 % does not sound.
     const bool zeroShare = devices.glue.hand.share.has_value() && ! (*devices.glue.hand.share > kZeroShare);
     const bool ticked = offeredByShell && (settingsOf (in.rules, devices.glue).on || wished) && upToDb > 0.0 && ! zeroShare;
     const auto levels = inputLevels (in);
@@ -310,7 +310,7 @@ SaturationFinding saturationFinding (const PlanInputs& in, const Devices& device
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Saturation))) != 0;
     const auto levels = inputLevels (in);
     const bool wished = ! devices.saturation.hand.on && devices.saturation.hand.share.has_value();
-    // A wished share of 0 (the waterfall, MVP) takes the saturation out of the chain, as the glue's.
+    // A wished share of 0 (the waterfall) takes the saturation out of the chain, as the glue's.
     const bool zeroShare = devices.saturation.hand.share.has_value() && ! (*devices.saturation.hand.share > kZeroShare);
     if (! offeredByShell || ! (settings.on || wished) || ! (drive > 0.0) || ! levels.truePeakDb || zeroShare) return f;
     f.active = true;

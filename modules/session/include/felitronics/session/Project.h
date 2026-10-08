@@ -53,7 +53,7 @@ enum class Needles : std::uint8_t { Auto, Manual, Off };
 
 // HOW A LANDING TAKES ITS LOUDNESS: the target's number (Manual), or a max mode — as loud as its promise allows
 // ([landing.max] in engine.toml): MaxClean, the damage not heard; MaxDense, heard but not annoying; MaxExtreme, the
-// loudest, its damage accepted; MaxNuke (MVP), past extreme: a larger limiter budget still.
+// loudest, its damage accepted; MaxNuke, past extreme: a larger limiter budget still.
 enum class LoudnessMode : std::uint8_t { Manual, MaxClean, MaxDense, MaxExtreme, MaxNuke };
 
 // THE TARGET'S NUMBERS a person may edit in place ([edit] in targets.toml): the loudness, LUFS, and the true-peak ceiling,
@@ -100,7 +100,7 @@ template <template <class> class F> struct GlueFields
     F<double> kneeDb {};
     F<double> attackMs {};
     F<double> releaseMs {};
-    // THE WATERFALL (MVP): a person's wish, 0…1, of the share of the peak work at the landing the glue takes — the master
+    // THE WATERFALL: a person's wish, 0…1, of the share of the peak work at the landing the glue takes — the master
     // steers its mix towards it. A person's field alone: the machine's 0 is never read.
     F<double> share {};
 };
@@ -119,7 +119,7 @@ template <template <class> class F> struct SaturationFields
     F<double> drive {};
     F<double> mix {};
     F<SaturationType> type {};   // field 4 (3, the output, left in v0.6.0: the landing undid any trim)
-    F<double> share {};          // the waterfall (MVP): the wished share of the peak work, steered through the mix
+    F<double> share {};          // the waterfall: the wished share of the peak work, steered through the mix
 };
 
 // [tilt]: the tilt, dB.
@@ -141,7 +141,7 @@ template <template <class> class F> struct LimiterFields
     F<double> releaseMs {};
     F<double> lookaheadMs {};
     F<std::int32_t> oversampling {};
-    // The waterfall (MVP): the wished share of the peak work the needles' clipper takes, steered through its cut within
+    // The waterfall: the wished share of the peak work the needles' clipper takes, steered through its cut within
     // [limiter.peakClipper] manualDomain; the limiter takes the rest.
     F<double> cutShare {};
 };

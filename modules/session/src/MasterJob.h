@@ -26,7 +26,7 @@ namespace detail
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
-// [landing.max] <mode> cleaner (MVP): whether a max mode with a wish lands its zones at the loudness of the master without
+// [landing.max] <mode> cleaner: whether a max mode with a wish lands its zones at the loudness of the master without
 // them (true, also when absent) or on the mode's budget (false). False for the manual mode.
 [[nodiscard]] bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // [progress.master]: the renders a master's bar expects in its loudness mode — expectedPasses by hand,
@@ -56,7 +56,7 @@ struct MasterPlan
     mastering::MasteringChainParams aloneParams {};
     std::uint32_t deliveryRate = 0;
     int frames = 0, traceBuckets = 0;
-    // The waterfall (MVP): the clipper's drive scale (aligned against knob), NaN where the drive is not steered.
+    // The waterfall: the clipper's drive scale (aligned against knob), NaN where the drive is not steered.
     double saturationDriveScale = std::numeric_limits<double>::quiet_NaN();
     std::size_t crestCapacity = 0, costCapacity = 0, costScratchCapacity = 0;
     std::size_t waveformCapacity = 0;
@@ -228,7 +228,7 @@ struct MasterJob final
     mastering::LoudnessRequest cleanRequest {};
     std::optional<double> aloneLufs, aloneLimiterDb;
     MaxStop aloneStop = MaxStop::None;
-    // The waterfall (MVP): the wishes the landing was given, and the stages as its first landing steered them — the
+    // The waterfall: the wishes the landing was given, and the stages as its first landing steered them — the
     // parameters the delivery, the floor pass and the report take the mixes and the cut from.
     bool waterfall = false;
     double waterfallGlueShare = 0.0, waterfallSaturationShare = 0.0, waterfallCutShare = 0.0, waterfallCutMaxDb = 0.0;

@@ -545,16 +545,16 @@ void everySnapshotKeyRequired()
 }
 
 // A PROJECT SAVED BEFORE (owner, 07.10: old projects open with machine values): v0.20.0 wrote no glue threshold, ratio,
-// knee, attack or release and no limiter release, lookahead or oversampling; the MVP build wrote the glue's five with its
-// own input's numbers. Either opens with the machine's values for this source and no difference.
+// knee, attack or release and no limiter release, lookahead or oversampling; a test build of the site wrote the glue's five
+// with its own input's numbers. Either opens with the machine's values for this source and no difference.
 void savedBefore()
 {
     auto s = fresh();
     const auto& own = s->project().devices;
     const std::string v020 = project (false) + "\n[glue]\nmix.machine = 0.4\n\n[limiter]\nneedles.machine = \"auto\"\n";
-    const std::string mvp = project (false) + "\n[glue]\nthresholdDb.machine = -20.5\nratio.machine = 1.9\nkneeDb.machine = 6\n"
+    const std::string ownFive = project (false) + "\n[glue]\nthresholdDb.machine = -20.5\nratio.machine = 1.9\nkneeDb.machine = 6\n"
         "attackMs.machine = 20\nreleaseMs.machine = 120\n";
-    for (const auto& [file, name] : { std::pair { v020, "a v0.20.0 project" }, std::pair { mvp, "an MVP project with the glue's five" } })
+    for (const auto& [file, name] : { std::pair { v020, "a v0.20.0 project" }, std::pair { ownFive, "a project with the glue's five of its own input" } })
     {
         auto replay = fresh();
         const auto answer = import (*replay, file);

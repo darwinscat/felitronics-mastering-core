@@ -79,7 +79,7 @@ struct SnapshotView
     // placement, as eqCurve.
     std::span<const EqPoint> eqOnlyCurve;
     std::optional<SourceReport> sourceReport;
-    // THE MASTERS' QUEUE (MVP): the recent master jobs in the order asked — queued, running, done, failed, cancelled
+    // THE MASTERS' QUEUE: the recent master jobs in the order asked — queued, running, done, failed, cancelled
     // (Session.h, MasterJobState). Empty before the first master and after a load.
     BoundedList<MasterJobRow, kMaxMasterJobs> masterJobs {};
 };

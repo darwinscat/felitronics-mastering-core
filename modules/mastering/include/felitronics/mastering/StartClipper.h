@@ -21,7 +21,7 @@ namespace felitronics::mastering
 {
 
 //==============================================================================
-// THE PEAK CLIPPER AT THE START OF THE CHAIN (MVP) — after the EQ and the mono bass, ahead of the glue: a linked hard
+// THE PEAK CLIPPER AT THE START OF THE CHAIN — after the EQ and the mono bass, ahead of the glue: a linked hard
 // clip on its own oversampled grid (the chain's factor and taps, Kaiser), so the peaks the glue and the saturation would
 // otherwise work on are gone before they reach them. The threshold is absolute, in dBFS on that grid; NaN clips nothing
 // and only measures the highest peak the stage saw (its input does not depend on any gain a landing moves). Bypassed, the

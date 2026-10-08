@@ -452,9 +452,9 @@ enum class Term : std::uint16_t
     FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb, FieldGlueAttackMs, FieldGlueReleaseMs,
     // The limiter's three by hand (08.10) as the fields a refusal names: its third to fifth fields, in Project.h's order.
     FieldLimiterReleaseMs, FieldLimiterLookaheadMs, FieldLimiterOversampling,
-    // The third max mode (07.10, MVP), as a max mode's verdict names it.
+    // The third max mode (07.10), as a max mode's verdict names it.
     LoudnessModeMaxExtreme,
-    // The fourth max mode (08.10, MVP), as a max mode's verdict names it.
+    // The fourth max mode (08.10), as a max mode's verdict names it.
     LoudnessModeMaxNuke,
     // The waterfall's three shares as the fields a refusal names: the glue's ninth, the saturation's sixth and the
     // limiter's sixth field, in Project.h's order.
