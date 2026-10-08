@@ -91,6 +91,14 @@ template <template <class> class F> struct GlueFields
     F<bool> on {};
     F<double> upToDb {};
     F<double> mix {};
+    // The five by hand (07.10): the compressor's threshold (dBFS on the input brought to [input] referenceLufs), ratio,
+    // knee (dB), attack and release (ms). The machine's layer holds the travel's values at its own amount; what sounds
+    // is a person's field where set, else the travel at the amount as it sounds.
+    F<double> thresholdDb {};
+    F<double> ratio {};
+    F<double> kneeDb {};
+    F<double> attackMs {};
+    F<double> releaseMs {};
 };
 
 // The saturation's type: the shaper's curve, in felitronics-core's WaveShaper::Shape order and values. The machine's layer

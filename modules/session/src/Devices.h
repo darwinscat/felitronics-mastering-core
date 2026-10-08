@@ -96,7 +96,8 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
 {
     static constexpr Device device = Device::Glue;
     static constexpr std::string_view name = "glue";
-    static constexpr std::string_view fields[] = { "on", "upToDb", "mix" };
+    static constexpr std::string_view fields[] = { "on", "upToDb", "mix", "thresholdDb", "ratio", "kneeDb", "attackMs",
+                                                   "releaseMs" };
     static auto& layers (Devices& d) noexcept { return d.glue; }
     static const auto& layers (const Devices& d) noexcept { return d.glue; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -104,6 +105,11 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
         v (0, flagRule(), s.on...);
         v (1, knobRule (r.glue), s.upToDb...);
         v (2, knobRule (r.glueMix), s.mix...);
+        v (3, knobRule (r.glueThreshold), s.thresholdDb...);
+        v (4, knobRule (r.glueRatio), s.ratio...);
+        v (5, knobRule (r.glueKnee), s.kneeDb...);
+        v (6, knobRule (r.glueAttack), s.attackMs...);
+        v (7, knobRule (r.glueRelease), s.releaseMs...);
     }
 };
 

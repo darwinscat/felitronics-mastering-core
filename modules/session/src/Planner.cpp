@@ -341,6 +341,10 @@ template <> struct Planned<GlueFields<Value>>
 {
     static void propose (const PlanInputs& in, GlueFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
+        // The five: the travel's values at the machine's amount, on this input's P95 and decided tempo where it has them.
+        const auto law = glueLaw (in, m.upToDb, false);
+        if (law.thresholdDb) m.thresholdDb = kept (*law.thresholdDb);
+        if (law.releaseMs) m.releaseMs = kept (*law.releaseMs);
         if (! in.rules.row (in.row).glue) return;
         plan.target |= std::uint8_t (fieldBit (in.rules, m, m.on) | fieldBit (in.rules, m, m.upToDb));
         if (quiet (in)) { m.on = false; plan.heldBack = HeldBack::Quiet; }

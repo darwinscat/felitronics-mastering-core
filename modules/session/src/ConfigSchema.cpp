@@ -626,6 +626,20 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
         in.required ("mix", o.mix, travel ? R { o.mixRange.min, o.mixRange.max } : share);
         readComfort (d, in, "mixComfort", o.mixComfort, share);
     }
+    // The five by hand: each its domain inside the schema's limits, its travel inside the domain, its step, its field.
+    const auto hand = [&] (std::string_view domainKey, std::string_view rangeKey, std::string_view stepKey,
+                           std::string_view comfortKey, Glue::HandKnob& k, const R& limits)
+    {
+        const R domain = readDomain (d, in, domainKey, k.domain, limits);
+        d.pair (in, rangeKey, k.range, domain);
+        in.required (stepKey, k.step, R { 0.0, 1000.0 });   // 0: no step
+        readComfort (d, in, comfortKey, k.comfort, domain);
+    };
+    hand ("thresholdDbDomain", "thresholdDbRange", "thresholdDbStep", "thresholdDbComfort", o.thresholdDb, R { -60.0, 0.0 });
+    hand ("ratioDomain", "ratioRange", "ratioStep", "ratioComfort", o.ratioKnob, R { 1.0, 20.0 });
+    hand ("kneeDbDomain", "kneeDbRange", "kneeDbStep", "kneeDbComfort", o.kneeDb, R { 0.0, 24.0 });
+    hand ("attackMsDomain", "attackMsRange", "attackMsStep", "attackMsComfort", o.attackMs, R { 0.01, 1000.0 });
+    hand ("releaseMsDomain", "releaseMsRange", "releaseMsStep", "releaseMsComfort", o.releaseMs, R { 1.0, 5000.0 });
     // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
     // and a project's take the whole domain.
     const R machine = hi ? R { knob.min, o.knobMaxDb } : knob;

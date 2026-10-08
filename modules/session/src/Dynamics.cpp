@@ -121,6 +121,16 @@ GlueCurve glueFor (const Rules& rules, double upToDb) noexcept
     return glueAt (rules, hi);
 }
 
+double glueReleaseMs (const Rules& rules, const GlueCurve& curve, double bpm) noexcept
+{
+    return clampTo (rules.engine.find ("compressor").find ("limits"), "release", 60000.0 / bpm / curve.divisor);
+}
+
+double glueBpmWhenUnsure (const Rules& rules) noexcept
+{
+    return number (rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure"));
+}
+
 InputLevels inputLevels (const PlanInputs& in) noexcept
 {
     InputLevels out;
@@ -160,23 +170,20 @@ TempoChoice tempoChoice (const Rules& rules, const MeasurementResult& result) no
 double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept
 {
     const auto settings = settingsOf (rules, glue);
-    const bool tickedUntouched = glue.hand.on && *glue.hand.on && ! glue.hand.upToDb && ! (glue.machine.upToDb > 0.0);
+    // A person's tick, or one of the five set by hand with no tick written: the glue is wanted, so a machine's amount of 0
+    // gives way to whenTicked, as a tick alone does.
+    const auto& h = glue.hand;
+    const bool shaped = h.thresholdDb || h.ratio || h.kneeDb || h.attackMs || h.releaseMs;
+    const bool tickedUntouched = ((h.on && *h.on) || (! h.on && shaped)) && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
     return tickedUntouched ? number (rules.engine.find ("glue").find ("whenTicked")) : settings.upToDb;
 }
 
-GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
+GlueFinding glueLaw (const PlanInputs& in, double upToDb, bool waitsForTempo) noexcept
 {
     GlueFinding f;
-    const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
-    f.upToDb = glueKnob (in.rules, devices.glue);
-    f.mix = settingsOf (in.rules, devices.glue).mix;
-    const bool ticked = offeredByShell && settingsOf (in.rules, devices.glue).on && f.upToDb > 0.0;
+    f.upToDb = upToDb;
     const auto levels = inputLevels (in);
-    if (ticked && ! levels.p95Db) { f.state = GlueState::Unavailable; return f; }
-    // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
-    // compressor gets, or would get, from it. Out of the chain they reach no compressor (writeDynamics reads Active).
-    f.state = ticked ? GlueState::Active : GlueState::Out;
-    const auto curve = glueFor (in.rules, f.upToDb);
+    const auto curve = glueFor (in.rules, upToDb);
     f.ratio = curve.ratio;
     f.kneeDb = curve.kneeDb;
     f.attackMs = curve.attackMs;
@@ -196,19 +203,53 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
             choice = c;
             if (! c.measured) unsure = tempoHeard (*tempo);
         }
-    if (! choice && f.state == GlueState::Out)
+    if (! choice && ! waitsForTempo)
         choice = TempoChoice { true, false, number (in.rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure")),
                                MeasurementReason::Pending };
     if (choice)
     {
         const double wanted = 60000.0 / choice->bpm / curve.divisor;
-        const double release = clampTo (in.rules.engine.find ("compressor").find ("limits"), "release", wanted);
+        const double release = glueReleaseMs (in.rules, curve, choice->bpm);
         f.bpm = choice->bpm;
         f.releaseAskedMs = wanted;
         f.releaseMs = release;
         f.releaseClamped = ! same (release, wanted);
         f.tempoMeasured = choice->measured;
         f.tempoUnsureBpm = unsure;
+    }
+    return f;
+}
+
+GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
+{
+    GlueFinding f;
+    const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
+    const double upToDb = glueKnob (in.rules, devices.glue);
+    const double mix = settingsOf (in.rules, devices.glue).mix;
+    const bool ticked = offeredByShell && settingsOf (in.rules, devices.glue).on && upToDb > 0.0;
+    const auto levels = inputLevels (in);
+    if (ticked && ! levels.p95Db) { f.upToDb = upToDb; f.mix = mix; f.state = GlueState::Unavailable; return f; }
+    // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
+    // compressor gets, or would get, from it. Out of the chain they reach no compressor (writeDynamics reads Active).
+    const auto state = ticked ? GlueState::Active : GlueState::Out;
+    f = glueLaw (in, upToDb, state != GlueState::Out);
+    f.state = state;
+    f.mix = mix;
+    // THE FIVE BY HAND: a person's field wins for that field alone, taken as written — the limits clamp the travel only.
+    const auto& hand = devices.glue.hand;
+    if (hand.ratio) f.ratio = *hand.ratio;
+    if (hand.kneeDb) f.kneeDb = *hand.kneeDb;
+    if (hand.attackMs) f.attackMs = *hand.attackMs;
+    if (hand.thresholdDb) f.thresholdDb = *hand.thresholdDb;
+    if (hand.releaseMs)
+    {
+        // A person's release follows no tempo: the finding names none, so no line says what the release was set for.
+        f.releaseAskedMs = *hand.releaseMs;
+        f.releaseMs = *hand.releaseMs;
+        f.releaseClamped = false;
+        f.bpm.reset();
+        f.tempoMeasured = false;
+        f.tempoUnsureBpm.reset();
     }
     return f;
 }

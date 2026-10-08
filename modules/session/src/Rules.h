@@ -67,6 +67,7 @@ struct Rules
     Decimal glueDefault {};                    // [glue] default, on the knob
     Knob glueMix {};                           // [glue] mixRange by mixStep in mixDomain: the parallel share
     Decimal glueMixDefault {};                 // [glue] mix
+    Knob glueThreshold {}, glueRatio {}, glueKnee {}, glueAttack {}, glueRelease {};   // [glue] the five by hand
     Knob drive {}, mix {};                     // [saturation] driveRange, mixRange, by their steps
     Decimal driveDefault {}, mixDefault {};   // [saturation] driveDb, mix
     std::string_view shapeDefault;             // [saturation] shape: the machine's type (Devices.h names them)

@@ -62,7 +62,7 @@ bool bandsAccepted (const BandsFields<Value>& bands, const Rules& r) noexcept
 // The knob a field turns — the one the commands check that field with — or null.
 const Knob* knobOf (const Rules& r, Term field) noexcept
 {
-    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for eighteen of them.
+    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for twenty-three of them.
     if (field == Term::FieldTargetLufs) return &r.lufs;
     if (field == Term::FieldTargetTp) return &r.tp;
     if (field == Term::FieldHpfFq) return &r.hpfFq;
@@ -70,6 +70,11 @@ const Knob* knobOf (const Rules& r, Term field) noexcept
     if (field == Term::FieldMonoBassWidth) return &r.monoBassWidth;
     if (field == Term::FieldGlueUpToDb) return &r.glue;
     if (field == Term::FieldGlueMix) return &r.glueMix;
+    if (field == Term::FieldGlueThresholdDb) return &r.glueThreshold;
+    if (field == Term::FieldGlueRatio) return &r.glueRatio;
+    if (field == Term::FieldGlueKneeDb) return &r.glueKnee;
+    if (field == Term::FieldGlueAttackMs) return &r.glueAttack;
+    if (field == Term::FieldGlueReleaseMs) return &r.glueRelease;
     if (field == Term::FieldSaturationDrive) return &r.drive;
     if (field == Term::FieldSaturationMix) return &r.mix;
     if (field == Term::FieldTiltDb) return &r.tilt;
@@ -121,6 +126,20 @@ std::optional<Window> windowOf (const Rules& r, Term field) noexcept
         w.outHigh = number (comfort.find ("warningHigh"));
         return w;
     }
+    // The glue's five by hand (07.10): <name>Comfort, read as the amount's.
+    constexpr std::pair<Term, std::string_view> hand[] { { Term::FieldGlueThresholdDb, "thresholdDbComfort" },
+        { Term::FieldGlueRatio, "ratioComfort" }, { Term::FieldGlueKneeDb, "kneeDbComfort" },
+        { Term::FieldGlueAttackMs, "attackMsComfort" }, { Term::FieldGlueReleaseMs, "releaseMsComfort" } };
+    for (const auto& [term, key] : hand)
+        if (field == term)
+        {
+            const View comfort = r.engine.find ("glue").find (key);
+            w.low = number (comfort.find ("low"));
+            w.high = number (comfort.find ("high"));
+            w.outLow = number (comfort.find ("warningLow"));
+            w.outHigh = number (comfort.find ("warningHigh"));
+            return w;
+        }
     if (field == Term::FieldTiltDb || field == Term::FieldLowDb)
     {
         const View device = r.engine.find (field == Term::FieldTiltDb ? "tilt" : "low");

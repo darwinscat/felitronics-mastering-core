@@ -230,7 +230,7 @@ struct GlueFinding
     // ...and once the tempo is decided — the measured one, or [compressor.tempo] bpmWhenUnsure: the tempo, the release
     // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits]. A
     // glue in the chain waits for its tempo; nothing measures the tempo of one out of it, whose release is stated at
-    // bpmWhenUnsure until a tempo is decided.
+    // bpmWhenUnsure until a tempo is decided. A release set by hand is both releases, and no tempo: bpm is none.
     std::optional<double> bpm, releaseAskedMs, releaseMs;
     bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
     bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
@@ -239,7 +239,8 @@ struct GlueFinding
     // point for the knob.
     std::optional<double> p95DetectorDb;
     // The tempo the detector gave and the rule did not follow — its label under [compressor.tempo] trustedConfidence: the
-    // release stays at bpmWhenUnsure, and the number is said beside it. None where the tempo was followed or gave none.
+    // release stays at bpmWhenUnsure, and the number is said beside it. None where the tempo was followed or gave none, or
+    // the release is set by hand.
     std::optional<double> tempoUnsureBpm;
 };
 

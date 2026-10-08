@@ -487,6 +487,29 @@ void theTempo()
                    == MeasurementReason::TooShort,
             "a tempo followed, and none heard: no number to name — the fallback line and the measurement's own reason");
     }
+    // A release set by hand follows no tempo: the compressor gets the person's number, and no line says the release was
+    // set for a tempo — not the fallback's, not an unsure tempo's — nor that it was held at a limit. Without the hand
+    // release the same glue keeps its tempo line.
+    for (const Tempo t : { Tempo::Unavailable, Tempo::Medium })
+    {
+        const Faked f ("allStreaming", -18.0, -3.0, -12.0, t, 140.3);
+        auto devices = f.glued (2.0);
+        devices.glue.hand.releaseMs = 333.0;
+        const auto hand = detail::glueFinding (f.in, devices);
+        const auto untouched = detail::glueFinding (f.in, f.glued (2.0));
+        mastering::MasteringChainParams params;
+        detail::writeDynamics (f.in, devices, params);
+        const auto line = PlanText::glueTempo (hand);
+        const auto kept = PlanText::glueTempo (untouched);
+        const std::string label = t == Tempo::Medium ? "a tempo heard at medium" : "no tempo measured";
+        ok (hand.state == GlueState::Active && hand.releaseMs && same (*hand.releaseMs, 333.0) && ! params.bypassCompressor
+            && same (params.compressor.releaseMs, 333.0) && ! hand.bpm && ! hand.tempoMeasured && ! hand.tempoUnsureBpm
+            && ! line && ! PlanText::glueRelease (hand),
+            label + ", a release of 333 ms by hand: the compressor gets 333 ms and no tempo is said"
+            + (line ? " — not " + text::Text::text (*line, text::Lang::En) : std::string {}));
+        ok (kept && kept->id == (t == Tempo::Medium ? text::FactId::GlueTempoUnsure : text::FactId::GlueTempoFallback),
+            label + ", no release by hand: the tempo line stays");
+    }
     const auto pending = release (Tempo::Pending, 100.0), cancelled = release (Tempo::Cancelled, 100.0);
     ok (pending.state == GlueState::Active && pending.ratio && ! pending.releaseMs && ! pending.bpm && cancelled.state == GlueState::Active && ! cancelled.releaseMs,
         "while the tempo runs, or is stopped, the glue has its curve and no release yet");

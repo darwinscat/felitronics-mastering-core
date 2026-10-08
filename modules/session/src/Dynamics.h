@@ -38,6 +38,10 @@ struct GlueCurve
 [[nodiscard]] double glueStaticLossDb (const GlueCurve& curve) noexcept;
 // The values at a knob of `upToDb`: the travel whose static loss at the loud places is `upToDb`.
 [[nodiscard]] GlueCurve glueFor (const Rules& rules, double upToDb) noexcept;
+// The release those values give at `bpm`: a beat over the travel's divisor, within [compressor.limits] release, ms.
+[[nodiscard]] double glueReleaseMs (const Rules& rules, const GlueCurve& curve, double bpm) noexcept;
+// [compressor.tempo] bpmWhenUnsure.
+[[nodiscard]] double glueBpmWhenUnsure (const Rules& rules) noexcept;
 
 // The input's levels in the normalised system, where they were measured: the gain to [input] referenceLufs, the
 // short-term P95 and the true peak after it.
@@ -56,6 +60,11 @@ struct InputLevels
 // The glue knob as it sounds: a person's value, or the machine's — and [glue] whenTicked when a person ticked the glue on
 // without touching a knob the machine left at 0.
 [[nodiscard]] double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept;
+
+// The travel's five at a knob of `upToDb` on this input: ratio, knee and attack always; the threshold where the P95 is
+// measured; the release once a tempo is decided, or at [compressor.tempo] bpmWhenUnsure when `waitsForTempo` is false.
+// No person's field and no state: glueFinding lays those over it, and the machine's layer takes it at its own amount.
+[[nodiscard]] GlueFinding glueLaw (const PlanInputs& in, double upToDb, bool waitsForTempo) noexcept;
 
 // What the project's glue and saturation come to on this input.
 [[nodiscard]] GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept;
