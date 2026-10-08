@@ -45,6 +45,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -1201,15 +1202,19 @@ void theMemoryOfAMaster()
     ok (declaredSmall.rejection == Rejection::None && asked.rejection == Rejection::None && declaredSmall.bytes < declaredLarge.bytes
         && declared::covers (declaredSmall.bytes, spentSmall) && largest <= declaredSmall.bytes && s.masters().size() == 1,
         "then a three-second one: " + declared::describe (declaredSmall.bytes, spentSmall) + " — smaller, covered to its end");
-    // The output is pending: the next master is refused whole — nothing allocated, nothing changed — until it is taken.
-    const auto before = s.revision();
+    // The output is pending: the next master is queued — nothing allocated, nothing started, the finished one intact — and
+    // a cancel of its job takes it out of the queue.
     Answer refused;
-    const auto spentRefused = declared::spend ([&] { refused = s.apply (command::Master { 7 }); });
-    ok (refused.rejection == Rejection::OutputPending && spentRefused.requests == 0 && s.revision() == before && s.job() == 0
+    const auto spentQueued = declared::spend ([&] { refused = s.apply (command::Master { 7 }); });
+    ok (refused.rejection == Rejection::None && refused.job != 0 && spentQueued.requests == 0 && s.job() == 0
         && s.masters().size() == 1 && s.pendingMaster().master == s.masters()[0].id,
-        "with its audio not yet taken the next master is refused whole: no allocation, no revision, the finished one intact");
-    ok (s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok && s.check (command::Master { 8 }).rejection == Rejection::None,
-        "and taken again once it is released");
+        "with its audio not yet taken the next master is queued: no allocation, no job started, the finished one intact");
+    bool cancelled = false;
+    ok (s.apply (command::Cancel { 70, refused.job }).rejection == Rejection::None && s.job() == 0, "PRECONDITION: the queued master cancelled");
+    const auto jobs = s.snapshot().view().masterJobs;
+    for (const auto& row : std::span (jobs.items.data(), jobs.count)) cancelled = cancelled || (row.job == refused.job && row.state == MasterJobState::Cancelled);
+    ok (cancelled && s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok && s.check (command::Master { 8 }).rejection == Rejection::None,
+        "a cancel lists it Cancelled, and once the audio is released a master starts at once again");
     // A heap that cannot hold the job refuses it before anything is asked for. The last master's damage ends first: a
     // master asked while one runs is priced with its bytes freed (MasterJobTests' masterAtTheCeilingWithADamage).
     for (unsigned i = 0; i < 4000000 && s.damageJob() != 0; ++i) (void) s.step (16);

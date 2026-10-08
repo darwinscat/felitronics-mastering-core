@@ -49,6 +49,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -424,6 +425,21 @@ void everyCellOfTheTable()
                 ok (a.rejection == Rejection::None && a.revision == before + moves && s.revision() == before + moves
                         && a.command == 1000 + c,
                     what + ": accepted, the revision moved by " + std::to_string (moves) + ", the id given back (" + nameOf (a.rejection) + ")");
+            }
+            // THE MASTERS' QUEUE: a master is never refused for its timing. Where its cell says it cannot start now — before
+            // the first measurement ended or with it stopped, before the devices are placed, while another is made — it is
+            // taken with a job of its own and listed Queued, the job running (if any) untouched.
+            else if (Command (c) == Command::Master && Column (col) != Column::Empty)
+            {
+                const JobId running = s.job();
+                const Answer a = s.apply (r);
+                bool listed = false;
+                const auto jobs = s.snapshot().view().masterJobs;
+                for (const auto& row : std::span (jobs.items.data(), jobs.count))
+                    listed = listed || (row.job == a.job && row.state == MasterJobState::Queued);
+                ok (a.rejection == Rejection::None && a.job != 0 && a.job != running && s.job() == running && listed
+                        && a.command == 1000 + c,
+                    what + ": queued, where its cell says " + nameOf (cell) + " (" + nameOf (a.rejection) + ")");
             }
             else
                 rejectedWhole (s, r, cell, kNoField, what);
@@ -834,6 +850,35 @@ void theOtherRejections()
     }
 }
 
+// THE MASTERS' QUEUE HAS ITS REFUSALS — never a master's timing: a full queue refuses the next master Busy, and a source
+// whose first measurement ended without its mandatory readings (silence) refuses it NotMeasured, its turn never coming.
+// Each refused whole.
+void theQueueHasItsRefusals()
+{
+    felitronics::test::group ("the masters' queue: Busy when full, NotMeasured on a source with no mandatory readings");
+    {
+        Situation x = situation (Column::Loaded);
+        Session& s = *x.s;
+        bool queued = true;
+        for (std::size_t i = 0; i < kMaxQueuedMasters; ++i)
+        {
+            const Answer a = s.apply (validRequest (Command::Master, x, CommandId (2000 + i)));
+            queued = queued && a.rejection == Rejection::None && a.job != 0;
+        }
+        ok (queued && s.job() == 0, "PRECONDITION: " + std::to_string (kMaxQueuedMasters) + " masters queued before the first measurement ended");
+        rejectedWhole (s, validRequest (Command::Master, x, 2100), Rejection::Busy, kNoField, "a master past a full queue");
+    }
+    {
+        auto s = fresh();
+        Audio a = makeAudio (2, 48000);
+        for (auto& p : a.planes) std::fill (p.begin(), p.end(), 0.0f);
+        ok (accepted (*s, loadOf (a)), "PRECONDITION: a second of silence loaded");
+        for (unsigned i = 0; i < 100000 && s->measurementJob() != 0; ++i) (void) s->step (16);
+        rejectedWhole (*s, command::Master { 3 }, Rejection::NotMeasured, kNoField,
+                       "a master on silence, measured with no mandatory readings");
+    }
+}
+
 void everyRejectionWasProduced()
 {
     felitronics::test::group ("every rejection code was produced above, each with nothing changed");
@@ -1132,6 +1177,7 @@ int main()
     jobIds();
     aLoadDisarms();
     theSourceHash();
+    theQueueHasItsRefusals();
     everyRejectionWasProduced();
     return felitronics::test::report();
 }
