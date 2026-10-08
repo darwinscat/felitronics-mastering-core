@@ -1148,21 +1148,41 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, std::optional<double>>);
+        v.field ("attackMs", x.attackMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, std::optional<double>>);
+        v.field ("kneeDb", x.kneeDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, std::optional<double>>);
         v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, std::optional<bool>>);
         v.field ("on", x.on);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ratio)>, std::optional<double>>);
+        v.field ("ratio", x.ratio);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, std::optional<double>>);
+        v.field ("releaseMs", x.releaseMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.thresholdDb)>, std::optional<double>>);
+        v.field ("thresholdDb", x.thresholdDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, std::optional<double>>);
         v.field ("upToDb", x.upToDb);
     }
     else if constexpr (std::is_same_v<U, GlueFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, double>);
+        v.field ("attackMs", x.attackMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, double>);
+        v.field ("kneeDb", x.kneeDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, double>);
         v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ratio)>, double>);
+        v.field ("ratio", x.ratio);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, double>);
+        v.field ("releaseMs", x.releaseMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.thresholdDb)>, double>);
+        v.field ("thresholdDb", x.thresholdDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, double>);
         v.field ("upToDb", x.upToDb);
     }

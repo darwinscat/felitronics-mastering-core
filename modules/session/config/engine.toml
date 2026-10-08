@@ -430,6 +430,33 @@ mix = 0.4
 mixRange = [0, 1]
 mixStep = 0
 mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
+# THE FIVE BY HAND (owner, 07.10): the compressor's threshold, ratio, knee, attack and release, each a field a person may
+# set. A field set by hand wins for that field alone; every field left alone follows the travel above at the amount as it
+# sounds (a person's or the machine's), as before. thresholdDb is dBFS on the input brought to [input] referenceLufs —
+# the level the compressor reads; the others are the compressor's own units. A hand value is taken as written within its
+# domain: [compressor.limits] clamp the travel, never a person's number.
+# <name>Domain: what a command and a project accept. <name>Range, <name>Step: the knob's travel and step — hints (0: no
+#   step). <name>Comfort: the knob's field, as comfort above — the owner's numbers of 07.10.
+thresholdDbDomain = [-40, 0]
+thresholdDbRange = [-40, 0]
+thresholdDbStep = 0
+thresholdDbComfort = { low = -30, high = -10, warningLow = -36, warningHigh = -6 }
+ratioDomain = [1, 10]
+ratioRange = [1, 10]
+ratioStep = 0
+ratioComfort = { low = 1.2, high = 3, warningLow = 1, warningHigh = 6 }
+kneeDbDomain = [0, 12]
+kneeDbRange = [0, 12]
+kneeDbStep = 0
+kneeDbComfort = { low = 2, high = 10, warningLow = 0.5, warningHigh = 12 }
+attackMsDomain = [0.1, 100.0]
+attackMsRange = [0.1, 100.0]
+attackMsStep = 0
+attackMsComfort = { low = 5, high = 50, warningLow = 1, warningHigh = 80 }
+releaseMsDomain = [10, 1000]
+releaseMsRange = [10, 1000]
+releaseMsStep = 0
+releaseMsComfort = { low = 50, high = 500, warningLow = 25, warningHigh = 800 }
 
 # SATURATION — the peak-normalised saturator, the chain's clipper stage. A taste of the manual mode: the machine never
 # sets it, and it does not shorten needles (the peak clipper inside the limiter does).

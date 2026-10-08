@@ -169,6 +169,11 @@ Rules readRules (View targets, View engine, View geometry) noexcept
     r.domain (glue.find ("domain"), out.glue);
     r.knob (glue.find ("mixRange"), glue.find ("mixStep"), glue.find ("mixDomain"), out.glueMix);
     r.read (glue.find ("mix"), out.glueMixDefault);
+    r.knob (glue.find ("thresholdDbRange"), glue.find ("thresholdDbStep"), glue.find ("thresholdDbDomain"), out.glueThreshold);
+    r.knob (glue.find ("ratioRange"), glue.find ("ratioStep"), glue.find ("ratioDomain"), out.glueRatio);
+    r.knob (glue.find ("kneeDbRange"), glue.find ("kneeDbStep"), glue.find ("kneeDbDomain"), out.glueKnee);
+    r.knob (glue.find ("attackMsRange"), glue.find ("attackMsStep"), glue.find ("attackMsDomain"), out.glueAttack);
+    r.knob (glue.find ("releaseMsRange"), glue.find ("releaseMsStep"), glue.find ("releaseMsDomain"), out.glueRelease);
 
     const View sat = engine.find ("saturation");
     r.knob (sat.find ("driveRange"), sat.find ("driveStep"), sat.find ("driveDomain"), out.drive);

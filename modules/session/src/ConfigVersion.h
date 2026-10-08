@@ -91,6 +91,8 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "monoBass.zones",                                  // the knob scale's regions
     "monoBass.comfort",                                // the crossover knob field's colours
     "glue.comfort", "glue.mixComfort",                 // the glue knobs' fields' colours
+    "glue.thresholdDbComfort", "glue.ratioComfort", "glue.kneeDbComfort",   // the five hand knobs' fields' colours
+    "glue.attackMsComfort", "glue.releaseMsComfort",
     "saturation.driveComfort",                         // the drive knob field's colours
     "saturation.cut",                                  // measured after the master
     "tilt.normal",                                     // where a knob's value turns red

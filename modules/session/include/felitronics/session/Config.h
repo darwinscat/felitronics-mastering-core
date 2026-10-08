@@ -303,6 +303,15 @@ struct Glue
     Span mixDomain, mixRange;
     double mix = 0.0, mixStep = 0.0;
     Comfort comfort, mixComfort;               // the amount's and the mix's fields
+    // The five by hand (07.10): the compressor's threshold, ratio, knee, attack and release as a person sets them —
+    // `<name>Domain`, `<name>Range`, `<name>Step`, `<name>Comfort`.
+    struct HandKnob
+    {
+        Span domain, range;
+        double step = 0.0;
+        Comfort comfort;
+    };
+    HandKnob thresholdDb, ratioKnob, kneeDb, attackMs, releaseMs;
 };
 
 // felitronics-core's WaveShaper::Shape, in its order and values (Tube … Tape since v0.57.0). The machine's type; a person

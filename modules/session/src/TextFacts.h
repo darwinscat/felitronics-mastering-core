@@ -492,6 +492,11 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldGlueMix, "field", "glueMix" },
     { Term::SaturationTypeAsym, "saturationType", "asym" },
     { Term::SaturationTypeCubic, "saturationType", "cubic" },
+    { Term::FieldGlueThresholdDb, "field", "glueThresholdDb" },
+    { Term::FieldGlueRatio, "field", "glueRatio" },
+    { Term::FieldGlueKneeDb, "field", "glueKneeDb" },
+    { Term::FieldGlueAttackMs, "field", "glueAttackMs" },
+    { Term::FieldGlueReleaseMs, "field", "glueReleaseMs" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -612,8 +617,10 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     if (field == Term::FieldTargetTp) return Unit::DbTp;
     if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq) return Unit::Hz;
     if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope
-        || field == Term::FieldTargetLoudnessMode || field == Term::FieldGlueMix)
+        || field == Term::FieldTargetLoudnessMode || field == Term::FieldGlueMix || field == Term::FieldGlueRatio)
         return Unit::None;
+    if (field == Term::FieldGlueThresholdDb) return Unit::DbFs;
+    if (field == Term::FieldGlueAttackMs || field == Term::FieldGlueReleaseMs) return Unit::Ms;
     return Unit::Db;
 }
 
@@ -629,7 +636,9 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     {
         case Device::Hpf: return at ({ Term {}, Term::FieldHpfFq, Term::FieldHpfSlope });
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
-        case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb, Term::FieldGlueMix });
+        case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb, Term::FieldGlueMix, Term::FieldGlueThresholdDb,
+                                        Term::FieldGlueRatio, Term::FieldGlueKneeDb, Term::FieldGlueAttackMs,
+                                        Term::FieldGlueReleaseMs });
         case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix, Term {},
                                               Term::FieldSaturationType });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });

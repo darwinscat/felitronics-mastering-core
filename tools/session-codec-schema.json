@@ -403,7 +403,12 @@
       "fields": {
         "on": "bool",
         "upToDb": "double",
-        "mix": "double"
+        "mix": "double",
+        "thresholdDb": "double",
+        "ratio": "double",
+        "kneeDb": "double",
+        "attackMs": "double",
+        "releaseMs": "double"
       }
     },
     "GlueFieldsTouched": {
@@ -411,7 +416,12 @@
       "fields": {
         "on": "bool?",
         "upToDb": "double?",
-        "mix": "double?"
+        "mix": "double?",
+        "thresholdDb": "double?",
+        "ratio": "double?",
+        "kneeDb": "double?",
+        "attackMs": "double?",
+        "releaseMs": "double?"
       }
     },
     "GlueFieldsLayers": {
@@ -1593,7 +1603,12 @@
     "EditDeviceGlueFields": {
       "on?": "boolean | null",
       "upToDb?": "WireNumber | null",
-      "mix?": "WireNumber | null"
+      "mix?": "WireNumber | null",
+      "thresholdDb?": "WireNumber | null",
+      "ratio?": "WireNumber | null",
+      "kneeDb?": "WireNumber | null",
+      "attackMs?": "WireNumber | null",
+      "releaseMs?": "WireNumber | null"
     },
     "EditDeviceSaturationCommand": {
       "kind": "\"editDevice\"",
@@ -1691,7 +1706,12 @@
     "RevertEditsGlueFields": {
       "on?": "boolean",
       "upToDb?": "boolean",
-      "mix?": "boolean"
+      "mix?": "boolean",
+      "thresholdDb?": "boolean",
+      "ratio?": "boolean",
+      "kneeDb?": "boolean",
+      "attackMs?": "boolean",
+      "releaseMs?": "boolean"
     },
     "RevertEditsSaturationCommand": {
       "kind": "\"revertEdits\"",

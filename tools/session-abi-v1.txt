@@ -2089,3 +2089,30 @@ enum felitronics::session::text::FactId::LoudestLowEnergy=458
 # The two diodes, saturation types a person may pick (07.10, v0.20.0): their words.
 enum felitronics::session::text::Term::SaturationTypeAsym=152
 enum felitronics::session::text::Term::SaturationTypeCubic=153
+# The glue's five by hand (07.10): the compressor's threshold, ratio, knee, attack and release as fields of the glue
+# device, a person's layer over the machine's; their words.
+codec GlueFieldsValue.thresholdDb double
+codec GlueFieldsValue.ratio double
+codec GlueFieldsValue.kneeDb double
+codec GlueFieldsValue.attackMs double
+codec GlueFieldsValue.releaseMs double
+codec GlueFieldsTouched.thresholdDb double?
+codec GlueFieldsTouched.ratio double?
+codec GlueFieldsTouched.kneeDb double?
+codec GlueFieldsTouched.attackMs double?
+codec GlueFieldsTouched.releaseMs double?
+wire EditDeviceGlueFields.thresholdDb? WireNumber | null
+wire EditDeviceGlueFields.ratio? WireNumber | null
+wire EditDeviceGlueFields.kneeDb? WireNumber | null
+wire EditDeviceGlueFields.attackMs? WireNumber | null
+wire EditDeviceGlueFields.releaseMs? WireNumber | null
+wire RevertEditsGlueFields.thresholdDb? boolean
+wire RevertEditsGlueFields.ratio? boolean
+wire RevertEditsGlueFields.kneeDb? boolean
+wire RevertEditsGlueFields.attackMs? boolean
+wire RevertEditsGlueFields.releaseMs? boolean
+enum felitronics::session::text::Term::FieldGlueThresholdDb=154
+enum felitronics::session::text::Term::FieldGlueRatio=155
+enum felitronics::session::text::Term::FieldGlueKneeDb=156
+enum felitronics::session::text::Term::FieldGlueAttackMs=157
+enum felitronics::session::text::Term::FieldGlueReleaseMs=158
