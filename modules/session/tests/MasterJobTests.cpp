@@ -460,10 +460,12 @@ void manualBudgetResolution()
     }
     GradeRun r; r.session = measuredSession (pcm, rate);
     if (! r.session) { ok (false, "a session for the manual budget-resolution regression"); return; }
-    command::EditTarget edit { 2, { -10.0, -1.0 } };
-    if (act (r, edit).rejection != Rejection::None)
+    // The fixture names its target: a manual loudness goal on All streaming, not whatever a new session starts on.
+    command::EditTarget edit { 3, { -10.0, -1.0 } };
+    if (act (r, command::SetTarget { 2, "allStreaming" }).rejection != Rejection::None
+        || act (r, edit).rejection != Rejection::None)
     { ok (false, "the manual target for the budget-resolution regression"); return; }
-    auto request = readyMaster (*r.session, 3);
+    auto request = readyMaster (*r.session, 4);
     request.budgetResolutionDb = .05;
     if (act (r, request).rejection != Rejection::None)
     { ok (false, "the manual master accepts its budget resolution"); return; }
@@ -1278,8 +1280,9 @@ int main()
         (void) c.apply (command::Load { 1, { planes, 2, left.size(), rate }, { "test.wav", rate, true, 24 } });
         for (unsigned i = 0; i < 20000 && (c.state() == State::Loaded || ! c.snapshot().view().mandatoryMeasurementsReady); ++i)
             (void) c.step (16);
-        const auto edited = c.apply (command::EditTarget { 2, { -6.0, -6.0 } });
-        auto ceilingReady = ready; ceilingReady.id = 3; ceilingReady.source = c.source().hash; ceilingReady.revision = c.revision();
+        const auto named = c.apply (command::SetTarget { 2, "allStreaming" });
+        const auto edited = c.apply (command::EditTarget { 3, { -6.0, -6.0 } });
+        auto ceilingReady = ready; ceilingReady.id = 4; ceilingReady.source = c.source().hash; ceilingReady.revision = c.revision();
         const auto ceilingStart = c.apply (ceilingReady);
         for (unsigned i = 0; i < 40000 && c.job() != 0; ++i) (void) c.step (16);
         const auto masters = c.masters();
@@ -1287,7 +1290,7 @@ int main()
         const LandingSummary l = landed ? *masters.back().landing : LandingSummary {};
         std::printf ("    −6 LUFS under −6 dBTP: status %d binding %d, %.3f LUFS, %u passes\n", landed ? (int) l.status : -1,
                      landed ? (int) l.binding : -1, landed && l.achievedLufs ? *l.achievedLufs : 0.0, landed ? l.passes : 0u);
-        ok (edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
+        ok (named.rejection == Rejection::None && edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
             && l.status == LandingStatus::TargetUnreachable && l.limiterWall
             && l.binding == LandingConstraint::None && ! budgetProven (l),
             "−6 LUFS under −6 dBTP reaches the limiter wall without naming the budget");

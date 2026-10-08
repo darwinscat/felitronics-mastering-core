@@ -1639,6 +1639,8 @@ void theSourceReport()
     auto made = Session::create(); auto& s = *made.session;
     (void) s.apply (command::Load { 1, { planes, 1, pcm.size(), 48000 }, {} });
     while (s.step (16).state == StepState::More) {}
+    // The fixture names its target, All streaming, rather than lean on the one a new session starts on.
+    ok (s.apply (command::SetTarget { 19, "allStreaming" }).rejection == Rejection::None, "the delivery fixture names All streaming");
     const auto snapshot = s.snapshot();
     ok (snapshot.view().sourceReport && snapshot.view().sourceReport->clipping == SourceClipStatus::Clipped,
         "the clipping analyzer's actual verdict reaches the source report");
