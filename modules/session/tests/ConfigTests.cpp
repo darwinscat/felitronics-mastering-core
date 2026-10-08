@@ -149,14 +149,8 @@ void theSchemaRefuses()
     // A max mode's `cleaner`: true when absent, so it is written only as false; written as false it is read so.
     mustRefuse (E, "dense = { budgetDb = 1.75 }", "dense = { budgetDb = 1.75, cleaner = true }", "true", Fault::Refused,
                 "landing.max.dense.cleaner", Refusal::WrittenDefault);
-    {
-        const auto changed = plant (g_engineText, "dense = { budgetDb = 1.75 }", "dense = { budgetDb = 1.75, cleaner = false }",
-                                    "cleaner");
-        const auto loaded = Config::bind (g_targetsText, changed.text);
-        const auto& l = loaded.config.engine.landing;
-        ok (changed.planted && loaded.ok() && ! l.denseCleaner && l.cleanCleaner && l.extremeCleaner,
-            "[landing.max] dense = { cleaner = false } is read as false, the modes without the key as true");
-    }
+    // Written as false it binds; the master's plan is its one reader (MasterJobTests: maxCleanerSwitch).
+    mustAccept (E, "dense = { budgetDb = 1.75 }", "dense = { budgetDb = 1.75, cleaner = false }");
 
     // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
     // key the typo stood for is missing, pointed at the table that lacks it.

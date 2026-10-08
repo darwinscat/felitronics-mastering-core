@@ -138,9 +138,7 @@ struct Landing
     // active-window P95, a whole number of quarter dB).
     double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
     double cleanBudgetDb = 0.0, denseBudgetDb = 0.0, extremeBudgetDb = 0.0, nukeBudgetDb = 0.0;
-    // Each max mode's `cleaner`: true (absent) — a wish lands its zones at the loudness the master without the
-    // wishes reached; false — the zones land on the mode's budget.
-    bool cleanCleaner = true, denseCleaner = true, extremeCleaner = true, nukeCleaner = true;
+    // Each max mode's `cleaner` is checked by the schema (written only as false) and read by the master's plan alone.
     double maxBudgetResolutionDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };

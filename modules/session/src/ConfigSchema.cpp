@@ -352,23 +352,24 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         const bool floor = t.required ("floorLufs", o.maxFloorLufs, R { -30.0, 0.0 });
         d.notAbove (t, floor && ceiling, o.maxFloorLufs, o.maxCeilingLufs, "ceilingLufs");   // the floor under the ceiling
         t.required ("budgetResolutionDb", o.maxBudgetResolutionDb, R { 0.05, 1.0 });
-        const auto mode = [&] (std::string_view key, double& budget, bool& cleaner)
+        const auto mode = [&] (std::string_view key, double& budget)
         {
             t.table (key, Need::Required, [&] (Reader& m)
             {
                 m.required ("budgetDb", budget, R { 0.25, 60.0 });
                 d.onQuarterDb (m, "budgetDb");
-                // `cleaner`: true when absent, written only when false
+                // `cleaner`: true when absent, written only when false; the master's plan reads it (detail::maxCleaner)
+                bool cleaner = false;
                 if (m.optional ("cleaner", cleaner) && cleaner) d.refuse (m, "cleaner", Refusal::WrittenDefault);
             });
         };
-        mode ("clean", o.cleanBudgetDb, o.cleanCleaner);
-        mode ("dense", o.denseBudgetDb, o.denseCleaner);
+        mode ("clean", o.cleanBudgetDb);
+        mode ("dense", o.denseBudgetDb);
         // the denser mode takes no less of the limiter
         d.notAbove (t, true, o.cleanBudgetDb, o.denseBudgetDb, "dense");
-        mode ("extreme", o.extremeBudgetDb, o.extremeCleaner);
+        mode ("extreme", o.extremeBudgetDb);
         d.notAbove (t, true, o.denseBudgetDb, o.extremeBudgetDb, "extreme");
-        mode ("nuke", o.nukeBudgetDb, o.nukeCleaner);
+        mode ("nuke", o.nukeBudgetDb);
         d.notAbove (t, true, o.extremeBudgetDb, o.nukeBudgetDb, "nuke");
     });
 }
