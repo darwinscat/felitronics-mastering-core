@@ -219,6 +219,8 @@ struct MasterJob final
     // the request the second landing starts from, and what the first one came to — its file's loudness, its limiter's
     // take (P95 on the active windows) and what ended it.
     bool cleanPhase = false, cleanDone = false, cleanOnFloor = false;
+    // The start clipper's take on the delivered render (a P95 over what it clipped); NaN without it in the chain.
+    double startTakeDb = std::numeric_limits<double>::quiet_NaN();
     mastering::MasteringChainParams aloneParams {};
     mastering::LoudnessRequest cleanRequest {};
     std::optional<double> aloneLufs, aloneLimiterDb;

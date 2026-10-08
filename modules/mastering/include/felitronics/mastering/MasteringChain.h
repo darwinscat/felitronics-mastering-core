@@ -12,6 +12,7 @@
 #include <felitronics/eq/EqEngine.h>
 #include <felitronics/eq/MatchedBiquad.h>
 #include <felitronics/limiter/TruePeakLimiter.h>
+#include <felitronics/mastering/StartClipper.h>
 #include <felitronics/saturation/Saturator.h>
 #include <felitronics/stereo/MonoBass.h>
 
@@ -78,6 +79,10 @@ struct MasteringChainConfig
     // own input and feeds it to the compressor's external-detector input as the key. 0 means self-keyed,
     // which is bit-identical to the three-argument form.
     double sidechainHpfHz = 0.0;
+
+    // THE PEAK CLIPPER AT THE START (MVP, StartClipper): after the EQ and the mono bass, ahead of the compressor, on its
+    // own oversampler at `oversampleFactor` / `tapsPerPhase`. Off by default: a chain without it renders as it did.
+    bool startClipper = false;
 };
 
 // PER-BLOCK parameters. Nothing here moves latencySamples(). A write lands on the next quantum and the continuous
@@ -129,6 +134,13 @@ struct MasteringChainParams
     // measured (`LoudnessSolution::peakClipPeakDb`). Appended after `compressorMix` for the same reason it is last.
     double peakClipCutDb  = std::numeric_limits<double>::quiet_NaN();
     double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();
+
+    // THE START CLIPPER (MasteringChainConfig::startClipper): it clips at `startClipPeakDb − startClipCutDb`, dBFS on its
+    // own grid — the cut off the highest peak its input reaches, which no gain a landing moves changes. Either NaN: it
+    // clips nothing and measures that peak (`startClipInputPeakDb()`). Bypassed: an exact delay of its latency.
+    double startClipCutDb  = std::numeric_limits<double>::quiet_NaN();
+    double startClipPeakDb = std::numeric_limits<double>::quiet_NaN();
+    bool   bypassStartClipper = false;
 };
 
 //==============================================================================
@@ -465,7 +477,10 @@ public:
         limiter::TruePeakLimiter::Storage lim {};
         core::DryAligner::Storage         alignComp {}, alignClip {}, alignLim {};
         int compressorLatency = 0, clipperLatency = 0, limiterLatency = 0;
-        int latencySamples = 0;                        // K + the three above, exactly as prepare() sums it
+        bool startClipper = false;
+        StartClipper::Storage start {};
+        int startLatency = 0;
+        int latencySamples = 0;                        // K + the stages' latencies, exactly as prepare() sums it
         int tapOversampleFactor = 1;                   // the limiter's EFFECTIVE factor, 1 without a limiter
 
         // REQUESTED bytes, on a FRESH chain: every container is empty, so each `assign` asks for exactly its
@@ -481,11 +496,13 @@ public:
             if (compressor) b += alignComp.freshBytes();
             if (clipper)    b += clip.bytes() + alignClip.freshBytes();
             if (limiter)    b += lim.bytes()  + alignLim.freshBytes();
+            if (startClipper) b += start.bytes();
             // EqEngine's scratch; the compressor's delay rings; Saturator's delay rings and
             // oversampler reset; the limiter's per-channel buffers/rings and oversampler reset.
             const std::uint64_t proxies = (eq ? 1u : 0u) + comp.lines
                 + (clipper ? clip.dryLines + (clip.os.bytes() == 0 ? 7u : 1u) : 0u)
-                + (limiter ? 2u * lim.channels + 1u : 0u);
+                + (limiter ? 2u * lim.channels + 1u : 0u)
+                + (startClipper ? (start.os.bytes() == 0 ? 7u : 1u) + 1u : 0u);
             b += proxies * storage::kVectorProxyBytes;
             return b;                                  // MonoBass and Dither allocate nothing — measured
         }
@@ -501,6 +518,7 @@ public:
             if (compressor) b += alignComp.bytes() - alignComp.freshBytes();
             if (clipper)    b += alignClip.bytes() - alignClip.freshBytes();
             if (limiter)    b += alignLim.bytes()  - alignLim.freshBytes();
+            if (startClipper) b += start.align.bytes() - start.align.freshBytes();
             return b;
         }
 
@@ -522,7 +540,8 @@ public:
                 && lim.slide.entries <= other.lim.slide.entries
                 && lim.os.fitsWithin (other.lim.os)
                 && alignClip.ring <= other.alignClip.ring && alignClip.scratch <= other.alignClip.scratch
-                && alignLim.ring <= other.alignLim.ring && alignLim.scratch <= other.alignLim.scratch;
+                && alignLim.ring <= other.alignLim.ring && alignLim.scratch <= other.alignLim.scratch
+                && startClipper == other.startClipper && (! startClipper || start.fitsWithin (other.start));
         }
     };
 
@@ -558,6 +577,12 @@ public:
     std::int64_t airJudgedSamples() const noexcept { return cfg_.stereoAir ? monoBass_.airJudgedSamples() : 0; }
 
     double peakClipReductionMaxDb()   const noexcept { return cfg_.limiter ? lim_.clipReductionMaxDb() : 0.0; }
+    // The start clipper (MasteringChainConfig::startClipper): whether it is in the chain and not bypassed, the highest
+    // peak it saw on its grid (dBFS, −200 without it), and its take — a P95 over what it clipped, −1 where it clipped nothing.
+    bool   startClipperOn()           const noexcept { return cfg_.startClipper && ! pendingParams_.bypassStartClipper; }
+    double startClipInputPeakDb()     const noexcept { return cfg_.startClipper ? start_.inputPeakDb() : -200.0; }
+    double startClipReductionP95Db()  const noexcept { return cfg_.startClipper ? start_.reductionQuantileDb (0.95) : -1.0; }
+    double startClipReductionMaxDb()  const noexcept { return cfg_.startClipper ? start_.reductionMaxDb() : 0.0; }
     double peakClipReductionP95Db()   const noexcept { return cfg_.limiter ? lim_.clipReductionQuantileDb (0.95) : -1.0; }
     double peakClipOccupancy()        const noexcept { return cfg_.limiter ? lim_.clipOccupancy() : -1.0; }
     std::int64_t peakClipRuns()               const noexcept { return cfg_.limiter ? lim_.clipRunCount() : 0; }
@@ -755,7 +780,15 @@ public:
 
         if (config.sidechainHpfHz > 0.0) st.keyBuf = (std::size_t) K * (std::size_t) numChannels;
 
-        st.latencySamples      = K + st.compressorLatency + st.clipperLatency + st.limiterLatency;
+        st.startClipper = config.startClipper;
+        if (config.startClipper)
+        {
+            if (! StartClipper::storageFor (sampleRate, K, numChannels, config.oversampleFactor, config.tapsPerPhase,
+                                            st.start)) return false;
+            st.startLatency = st.start.latency;
+        }
+
+        st.latencySamples      = K + st.compressorLatency + st.clipperLatency + st.limiterLatency + st.startLatency;
         st.tapOversampleFactor = tapOversampleFactorFor (config);
         out = st;
         return true;
@@ -787,7 +820,7 @@ public:
     // Stated, because a budget that is an upper bound has to say where it is not tight.
     static constexpr std::uint64_t constructBytes() noexcept
     {
-        return 3u * core::DryAligner::constructBytes()
+        return 4u * core::DryAligner::constructBytes() + 10u * storage::kVectorProxyBytes
         // Compressor: 1; Saturator: 7 buffers (os, wet, their two pointer rows, the DC filter's two states, the
         // shape's model state) + delay bank + oversampler (6 + 1); limiter: oversampler (6 + 1), three banks, three
         // two-vector windows; aligners: 2 each.
@@ -834,7 +867,8 @@ public:
         if (dyn_.capacity() < want.dynBands) return want.unseededBytes();
         // Core's Oversampler::prepare constructs an empty temporary even when its buffers fit.
         const auto transient = (want.clipper ? (want.clip.os.bytes() == 0 ? 7u : 1u) : 0u)
-                             + (want.limiter ? 1u : 0u);
+                             + (want.limiter ? 1u : 0u)
+                             + (want.startClipper ? (want.start.os.bytes() == 0 ? 7u : 1u) : 0u);
         return want.fitsWithin (have) ? transient * storage::kVectorProxyBytes : want.unseededBytes();
     }
 
@@ -963,7 +997,15 @@ public:
         // caps the lookahead at 2400 samples, so a chain asking for 60 ms and computing lround(2880)
         // would hold BOTH its latency and its aligner at 2880 and pass a bypass null test while the
         // active chain sat 480 samples out of alignment.
-        latency_ = K_ + compLat + clipLat + limLat;
+        int startLat = 0;
+        if (cfg_.startClipper)
+        {
+            if (! start_.prepare (fs_, K_, nch_, cfg_.oversampleFactor, cfg_.tapsPerPhase)) return false;
+            startLat = start_.latencySamples();
+        }
+        startLat_ = startLat;
+
+        latency_ = K_ + compLat + clipLat + limLat + startLat;
 
         // A PARAMETER SET WRITTEN BEFORE `prepare()` IS KEPT. This line used to read
         // `pendingParams_ = params_`, which threw the caller's pending write away and replaced it with
@@ -1011,6 +1053,7 @@ public:
         if (cfg_.compressor) { comp_.reset(); alignComp_.reset(); }
         if (cfg_.clipper)  { sat_.reset();  alignClip_.reset(); }
         if (cfg_.limiter)  { lim_.reset();  alignLim_.reset(); }
+        if (cfg_.startClipper) start_.reset();
         if (cfg_.dither)     dith_.reset();
         for (int c = 0; c < core::kMaxChannels; ++c) hpf_[c].reset();
         std::fill (keyBuf_.begin(), keyBuf_.end(), 0.0f);
@@ -1091,7 +1134,7 @@ public:
         r.limiterLookahead    = cfg_.limiter ? lim_.lookaheadSamples() : 0;
         r.oversampleFactor    = cfg_.limiter ? lim_.oversampleFactor()
                                              : (cfg_.clipper ? cfg_.oversampleFactor : 0);
-        r.compressorTapOffset = 0;
+        r.compressorTapOffset = startLat_;
         // THE UP LEG IS NOT HALF THE ROUND TRIP, and that is the whole of this fix. The limiter's trace is
         // written where the gain is DECIDED, on the oversampled copy, so the tap lags by the UP leg alone —
         // and for the Kaiser polyphase that leg is (N - 1) / (2F) with N = factor * tapsPerPhase, which at
@@ -1113,7 +1156,7 @@ public:
             ? (cfg_.oversampleFactor * cfg_.tapsPerPhase - 1 + cfg_.oversampleFactor)
               / (2 * cfg_.oversampleFactor)                      // (N-1)/(2F) rounded to nearest
             : 0;
-        r.limiterTapOffset    = r.compressorLookahead + r.clipperLatency + limUpLegFrames;
+        r.limiterTapOffset    = startLat_ + r.compressorLookahead + r.clipperLatency + limUpLegFrames;
         r.limiterCeilingDbTp  = cfg_.limiter ? lim_.effectiveCeilingDbTp() : 0.0;
         r.limiterReleaseMs    = cfg_.limiter ? lim_.effectiveReleaseMs() : 0.0;
         r.monoBass            = cfg_.monoBass ? monoBass_.params() : stereo::MonoBassParams { false, 0.0f, 0.0f };
@@ -1360,6 +1403,9 @@ private:
         // passthrough that returns before touching the buffer, so a steady bypass costs a call and nothing else. It
         // used to be a hard switch with a reset on the edge: -21.5 dBFS max|Δ²y| into bypass, -48.7 out of it.
         if (cfg_.monoBass || cfg_.stereoAir) stageRefused_ |= ! monoBass_.process (ch, nch_, K_);
+
+        // --- the start clipper (MVP): after the low end is settled, ahead of the glue ---------------
+        if (cfg_.startClipper) start_.process (ch, nch_, K_);
 
         // --- compressor: WARM bypass through its own curve, so nothing has to be aligned --------
         if (cfg_.compressor)
@@ -1763,6 +1809,10 @@ private:
         setRamp (mix_, mixOf (p.compressorMix));
 
         if (cfg_.clipper) sat_.setParams (p.clipper);
+        if (cfg_.startClipper)
+            start_.set (std::isfinite (p.startClipPeakDb) && std::isfinite (p.startClipCutDb)
+                            ? p.startClipPeakDb - p.startClipCutDb : std::numeric_limits<double>::quiet_NaN(),
+                        p.bypassStartClipper);
         if (cfg_.limiter) lim_.setParams (limiterParamsOf (p));
         if (cfg_.dither)  dith_.setParams (p.dither);
     }
@@ -1874,6 +1924,8 @@ private:
     limiter::TruePeakLimiter      lim_;
     dither::Dither                dith_;
     core::DryAligner              alignComp_, alignClip_, alignLim_;
+    StartClipper                  start_;
+    int                           startLat_ = 0;
     eq::Biquad                    hpf_[core::kMaxChannels] {};
 };
 
