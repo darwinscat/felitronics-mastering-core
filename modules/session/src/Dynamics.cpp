@@ -170,11 +170,10 @@ TempoChoice tempoChoice (const Rules& rules, const MeasurementResult& result) no
 double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept
 {
     const auto settings = settingsOf (rules, glue);
-    // A person's tick, or one of the five set by hand with no tick written: the glue is wanted, so a machine's amount of 0
-    // gives way to whenTicked, as a tick alone does.
+    // A person's tick on a knob the machine left at 0 gives way to whenTicked. The five by hand take no part: the amount
+    // they are laid over never moves with them, so a field left alone keeps its value whatever another field holds.
     const auto& h = glue.hand;
-    const bool shaped = h.thresholdDb || h.ratio || h.kneeDb || h.attackMs || h.releaseMs;
-    const bool tickedUntouched = ((h.on && *h.on) || (! h.on && shaped)) && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
+    const bool tickedUntouched = h.on && *h.on && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
     return tickedUntouched ? number (rules.engine.find ("glue").find ("whenTicked")) : settings.upToDb;
 }
 
@@ -252,6 +251,11 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
         f.tempoUnsureBpm.reset();
     }
     return f;
+}
+
+GlueFinding glueMachine (const PlanInputs& in, const Devices& devices) noexcept
+{
+    return glueLaw (in, glueKnob (in.rules, devices.glue), false);
 }
 
 SaturationFinding saturationFinding (const PlanInputs& in, const Devices& devices) noexcept

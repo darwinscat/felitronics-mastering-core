@@ -24,6 +24,7 @@
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -1138,6 +1139,181 @@ void theMix()
     // as wasm.
 }
 
+// THE FIVE BY HAND (owner, 07.10): the threshold, ratio, knee, attack and release a person may set. A field set by hand
+// wins for that field alone; every field left alone keeps the law at the amount as it sounds, whatever another field
+// holds; the snapshot's machine layer is those applied values, not the ones placed with the machine's own amount; a revert
+// returns a field to them; a value outside its domain is refused, the field kept.
+using Five = std::array<std::optional<double>, 5>;
+Five plannedFive (const Snapshot& v)
+{
+    const auto& g = v.view().plan.glue;
+    return { g.thresholdDb, g.ratio, g.kneeDb, g.attackMs, g.releaseMs };
+}
+Five machineFive (const Snapshot& v)
+{
+    const auto& g = v.view().project.devices.glue.machine;
+    return { g.thresholdDb, g.ratio, g.kneeDb, g.attackMs, g.releaseMs };
+}
+// Every field but `skip` present in both and the same number.
+bool sameFive (const Five& a, const Five& b, std::size_t skip = 5)
+{
+    bool e = true;
+    for (std::size_t i = 0; i < 5; ++i)
+        if (i != skip) e = e && a[i] && b[i] && same (*a[i], *b[i]);
+    return e;
+}
+template <class Fields, class V> void setFive (Fields& f, std::size_t i, V v)
+{
+    switch (i)
+    {
+        case 0: f.thresholdDb = v; break;
+        case 1: f.ratio = v; break;
+        case 2: f.kneeDb = v; break;
+        case 3: f.attackMs = v; break;
+        default: f.releaseMs = v; break;
+    }
+}
+bool noHandFive (const Session& s)
+{
+    const auto& h = s.project().devices.glue.hand;
+    return ! h.thresholdDb && ! h.ratio && ! h.kneeDb && ! h.attackMs && ! h.releaseMs;
+}
+void settle (Session& s)
+{
+    for (unsigned i = 0; i < 4000000 && (s.measurementJob() || s.needlesJob()); ++i) (void) s.step (16);
+}
+
+void theFiveByHand()
+{
+    felitronics::test::group ("the glue's five by hand: each wins alone, the rest keep the law at the amount, the machine layer is what applies");
+    const Mix mix;
+    constexpr const char* names[] = { "threshold", "ratio", "knee", "attack", "release" };
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    GlueFields<Touched> glue; glue.on = true; glue.upToDb = 2.0;
+    ok (s.apply (command::EditDevice { 3, glue }).rejection == Rejection::None, "PRECONDITION: the glue ticked at 2 dB by hand");
+    settle (s);
+    const auto base = s.snapshot();
+    const auto law = plannedFive (base);
+    ok (base.view().plan.glue.state == GlueState::Active && law[0] && law[1] && law[2] && law[3] && law[4] && noHandFive (s),
+        "PRECONDITION: the glue compresses, all five numbers stated, none by hand");
+    const auto placed = s.project().devices.glue.machine;
+    ok (sameFive (machineFive (base), law) && ! same (placed.ratio, *law[1]),
+        "the snapshot's machine layer is the five as they apply — the law at the 2 dB that sounds (ratio "
+            + std::to_string (*law[1]) + "), not the one placed at the machine's 0 (ratio " + std::to_string (placed.ratio) + ")");
+
+    const double hand[5] = { -25.0, 4.0, 2.0, 7.5, 333.0 };
+    std::uint64_t id = 4;
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        GlueFields<Touched> one; setFive (one, i, hand[i]);
+        const bool taken = s.apply (command::EditDevice { id++, one }).rejection == Rejection::None;
+        const auto now = s.snapshot();
+        const auto p = plannedFive (now);
+        ok (taken && p[i] && same (*p[i], hand[i]) && sameFive (p, law, i) && sameFive (machineFive (now), law),
+            std::string (names[i]) + " by hand wins for itself alone: the other four and the whole machine layer do not move");
+        GlueFields<Mark> mark; setFive (mark, i, true);
+        ok (s.apply (command::RevertEdits { id++, mark }).rejection == Rejection::None && noHandFive (s)
+                && sameFive (plannedFive (s.snapshot()), law),
+            std::string (names[i]) + " reverted: back to the law");
+    }
+    GlueFields<Touched> all;
+    for (std::size_t i = 0; i < 5; ++i) setFive (all, i, hand[i]);
+    ok (s.apply (command::EditDevice { id++, all }).rejection == Rejection::None, "PRECONDITION: all five by hand");
+    const auto allHand = s.snapshot();
+    bool asWritten = true;
+    for (std::size_t i = 0; i < 5; ++i) asWritten = asWritten && plannedFive (allHand)[i] && same (*plannedFive (allHand)[i], hand[i]);
+    ok (asWritten && sameFive (machineFive (allHand), law) && same (allHand.view().plan.glue.upToDb, 2.0),
+        "all five by hand sound as written; the machine layer and the amount stay where they were");
+    GlueFields<Mark> marks; for (std::size_t i = 0; i < 5; ++i) setFive (marks, i, true);
+    ok (s.apply (command::RevertEdits { id++, marks }).rejection == Rejection::None && noHandFive (s)
+            && sameFive (plannedFive (s.snapshot()), law), "all five reverted: the law again");
+
+    // Each domain's ends are taken; a step past either is refused and the field keeps the last value taken.
+    const double ends[5][2] = { { -40.0, 0.0 }, { 1.0, 10.0 }, { 0.0, 12.0 }, { 0.1, 100.0 }, { 10.0, 1000.0 } };
+    const double past[5][2] = { { -40.01, 0.01 }, { 0.99, 10.01 }, { -0.01, 12.01 }, { 0.09, 100.01 }, { 9.99, 1000.01 } };
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        bool edges = true;
+        for (const double e : ends[i]) { GlueFields<Touched> f; setFive (f, i, e); edges = edges && s.apply (command::EditDevice { id++, f }).rejection == Rejection::None; }
+        bool refused = true;
+        for (const double e : past[i]) { GlueFields<Touched> f; setFive (f, i, e); refused = refused && s.apply (command::EditDevice { id++, f }).rejection == Rejection::OutOfDomain; }
+        GlueFields<Touched> nan; setFive (nan, i, std::numeric_limits<double>::quiet_NaN());
+        refused = refused && s.apply (command::EditDevice { id++, nan }).rejection != Rejection::None;
+        const auto& h = s.project().devices.glue.hand;
+        const std::optional<double> kept = i == 0 ? h.thresholdDb : i == 1 ? h.ratio : i == 2 ? h.kneeDb : i == 3 ? h.attackMs : h.releaseMs;
+        ok (edges && refused && kept && same (*kept, ends[i][1]),
+            std::string (names[i]) + ": " + std::to_string (ends[i][0]) + " and " + std::to_string (ends[i][1]) + " taken, "
+                + std::to_string (past[i][0]) + ", " + std::to_string (past[i][1]) + " and NaN refused, the value kept");
+    }
+
+    // A field by hand on a glue nobody ticked: the glue stays out, and the other four keep the knob's numbers at the
+    // machine's 0 — a hand value never moves the amount the rest follow.
+    auto qp = measured (mix, "allStreaming"); auto& q = *qp;
+    const auto before = q.snapshot();
+    const auto atZero = plannedFive (before);
+    ok (before.view().plan.glue.state == GlueState::Out && atZero[1] && same (*atZero[1], 1.0) && sameFive (machineFive (before), atZero),
+        "PRECONDITION: the glue out at the machine's 0, ratio 1, the machine layer those numbers");
+    GlueFields<Touched> ratio; ratio.ratio = 3.0;
+    ok (q.apply (command::EditDevice { 3, ratio }).rejection == Rejection::None, "PRECONDITION: a ratio of 3 by hand, no tick");
+    const auto after = q.snapshot();
+    const auto p = plannedFive (after);
+    ok (after.view().plan.glue.state == GlueState::Out && same (after.view().plan.glue.upToDb, 0.0) && p[1] && same (*p[1], 3.0)
+            && sameFive (p, atZero, 1) && sameFive (machineFive (after), atZero),
+        "the glue stays out at 0 dB; threshold, knee, attack and release and the machine layer do not move (knee "
+            + std::to_string (p[2].value_or (-1.0)) + " against " + std::to_string (atZero[2].value_or (-1.0)) + ")");
+}
+
+// THE LIMITER'S THREE BY HAND (owner, 08.10): release, lookahead and oversampling a person may set; the machine keeps the
+// constants. The oversampling is a power of two from 2 to 16 — felitronics-core's true-peak limiter refuses more, so 32
+// is not offered.
+void theLimiterThree()
+{
+    felitronics::test::group ("the limiter's three by hand: release 1…1000 ms, lookahead 0…10 ms, oversampling 2, 4, 8 or 16; the machine keeps the constants");
+    const auto engine = detail::rules().engine;
+    const auto number = [] (auto v) { if (const auto d = v.decimal()) return d->toDouble(); return double (v.integer().value_or (-1)); };
+    const double releaseMs = number (engine.find ("limiter").find ("releaseMs"));
+    const double lookaheadMs = number (engine.find ("limiter").find ("lookaheadMs"));
+    const auto factor = std::int32_t (number (engine.find ("chain").find ("oversampleFactor")));
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    const auto v0 = s.snapshot();
+    const auto& m0 = v0.view().project.devices.limiter.machine;
+    const auto& l0 = v0.view().plan.limiter;
+    ok (same (m0.releaseMs, releaseMs) && same (m0.lookaheadMs, lookaheadMs) && m0.oversampling == factor
+            && same (l0.releaseMs, releaseMs) && same (l0.lookaheadMs, lookaheadMs) && l0.oversampling == factor,
+        "the machine's layer holds [limiter] releaseMs " + std::to_string (releaseMs) + ", lookaheadMs " + std::to_string (lookaheadMs)
+            + " and [chain] oversampleFactor " + std::to_string (factor) + ", and they sound");
+    std::uint64_t id = 3;
+    bool powers = true;
+    for (const std::int32_t n : { 2, 4, 8, 16 })
+    {
+        LimiterFields<Touched> f; f.oversampling = n;
+        powers = powers && s.apply (command::EditDevice { id++, f }).rejection == Rejection::None
+            && s.snapshot().view().plan.limiter.oversampling == n;
+    }
+    ok (powers, "oversampling 2, 4, 8 and 16 are each taken and sound");
+    bool others = true;
+    for (const std::int32_t n : { 32, 3, 1, 0, -2 })
+    {
+        LimiterFields<Touched> f; f.oversampling = n;
+        others = others && s.apply (command::EditDevice { id++, f }).rejection == Rejection::NotOneOf;
+    }
+    ok (others && s.project().devices.limiter.hand.oversampling == 16, "32, 3, 1, 0 and −2 are refused (NotOneOf), 16 kept");
+    LimiterFields<Touched> edges; edges.releaseMs = 1000.0; edges.lookaheadMs = 10.0;
+    ok (s.apply (command::EditDevice { id++, edges }).rejection == Rejection::None && same (s.snapshot().view().plan.limiter.releaseMs, 1000.0)
+            && same (s.snapshot().view().plan.limiter.lookaheadMs, 10.0), "release 1000 ms and lookahead 10 ms are taken and sound");
+    bool past = true;
+    for (const double r : { 0.99, 1000.01 }) { LimiterFields<Touched> f; f.releaseMs = r; past = past && s.apply (command::EditDevice { id++, f }).rejection == Rejection::OutOfDomain; }
+    for (const double l : { -0.01, 10.01 }) { LimiterFields<Touched> f; f.lookaheadMs = l; past = past && s.apply (command::EditDevice { id++, f }).rejection == Rejection::OutOfDomain; }
+    ok (past && same (*s.project().devices.limiter.hand.releaseMs, 1000.0) && same (*s.project().devices.limiter.hand.lookaheadMs, 10.0),
+        "release 0.99 and 1000.01 ms, lookahead −0.01 and 10.01 ms are refused, the values kept");
+    LimiterFields<Mark> back; back.releaseMs = true; back.lookaheadMs = true; back.oversampling = true;
+    const auto reverted = s.apply (command::RevertEdits { id++, back }).rejection == Rejection::None;
+    const auto v1 = s.snapshot();
+    ok (reverted && same (v1.view().plan.limiter.releaseMs, releaseMs) && same (v1.view().plan.limiter.lookaheadMs, lookaheadMs)
+            && v1.view().plan.limiter.oversampling == factor, "reverted: the constants sound again");
+}
+
 int main()
 {
     std::printf ("felitronics::session — glue and saturation from the normalised input\n");
@@ -1155,5 +1331,7 @@ int main()
     outStatesItsNumbers();
     limiterAndDitherAsTheChainGetsThem();
     theMix();
+    theFiveByHand();
+    theLimiterThree();
     return felitronics::test::report();
 }
