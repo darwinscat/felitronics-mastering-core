@@ -729,6 +729,7 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     d.pair (in, "driveRange", o.driveRange, drive);
     in.required ("driveDb", o.driveDb, drive);
     in.required ("whenTicked", o.whenTickedDb, drive);
+    in.required ("steerDriveMaxDb", o.steerDriveMaxDb, drive);
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain
     in.required ("mixStep", o.mixStep, R { 0.001, 1.0 });
     const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });

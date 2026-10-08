@@ -49,6 +49,8 @@ struct MasterPlan
     mastering::LoudnessRequest request {};
     std::uint32_t deliveryRate = 0;
     int frames = 0, traceBuckets = 0;
+    // The waterfall (MVP): the clipper's drive scale (aligned against knob), NaN where the drive is not steered.
+    double saturationDriveScale = std::numeric_limits<double>::quiet_NaN();
     std::size_t crestCapacity = 0, costCapacity = 0, costScratchCapacity = 0;
     std::size_t waveformCapacity = 0;
     std::size_t axesCapacity = 0;
@@ -215,6 +217,7 @@ struct MasterJob final
     double waterfallGlueShare = 0.0, waterfallSaturationShare = 0.0, waterfallCutShare = 0.0, waterfallCutMaxDb = 0.0;
     std::uint32_t waterfallSteps = 0;
     mastering::MasteringChainParams steered {};
+    double saturationDriveScale = std::numeric_limits<double>::quiet_NaN(), saturationDriveMaxDb = std::numeric_limits<double>::quiet_NaN();
     void steer (mastering::MasteringChainParams& params) const noexcept;
     [[nodiscard]] bool beginFloor() noexcept;
     [[nodiscard]] bool beginDeliveryRender() noexcept;

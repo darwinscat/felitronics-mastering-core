@@ -56,7 +56,8 @@
       "NotSounding",
       "Passes",
       "Rest",
-      "NoWish"
+      "NoWish",
+      "DriveAtCeiling"
     ],
     "SaturationType": [
       "Tanh",
@@ -798,7 +799,8 @@
         "reached": "double?",
         "db": "double?",
         "setting": "double?",
-        "stop": "WaterfallStop"
+        "stop": "WaterfallStop",
+        "drive": "double?"
       }
     },
     "MasterWaterfall": {

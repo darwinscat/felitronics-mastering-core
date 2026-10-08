@@ -449,7 +449,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (WaterfallStop::Passes) == 7);
         static_assert (unsigned (WaterfallStop::Rest) == 8);
         static_assert (unsigned (WaterfallStop::NoWish) == 9);
-        return 9;
+        static_assert (unsigned (WaterfallStop::DriveAtCeiling) == 10);
+        return 10;
     }
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
 }
@@ -1008,6 +1009,7 @@ constexpr void checkEnum (WaterfallStop value) noexcept
         case WaterfallStop::Passes: break;
         case WaterfallStop::Rest: break;
         case WaterfallStop::NoWish: break;
+        case WaterfallStop::DriveAtCeiling: break;
     }
 }
 
@@ -1888,11 +1890,13 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterWaterfallZone>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.asked)>, std::optional<double>>);
         v.field ("asked", x.asked);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.db)>, std::optional<double>>);
         v.field ("db", x.db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.drive)>, std::optional<double>>);
+        v.field ("drive", x.drive);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reached)>, std::optional<double>>);
         v.field ("reached", x.reached);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.setting)>, std::optional<double>>);
