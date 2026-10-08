@@ -87,7 +87,8 @@ constexpr Name<TargetClass> kTargetClasses[] = { { "specification", TargetClass:
                                                   { "other", TargetClass::Other } };
 constexpr Name<LoudnessMode> kLoudnessModes[] = { { "manual", LoudnessMode::Manual }, { "maxClean", LoudnessMode::MaxClean },
                                                   { "maxDense", LoudnessMode::MaxDense },
-                                                  { "maxExtreme", LoudnessMode::MaxExtreme } };
+                                                  { "maxExtreme", LoudnessMode::MaxExtreme },
+                                                  { "maxNuke", LoudnessMode::MaxNuke } };
 constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
                                               { "noNormalisation", TargetNote::NoNormalisation } };
 constexpr Name<Detector> kDetectors[] = { { "peak", Detector::Peak }, { "rms", Detector::Rms } };
@@ -365,6 +366,8 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         d.notAbove (t, true, o.cleanBudgetDb, o.denseBudgetDb, "dense");
         mode ("extreme", o.extremeBudgetDb);
         d.notAbove (t, true, o.denseBudgetDb, o.extremeBudgetDb, "extreme");
+        mode ("nuke", o.nukeBudgetDb);
+        d.notAbove (t, true, o.extremeBudgetDb, o.nukeBudgetDb, "nuke");
     });
 }
 
@@ -1245,6 +1248,7 @@ void readProgress (Doc& d, Reader& in, Progress& o)
         t.required ("expectedPassesMaxClean", o.masterExpectedPassesMaxClean, I { 1, 1000 });
         t.required ("expectedPassesMaxDense", o.masterExpectedPassesMaxDense, I { 1, 1000 });
         t.required ("expectedPassesMaxExtreme", o.masterExpectedPassesMaxExtreme, I { 1, 1000 });
+        t.required ("expectedPassesMaxNuke", o.masterExpectedPassesMaxNuke, I { 1, 1000 });
         if (! (o.masterPassWeight * o.masterExpectedPasses + o.masterMeasureWeight > 0)) d.outOfRange (t, "passWeight");
     });
 }

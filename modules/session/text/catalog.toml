@@ -1329,6 +1329,8 @@ maxDense.ru = "Максимум · плотно"
 maxDense.en = "Maximum · dense"
 maxExtreme.ru = "Максимум · экстрим"
 maxExtreme.en = "Maximum · extreme"
+maxNuke.ru = "Максимум · нюк"
+maxNuke.en = "Maximum · nuke"
 
 [terms.landingLimit]
 unnamed.ru = "одно из ограничений"

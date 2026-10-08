@@ -80,6 +80,7 @@ limiterSlopeSpacingDb = 0.5
 #   clean   budget 0.5 dB — −13.05 / −12.04 LUFS, a little above streaming
 #   dense   budget 1.75 dB — −11.22 / −10.53 LUFS
 #   extreme budget 3 dB (owner, 07.10, MVP) — not yet measured on the ladder
+#   nuke    budget 5 dB (MVP) — a number by ear, not measured on the ladder
 # ceilingLufs: how high a max mode searches — no goal, a bound well above any landing a budget allows.
 # floorLufs: how low a max master ever lands, whichever target the mode sits on (owner, 04.10: "always pulled up to −14"):
 #   a mix so dense the budget holds it under is landed again there, with no budget, and delivered there.
@@ -91,6 +92,7 @@ budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
 extreme = { budgetDb = 3.0 }
+nuke = { budgetDb = 5.0 }
 
 # THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
 # held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.
@@ -978,6 +980,7 @@ expectedPasses = 3
 expectedPassesMaxClean = 7
 expectedPassesMaxDense = 6
 expectedPassesMaxExtreme = 6
+expectedPassesMaxNuke = 6
 
 # THE BLIND PAIRED PREFERENCE TEST — a development tool, never on a public page: its protocol. Two lanes A / B without
 # labels at equal loudness, "A better / B better / no preference", revealed after the last answer. Nothing here feeds the

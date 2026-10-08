@@ -178,6 +178,8 @@ constexpr Row kRows[] = {
     { "maxDense",      S, -11,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxDense },
     // the third (owner, 07.10): as loud as a limiter budget of 3 dB allows, the high-pass from 50 Hz (08.10), mono bass to 150 Hz
     { "maxExtreme",    S, -9,   -1,   150,  50,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxExtreme },
+    // the fourth (MVP): extreme's row with a limiter budget of 5 dB; the manual mode starts at −7
+    { "maxNuke",       S, -7,   -1,   150,  50,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxNuke },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -452,7 +454,7 @@ void aDepartureIsNamed()
         { false, "middleLufs = [-10, -8]", "middleLufs = [-11, -8]",
           "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
-        { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
+        { true, "lufs = -7, tp = -1, monoBass = 120", "lufs = -8, tp = -1, monoBass = 120", "targets.youtubeMusic.lufs" },
         { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
           "targets.club.hpfFloor" },
         { false, "note = { soundingAtLeastS = 3 }", "note = { soundingAtLeastS = 2 }",

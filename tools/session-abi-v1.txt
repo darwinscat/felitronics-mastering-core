@@ -1948,6 +1948,7 @@ enum felitronics::session::LoudnessMode::Manual=0
 enum felitronics::session::LoudnessMode::MaxClean=1
 enum felitronics::session::LoudnessMode::MaxDense=2
 enum felitronics::session::LoudnessMode::MaxExtreme=3
+enum felitronics::session::LoudnessMode::MaxNuke=4
 enum felitronics::session::MaxStop::None=0
 enum felitronics::session::MaxStop::Budget=1
 enum felitronics::session::MaxStop::Guard=2
@@ -1969,6 +1970,7 @@ enum felitronics::session::text::Term::LoudnessModeManual=146
 enum felitronics::session::text::Term::LoudnessModeMaxClean=147
 enum felitronics::session::text::Term::LoudnessModeMaxDense=148
 enum felitronics::session::text::Term::LoudnessModeMaxExtreme=162
+enum felitronics::session::text::Term::LoudnessModeMaxNuke=163
 enum felitronics::session::text::Term::FieldTargetLoudnessMode=149
 codec TargetFieldsTouched.loudnessMode LoudnessMode?
 codec Snapshot.loudnessMode LoudnessMode
