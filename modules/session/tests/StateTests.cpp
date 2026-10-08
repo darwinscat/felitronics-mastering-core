@@ -427,9 +427,10 @@ void everyCellOfTheTable()
                     what + ": accepted, the revision moved by " + std::to_string (moves) + ", the id given back (" + nameOf (a.rejection) + ")");
             }
             // THE MASTERS' QUEUE: a master is never refused for its timing. Where its cell says it cannot start now — before
-            // the first measurement ended or with it stopped, before the devices are placed, while another is made — it is
-            // taken with a job of its own and listed Queued, the job running (if any) untouched.
-            else if (Command (c) == Command::Master && Column (col) != Column::Empty)
+            // the first measurement ended, before the devices are placed, while another is made — it is taken with a job of
+            // its own and listed Queued, the job running (if any) untouched. With the first measurement stopped before its
+            // readings (Stopped) they come only if a person continues it: the cell answers, as for any refused command.
+            else if (Command (c) == Command::Master && Column (col) != Column::Empty && Column (col) != Column::Stopped)
             {
                 const JobId running = s.job();
                 const Answer a = s.apply (r);
