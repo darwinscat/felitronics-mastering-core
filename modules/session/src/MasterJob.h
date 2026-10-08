@@ -21,13 +21,15 @@ namespace felitronics::session
 class Session;
 namespace detail
 {
+struct Rules;
 // [landing] limiterBudget: the P95 of the limiter's gain reduction a landing at `targetLufs` may take, dB — the
 // target's own number or a person's edit of it, by one rule. NaN where the config does not say it.
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // [landing.max] <mode> cleaner: whether a max mode with a wish lands its zones at the loudness of the master without
-// them (true, also when absent) or on the mode's budget (false). False for the manual mode.
+// them (true, also when absent) or on the mode's budget (false). False for the manual mode. The key's one reader: the
+// schema only checks it (written, it is false), Config holds no copy of it.
 [[nodiscard]] bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // [progress.master]: the renders a master's bar expects in its loudness mode — expectedPasses by hand,
 // expectedPassesMaxClean / expectedPassesMaxDense for the max modes; a waiting master's and a rendering one's alike.
@@ -130,6 +132,9 @@ struct MasterJob final
     // heap for, or the rejection it gets; nothing is allocated. A version-1 input carries its chain ready; a version-0
     // one takes it from the project's devices (src/Chain.h), on the measurements as they stand.
     static MasterPlan plan (const Session& session, const command::Master& input, const Project& project) noexcept;
+    // The same plan on `rules` instead of the config compiled in: the numbers the plan reads in place come from `rules`
+    // (a test hands it a planted document); the devices' chain is still written on the compiled rules.
+    static MasterPlan plan (const Session& session, const command::Master& input, const Project& project, const Rules& rules) noexcept;
     static std::uint64_t fingerprint (const command::MasterReady& ready) noexcept;
     bool begin (const Session& session, const MasterPlan& plan);
     mastering::StepResult step (long long budget) noexcept;

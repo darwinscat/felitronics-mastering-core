@@ -202,6 +202,11 @@ bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept
 
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
+    return plan (s, input, project, rules());
+}
+
+MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project, const Rules& ruleset) noexcept
+{
     MasterPlan result;
     if (input.budgetResolutionDb && ! std::isfinite (*input.budgetResolutionDb))
     { result.rejection = Rejection::NotFinite; return result; }
@@ -216,7 +221,6 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     double sourceLufs = std::numeric_limits<double>::quiet_NaN();
     for (const auto& value : s.measurementResults_[std::size_t (Analyzer::Loudness)].numbers)
         if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
-    const auto ruleset = rules();
     const auto target = ruleset.row (project.target);
     // THE DELIVERY FORMAT IS THE TARGET'S (PLAN: rate, bit depth and dither come from the target). Its rate — the
     // source's when the target keeps it (sampleRate 0) — and its depth: 0 names each, the same value restates it,
