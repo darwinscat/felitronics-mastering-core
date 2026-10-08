@@ -106,7 +106,13 @@ constexpr Golden kGolden[] = {
     // 294f80d8221bb306; updated in place, as above.
     // ...and the two diodes by hand (owner, 07.10): [saturation] bias 0.2 and dcBlockHz 10, written for asym alone — no
     // existing master moves (every other type keeps bias 0 and no blocker); it was a38dce3eb12a1f77; updated in place, as above.
-    { "2026-10", 0x06ea4bbff433f2e6ull },
+    // ...and the glue's five and the limiter's three by hand with their domains and comfort windows, the third max mode
+    // (a target row with its high-pass floor at the machine's top, 50 Hz, its 3 dB budget, its expected passes) and maxClean
+    // the target a new session starts on (owner, 07.10 and 08.10): numbers added, none of an existing target's changed —
+    // measured, every one of the 30 targets' untouched master of Cold Gaze of Eternity and of Cat in Space is byte for byte
+    // v0.20.0's (PCM and WAV, native), so a v0.20.0 project keeps its sound and its import; it was 06ea4bbff433f2e6; updated
+    // in place, as above.
+    { "2026-10", 0x3299e8a01bc682c9ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
