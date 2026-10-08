@@ -100,6 +100,9 @@ template <template <class> class F> struct GlueFields
     F<double> kneeDb {};
     F<double> attackMs {};
     F<double> releaseMs {};
+    // THE WATERFALL (MVP): a person's wish, 0…1, of the share of the peak work at the landing the glue takes — the master
+    // steers its mix towards it. A person's field alone: the machine's 0 is never read.
+    F<double> share {};
 };
 
 // The saturation's type: the shaper's curve, in felitronics-core's WaveShaper::Shape order and values. The machine's layer
@@ -116,6 +119,7 @@ template <template <class> class F> struct SaturationFields
     F<double> drive {};
     F<double> mix {};
     F<SaturationType> type {};   // field 4 (3, the output, left in v0.6.0: the landing undid any trim)
+    F<double> share {};          // the waterfall (MVP): the wished share of the peak work, steered through the mix
 };
 
 // [tilt]: the tilt, dB.
@@ -137,6 +141,9 @@ template <template <class> class F> struct LimiterFields
     F<double> releaseMs {};
     F<double> lookaheadMs {};
     F<std::int32_t> oversampling {};
+    // The waterfall (MVP): the wished share of the peak work the needles' clipper takes, steered through its cut within
+    // [limiter.peakClipper] manualDomain; the limiter takes the rest.
+    F<double> cutShare {};
 };
 
 // [dither]: on a delivery of 16 bits.
