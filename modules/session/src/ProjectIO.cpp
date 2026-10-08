@@ -359,10 +359,11 @@ struct Writer
                                                        "notSounding", "passes", "rest", "noWish" };
                 out ("Stop", stops[std::size_t (z.stop)], "machine");
             };
+            zone ("cut", w.cut);
             zone ("glue", w.glue);
             zone ("saturation", w.saturation);
-            zone ("cut", w.cut);
             zone ("limiter", w.limiter);
+            if (w.regrownDb) workedLine ("regrownDb", *w.regrownDb, "machine");
             if (w.totalDb) workedLine ("totalDb", *w.totalDb, "machine");
             workedLine ("extraPasses", w.extraPasses, "machine");
             // Cleaner, not louder: the loudness the master without the wishes reached, and its limiter's take there.

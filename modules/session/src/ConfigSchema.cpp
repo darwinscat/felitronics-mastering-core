@@ -98,6 +98,8 @@ constexpr Name<CompressorMode> kModes[] = { { "downCompress", CompressorMode::Do
 constexpr Name<ThresholdFrom> kThresholdFrom[] = { { "shortTermP95", ThresholdFrom::ShortTermP95 } };
 constexpr Name<ConfidenceLabel> kConfidence[] = { { "low", ConfidenceLabel::Low }, { "medium", ConfidenceLabel::Medium },
                                                   { "high", ConfidenceLabel::High } };
+constexpr Name<PeakClipperPlace> kPlaces[] = { { "start", PeakClipperPlace::Start }, { "limiter", PeakClipperPlace::Limiter },
+                                                { "both", PeakClipperPlace::Both } };
 constexpr Name<Law> kLaws[] = { { "byDepth", Law::ByDepth }, { "linear", Law::Linear }, { "geometric", Law::Geometric } };
 constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh }, { "atan", SaturationShape::Atan },
                                               { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym },
@@ -376,6 +378,7 @@ R hpfDomain() { return { std::numeric_limits<double>::min(), 3999.999999999 }; }
 
 void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
 {
+    d.name (in, "place", o.place, kPlaces);
     const R domain = readDomain (d, in, "manualDomain", o.manualDomain, R { 0.0, 6.0 });
     in.required ("littleNeedDb", o.littleNeedDb, R { 0.0, 24.0 });
     // The classes: short needles are shorter, carry less bass and come with more PLR than long ones; the short class's
