@@ -1920,11 +1920,32 @@ slope is smaller. No probe is added. `LandingSummary.limiterWall` names that sto
 There is no miss or mix hint for that stop. Max modes do not enable the wall. The landing-search suite holds a dense
 fixture's wall, a normal streaming landing's unchanged PCM and both max budgets' unchanged PCM.
 
+THE THIRD MAX MODE AND THE DEFAULT (owner, 07.10). `maxExtreme` «Максимум · экстрим» is appended after `maxDense`
+(`LoudnessMode` 3, `[landing.max] extreme.budgetDb` 3 dB, its target row's high-pass floor 50 Hz and mono bass 150 Hz).
+The floor is the machine's top (owner, 08.10), so the machine's cutoff on that target is always 50 Hz, whatever the note.
+`[targets] default` is `maxClean`: a new session, and a project that names no target, start on Maximum · clean.
+
+THE GLUE'S FIVE AND THE LIMITER'S THREE BY HAND (owner, 07.10 and 08.10). `editDevice glue` takes `thresholdDb` (dBFS on
+the input brought to `[input] referenceLufs`, −40…0), `ratio` (1…10), `kneeDb` (0…12), `attackMs` (0.1…100) and
+`releaseMs` (10…1000); `editDevice limiter` takes `releaseMs` (1…1000), `lookaheadMs` (0…10) and `oversampling` (2, 4, 8
+or 16 — felitronics-core's true-peak limiter takes no more; anything else is `NotOneOf`). A value outside its domain is
+`OutOfDomain`, the field kept; `revertEdits` returns each to the machine. A glue field set by hand wins for that field
+alone; every field left alone takes the travel's law at the amount as it sounds (a person's `upToDb`, `[glue] whenTicked`
+for a tick on a machine amount of 0, else the machine's) on the input's P95 and decided tempo — no hand value of one of
+the five moves the amount the others follow. A release set by hand follows no tempo: `plan.glue` names none (`bpm` and
+`tempoUnsureBpm` empty, `tempoMeasured` false), so `PlanText::glueTempo` and `::glueRelease` say nothing for it. The snapshot's `project.devices.glue.machine` carries those applied values
+(`plan.glue` the effective five, a person's included); the project keeps the five as placed, since they follow the amount
+and decide nothing, and an import takes the machine's five for its source whatever a file wrote for them — so a file
+without them (v0.20.0) or with an earlier build's numbers opens with no machine difference. The limiter's machine layer
+keeps the constants (`[limiter] releaseMs`, `lookaheadMs`, `[chain] oversampleFactor`); the catalogue names all eight
+fields in English in both languages (device knobs, owner). `[limiter] oversamplingDomain` is two integers, as the session
+reads them: a bound written with a decimal point stops the config build at its line and column (`WrongType`).
+
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
 theirs (`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes
-one by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense; null gives the row's back; set and cleared at
-once is `Contract`, a fourth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's target
+one by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense, 3 maxExtreme; null gives the row's back; set
+and cleared at once is `Contract`, a fifth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's target
 layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`). Manual is
 the landing above, unchanged. A max mode asks for no number: it asks for the loudest master the mode's limiter budget
 allows. Its landing aims at `[landing.max] ceilingLufs` (−5 LUFS) with the mode's budget — `clean.budgetDb` 0.5 dB,
