@@ -341,10 +341,8 @@ template <> struct Planned<GlueFields<Value>>
 {
     static void propose (const PlanInputs& in, GlueFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
-        // The five: the travel's values at the machine's amount, on this input's P95 and decided tempo where it has them.
-        const auto law = glueLaw (in, m.upToDb, false);
-        if (law.thresholdDb) m.thresholdDb = kept (*law.thresholdDb);
-        if (law.releaseMs) m.releaseMs = kept (*law.releaseMs);
+        // The five stay as placed: they follow the amount by the law and decide nothing of their own, so the layer a file
+        // keeps holds no number of this input's. What they apply on it — the snapshot's machine layer — is glueMachine.
         if (! in.rules.row (in.row).glue) return;
         plan.target |= std::uint8_t (fieldBit (in.rules, m, m.on) | fieldBit (in.rules, m, m.upToDb));
         if (quiet (in)) { m.on = false; plan.heldBack = HeldBack::Quiet; }
@@ -864,6 +862,7 @@ void Session::replan() noexcept
             eq = detail::eqFinding (project_.devices, in.rules, double (in.sampleRate));
             plan_.inputGainDb = detail::inputLevels (in).gainDb;
             plan_.glue = detail::glueFinding (in, project_.devices);
+            glueMachine_ = detail::glueMachine (in, project_.devices);
             plan_.saturation = detail::saturationFinding (in, project_.devices);
             plan_.limiter = detail::limiterFinding (in, project_.devices);
             plan_.dither = detail::ditherFinding (in, project_.devices);

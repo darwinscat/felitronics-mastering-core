@@ -66,6 +66,11 @@ struct InputLevels
 // No person's field and no state: glueFinding lays those over it, and the machine's layer takes it at its own amount.
 [[nodiscard]] GlueFinding glueLaw (const PlanInputs& in, double upToDb, bool waitsForTempo) noexcept;
 
+// The five a field left alone takes — the machine's layer as it applies: the law at the knob as it sounds, on this
+// input's P95 and decided tempo, the release at [compressor.tempo] bpmWhenUnsure until one is decided. No person's five
+// enter it, so no field's machine value moves with another's hand value.
+[[nodiscard]] GlueFinding glueMachine (const PlanInputs& in, const Devices& devices) noexcept;
+
 // What the project's glue and saturation come to on this input.
 [[nodiscard]] GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept;
 [[nodiscard]] SaturationFinding saturationFinding (const PlanInputs& in, const Devices& devices) noexcept;

@@ -850,6 +850,9 @@ private:
     MachineDifference differences_[kDeviceFields] {};
     std::size_t differenceCount_ = 0;
     PlanView plan_ {};
+    // The glue's five as the machine's layer applies them on the plan's inputs (detail::glueMachine): the snapshot's
+    // machine layer shows these, not the values placed with the machine's own amount.
+    GlueFinding glueMachine_ {};
     std::uint64_t planRuns_ = 0;
     bool machineFromFile_ = false;
     // A master asked for with measurements its devices read still running: its recipe's project is the one captured then

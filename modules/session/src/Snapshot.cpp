@@ -5,6 +5,7 @@
 #include "SnapshotStorage.h"
 #include "Devices.h"
 #include "EqCurve.h"
+#include "Grid.h"
 #include "Needles.h"
 #include "Observations.h"
 #include <felitronics/session/Snapshot.h>
@@ -260,6 +261,19 @@ SnapshotView Session::buildView() const noexcept
     v.mastering = mastering_;
     v.revision = revision_;
     v.project = project_;
+    if (devicesPlaced_)
+    {
+        // The glue's five in the machine's layer are the values a field left alone gets — at the knob as it sounds, on
+        // the measured P95 and tempo — not the ones placed with the machine's own amount, which a person's amount or
+        // tick no longer follows. Where the law has no number yet (no P95) the placed value stays.
+        auto& glue = v.project.devices.glue.machine;
+        const auto& law = glueMachine_;
+        if (law.ratio) glue.ratio = detail::kept (*law.ratio);
+        if (law.kneeDb) glue.kneeDb = detail::kept (*law.kneeDb);
+        if (law.attackMs) glue.attackMs = detail::kept (*law.attackMs);
+        if (law.thresholdDb) glue.thresholdDb = detail::kept (*law.thresholdDb);
+        if (law.releaseMs) glue.releaseMs = detail::kept (*law.releaseMs);
+    }
     const auto rules = detail::rules();
     detail::eachDevice (project_.devices, [&] (Device, const auto& layers)
     {
