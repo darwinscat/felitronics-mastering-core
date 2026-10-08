@@ -192,6 +192,14 @@ double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
     return number (engine.find ("landing").find ("max").find (name).find ("budgetDb"));
 }
 
+bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept
+{
+    if (mode == LoudnessMode::Manual) return false;
+    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense"
+                    : mode == LoudnessMode::MaxExtreme ? "extreme" : "nuke";
+    return engine.find ("landing").find ("max").find (name).find ("cleaner").boolean().value_or (true);
+}
+
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
@@ -479,7 +487,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         // CLEANER, NOT LOUDER (owner, 08.10): in a max mode the zones buy a cleaner master, not a louder one. The chain
         // the project writes without the wishes lands first (today's automat on its budget); the zones then take their
         // shares at that loudness. Both run on one topology: a stage only one of them has is bypassed in the other.
-        if (result.request.waterfall() && result.loudnessMode != LoudnessMode::Manual)
+        // A mode with `cleaner = false` ([landing.max]) lands its zones on its budget instead, in one landing.
+        if (result.request.waterfall() && maxCleaner (engine, result.loudnessMode))
         {
             // Without the wishes: the shares go, every other field of a person's stays as the project has it.
             auto alone = project.devices;

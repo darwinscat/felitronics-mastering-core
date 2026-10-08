@@ -1936,8 +1936,10 @@ THE THIRD MAX MODE AND THE DEFAULT (owner, 07.10). `maxExtreme` «Максиму
 (`LoudnessMode` 3, `[landing.max] extreme.budgetDb` 3 dB, its target row's high-pass floor 50 Hz and mono bass 150 Hz).
 The floor is the machine's top (owner, 08.10), so the machine's cutoff on that target is always 50 Hz, whatever the note.
 `[targets] default` is `maxClean`: a new session, and a project that names no target, start on Maximum · clean.
-`maxNuke` «Максимум · нюк» (MVP) is appended after it (`LoudnessMode` 4, `[landing.max] nuke.budgetDb` 5 dB,
-a number by ear; its target row is extreme's with lufs −7, the manual mode's start).
+`maxNuke` «Максимум · нюк» is appended after it (`LoudnessMode` 4, `[landing.max] nuke.budgetDb` 7 dB,
+a number by ear; its target row is extreme's with lufs −7, the manual mode's start). Each max mode's `cleaner` (true
+when absent) says whether a wish of shares lands cleaner, not louder — the master without the wishes on the budget
+first, the zones at its loudness; `cleaner = false` lands the zones on the budget in one landing. No mode writes it.
 
 THE GLUE'S FIVE AND THE LIMITER'S THREE BY HAND (owner, 07.10 and 08.10). `editDevice glue` takes `thresholdDb` (dBFS on
 the input brought to `[input] referenceLufs`, −40…0), `ratio` (1…10), `kneeDb` (0…12), `attackMs` (0.1…100) and
