@@ -99,8 +99,8 @@
     },
     "plan-pending": {
       "scriptSha256": "6c1f1af9db8f07cc5ffd2d7904a012671ce7cd776389a05be91edee4e2815164",
-      "sha256": "349e0ed128a70ec267e7360b099407248e516db704bd17bd613e6f0a00810696",
-      "bytes": 3882069
+      "sha256": "1dc573232c9001adb3fc05522588f840cde7a86aba5591495f388c159af78854",
+      "bytes": 3882201
     },
     "project-roundtrip": {
       "scriptSha256": "8ddd3d3e7c55ff7eec96b7e21675fa4f7e307a95198fb44d14a5ea52bf65c4d1",
