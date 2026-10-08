@@ -116,6 +116,9 @@ SURFACE[13] = [...SURFACE[12], '_fc_session_worked_report_size', '_fc_session_wo
 SURFACE[14] = SURFACE[13];
 // Version 15 (v0.20.0) appends no entry point: the low-frequency energy fact (458), the two diodes' words (terms 152, 153).
 SURFACE[15] = SURFACE[14];
+// Version 16 appends the glue's five and the limiter's three by hand (fields of the glue and the limiter devices, terms
+// 154-161), and no entry point.
+SURFACE[16] = SURFACE[15];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -477,6 +480,11 @@ for (let i = 0; i < 20000; ++i) {
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
 ok(readySnapshot?.canMaster === true, 'mandatory readings make the ready command available');
+// The fixture names its target, All streaming — the one its native reference masters on — rather than lean on the one a
+// new session starts on.
+ok(cmd(masterSession, {kind:'setTarget', commandId:'5', target:'allStreaming'}).kind === 'accepted',
+   'the master smoke fixture names All streaming');
+readySnapshot = masterSnapshot();
 const readyWire = masterWire('snapshot'), readyEvents = masterWire('events');
 const sourceId = BigInt(readySnapshot?.source?.hash ?? '0');
 const revision = BigInt(readySnapshot?.revision ?? '0');
