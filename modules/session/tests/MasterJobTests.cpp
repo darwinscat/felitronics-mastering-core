@@ -806,6 +806,39 @@ void maxMasterLanding()
     }
 }
 
+// [landing.max] <mode> cleaner: every max mode of the shipped config leaves it out, so a wish of theirs lands its zones
+// at the loudness the master without them reached (MasterPlan::clean); a mode written cleaner = false (ConfigTests reads
+// it) would land its zones on its budget in one landing.
+void maxCleanerSwitch()
+{
+    const auto engine = detail::rules().engine;
+    ok (detail::maxCleaner (engine, LoudnessMode::MaxClean) && detail::maxCleaner (engine, LoudnessMode::MaxDense)
+            && detail::maxCleaner (engine, LoudnessMode::MaxExtreme)
+            && ! detail::maxCleaner (engine, LoudnessMode::Manual),
+        "[landing.max] cleaner: every max mode lands cleaner (absent: true), the manual mode never");
+    for (const LoudnessMode mode : { LoudnessMode::MaxExtreme })
+    {
+        const std::string name = "maxExtreme";
+        auto r = gradeSession (3.0);
+        if (! r.session) { ok (false, name + ": a session"); continue; }
+        auto& s = *r.session;
+        command::EditTarget edit { 2, {} };
+        edit.fields.loudnessMode = mode;
+        GlueFields<Touched> glue; glue.share = 0.1;
+        SaturationFields<Touched> saturation; saturation.share = 0.4;
+        LimiterFields<Touched> limiter; limiter.cutShare = 0.1;
+        const bool edited = act (r, edit).rejection == Rejection::None
+            && act (r, command::EditDevice { 3, glue }).rejection == Rejection::None
+            && act (r, command::EditDevice { 4, saturation }).rejection == Rejection::None
+            && act (r, command::EditDevice { 5, limiter }).rejection == Rejection::None;
+        const auto planned = detail::MasterJob::plan (s, command::Master { 6 }, s.project());
+        const bool cleaner = true;
+        ok (edited && planned.rejection == Rejection::None && planned.loudnessMode == mode && planned.request.waterfall()
+                && planned.clean == cleaner && planned.request.limiterGr.limitDb == detail::maxBudgetDb (engine, mode),
+            name + ": a wish of shares " + (cleaner ? "lands first without the wishes (clean)" : "lands on the budget at once (not clean)"));
+    }
+}
+
 // THE FLOOR (owner, 04.10: "always pulled up to −14"): a mix so dense a limiter budget of 0.5 dB holds its landing far
 // under −14 LUFS — clicks every 10 ms over a quiet bed — is landed again on [landing.max] floorLufs and delivered there,
 // on the maxClean target and with max clean by hand on appleMusic (−16): MaxStop::Floor, its verdict the mode and the
@@ -1107,6 +1140,7 @@ int main()
     damageGrades();
     lateMasterCrestLifecycle();
     maxMasterLanding();
+    maxCleanerSwitch();
     maxFloor(); maxFloorRecord();
     maxStopRules();
     damageWithoutAnId();

@@ -811,7 +811,9 @@
         "cut": "MasterWaterfallZone",
         "limiter": "MasterWaterfallZone",
         "totalDb": "double?",
-        "extraPasses": "uint32"
+        "extraPasses": "uint32",
+        "aloneLufs": "double?",
+        "limiterAloneDb": "double?"
       }
     },
     "LandingPass": {

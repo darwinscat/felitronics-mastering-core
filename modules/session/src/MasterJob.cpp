@@ -187,6 +187,13 @@ double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
     return number (engine.find ("landing").find ("max").find (name).find ("budgetDb"));
 }
 
+bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept
+{
+    if (mode == LoudnessMode::Manual) return false;
+    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense" : "extreme";
+    return engine.find ("landing").find ("max").find (name).find ("cleaner").boolean().value_or (true);
+}
+
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
@@ -446,11 +453,31 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             result.request.waterfallSaturationDriveMaxDb = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (ceiling / 20.0) - 1.0) * scale);
             result.saturationDriveScale = scale;
         }
+        // CLEANER, NOT LOUDER (owner, 08.10): in a max mode the zones buy a cleaner master, not a louder one. The chain
+        // the project writes without the wishes lands first (today's automat on its budget); the zones then take their
+        // shares at that loudness. Both run on one topology: a stage only one of them has is bypassed in the other.
+        // A mode with `cleaner = false` ([landing.max]) lands its zones on its budget instead, in one landing.
+        if (result.request.waterfall() && maxCleaner (engine, result.loudnessMode))
+        {
+            // Without the wishes: the shares go, every other field of a person's stays as the project has it.
+            auto alone = project.devices;
+            alone.glue.hand.share.reset(); alone.saturation.hand.share.reset(); alone.limiter.hand.cutShare.reset();
+            command::MasterReady bare = input.ready;
+            writeChain (s.planInputs (project), alone, bare);
+            auto& t = result.ready.topology;
+            if (bare.topology.compressor && ! t.compressor) { t.compressor = true; result.ready.params.bypassCompressor = true; }
+            else if (t.compressor && ! bare.topology.compressor) bare.params.bypassCompressor = true;
+            if (bare.topology.clipper && ! t.clipper) { t.clipper = true; result.ready.params.bypassClipper = true; }
+            else if (t.clipper && ! bare.topology.clipper) bare.params.bypassClipper = true;
+            result.clean = true;
+            result.aloneParams = bare.params;
+        }
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
     result.ready.params.dither.bits = deliveryBits;
     result.request.pcmBits = deliveryBits;
+    if (result.clean) { result.aloneParams.limiter.ceilingDbTp = targetTp - margin; result.aloneParams.dither.bits = deliveryBits; }
     if (! std::isfinite (result.ready.params.inputGainDb)
         || std::fabs (result.ready.params.inputGainDb + normalization) > 60.0
         || ! std::isfinite (result.ready.params.preLimiterGainDb))
@@ -611,6 +638,18 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
         sourcePlanes[c] = s.samples_.get() + std::size_t (c) * std::size_t (s.source_.frames);
         outputPlanes[c] = output.get() + std::size_t (c) * std::size_t (frames);
     }
+    cleanPhase = plan.clean; cleanDone = false; cleanOnFloor = false; aloneParams = plan.aloneParams; cleanRequest = plan.request;
+    aloneLufs.reset(); aloneLimiterDb.reset(); aloneStop = MaxStop::None;
+    if (cleanPhase)
+    {
+        auto request = plan.request;
+        request.waterfallGlueShare = request.waterfallSaturationShare = request.waterfallCutShare
+            = std::numeric_limits<double>::quiet_NaN();
+        chain.setParams (aloneParams);
+        return search.begin (chain, renderer, aloneParams, sourcePlanes,
+            (long long) s.source_.frames, double (s.source_.sampleRate), outputPlanes,
+            channels, frames, request, {}, convert ? &converter : nullptr);
+    }
     chain.setParams (plan.ready.params);
     return search.begin (chain, renderer, plan.ready.params, sourcePlanes,
         (long long) s.source_.frames, double (s.source_.sampleRate), outputPlanes,
@@ -729,13 +768,37 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         if (result == StepResult::More) return result;
         if (! floorPass && search.waterfallOn())
         { steered = search.currentParams(); waterfallSteps = std::uint32_t (search.waterfallSteps()); }
+        // THE LANDING WITHOUT THE WISHES, DONE: its file's loudness is the target of the landing with the zones, which
+        // goes on from its gain with no budget and twelve passes of its own; its passes stay in the log before the new ones.
+        if (cleanPhase)
+        {
+            cleanPhase = false;
+            const auto& alone = search.result();
+            if (result == StepResult::Done && alone.deliverable && std::isfinite (alone.achievedLufs))
+            {
+                aloneLufs = alone.achievedLufs;
+                if (alone.limiterActive.stats.valid && std::isfinite (alone.limiterActive.stats.p95Db))
+                    aloneLimiterDb = alone.limiterActive.stats.p95Db;
+                aloneStop = maxStopOf ({ alone.peaksAboveCeiling, std::isfinite (search.overBudgetDb()), false, alone.status,
+                                         alone.binding });
+                cleanOnFloor = std::isfinite (floorLufs) && alone.achievedLufs < floorLufs - floorRequest.toleranceLu;
+                floorFirstPasses = std::uint32_t (alone.logCount);
+                floorFirstWork = alone.workUnits;
+                auto& rows = session->masterRows_[rowIndex];
+                if (! LandingOps::passRows (alone,
+                        { rows.passes.get(), rows.passes ? std::size_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) : 0u })
+                    || ! beginClean()) { stage = Stage::Failed; return StepResult::Failed; }
+                cleanDone = true;
+                return StepResult::More;
+            }
+        }
         // A MAX MODE NEVER DELIVERS A FILE QUIETER THAN [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"),
         // whichever target it sits on: a first landing whose file — by its BS.1770 reading, the number a person reads —
         // stands under that floor by more than the landing's own tolerance ([landing] toleranceLu: a file within it of a
         // level is on that level, as every landing counts it) is landed again on the floor, by that reading, with no
         // budget. Whatever held the first landing there (the budget, the passes) does not matter; what the floor pass
         // delivers is said as what really ended it (settleLanding).
-        if (mode != LoudnessMode::Manual && ! floorPass && result == StepResult::Done && search.result().deliverable)
+        if (mode != LoudnessMode::Manual && ! floorPass && ! cleanDone && result == StepResult::Done && search.result().deliverable)
         {
             const double file = search.result().achievedLufs;
             if (std::isfinite (floorLufs) && std::isfinite (file) && file < floorLufs - floorRequest.toleranceLu)
@@ -1020,6 +1083,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;
             w.totalDb = total;
             w.extraPasses = waterfallSteps;
+            if (cleanDone) { w.limiterAloneDb = aloneLimiterDb; w.aloneLufs = aloneLufs; }
             report.waterfall = w;
         }
         costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
@@ -1252,6 +1316,13 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
                                       floorPass && solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
                                       solved.binding });
+    // The landing with the zones stood on the loudness the one without them reached: what ended that one is the verdict.
+    // Pulled up to the floor, it is said as the floor pass would say it.
+    if (cleanDone && mode != LoudnessMode::Manual && solved.deliverable)
+        report.maxStop = cleanOnFloor ? maxStopOf ({ solved.peaksAboveCeiling, false,
+                                                     solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
+                                                     solved.binding })
+                                      : aloneStop;
     if (result == StepResult::Failed || ! solved.deliverable)
     {
         report.crest.status = MeasurementStatus::Unavailable;
@@ -1287,6 +1358,25 @@ bool MasterJob::beginFloor() noexcept
     request.initialGainDb = search.result().preLimiterGainDb;
     auto params = ready.params;
     steer (params);
+    chain.setParams (params);
+    const bool convert = deliveryRate != sourceRate;
+    return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
+                         channels, frames, request, {}, convert ? &converter : nullptr);
+}
+
+// THE LANDING WITH THE ZONES, at the loudness the one without them reached (MasterPlan::clean): the request with the
+// wishes, on that file's loudness, no budget, from the first landing's gain.
+bool MasterJob::beginClean() noexcept
+{
+    auto request = cleanRequest;
+    request.targetLufs = *aloneLufs;
+    request.limiterGr = {};
+    request.landingOnSourceGate = false;
+    // The first landing's file under [landing.max] floorLufs: the master without the wishes is pulled up to the floor,
+    // so the one with them stands there. Each landing has its own twelve passes (a landing measures at most twelve).
+    if (cleanOnFloor) request.targetLufs = floorLufs;
+    request.initialGainDb = search.result().preLimiterGainDb;
+    auto params = ready.params;
     chain.setParams (params);
     const bool convert = deliveryRate != sourceRate;
     return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
