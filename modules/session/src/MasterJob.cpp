@@ -179,14 +179,16 @@ std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) no
     const auto master = engine.find ("progress").find ("master");
     const auto key = mode == LoudnessMode::MaxClean ? "expectedPassesMaxClean"
                    : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense"
-                   : mode == LoudnessMode::MaxExtreme ? "expectedPassesMaxExtreme" : "expectedPasses";
+                   : mode == LoudnessMode::MaxExtreme ? "expectedPassesMaxExtreme"
+                   : mode == LoudnessMode::MaxNuke ? "expectedPassesMaxNuke" : "expectedPasses";
     return std::uint32_t (*master.find (key).integer());
 }
 
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
-    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense" : "extreme";
+    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense"
+                    : mode == LoudnessMode::MaxExtreme ? "extreme" : "nuke";
     return number (engine.find ("landing").find ("max").find (name).find ("budgetDb"));
 }
 

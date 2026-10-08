@@ -232,7 +232,7 @@ void theCutoffOnTheChainsResponse()
         const auto target = r.row (row);
         const double loss = target.noteLossDb.toDouble(), floor = target.hpfFloor.toDouble();
         const int slope = target.hpfSlope;
-        floors = floors && same (floor, target.key == "maxExtreme" ? 50.0 : 32.0);
+        floors = floors && same (floor, target.key == "maxExtreme" || target.key == "maxNuke" ? 50.0 : 32.0);
         for (const std::uint32_t rate : { 44100u, 48000u, 96000u })
             for (int midi = 23; midi <= 62; ++midi)   // every band the note is sought in: from 30 Hz (30.87 Hz) to the table's top
             {

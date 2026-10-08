@@ -454,6 +454,8 @@ enum class Term : std::uint16_t
     FieldLimiterReleaseMs, FieldLimiterLookaheadMs, FieldLimiterOversampling,
     // The third max mode (07.10, MVP), as a max mode's verdict names it.
     LoudnessModeMaxExtreme,
+    // The fourth max mode (08.10, MVP), as a max mode's verdict names it.
+    LoudnessModeMaxNuke,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };
