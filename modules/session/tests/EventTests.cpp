@@ -339,6 +339,8 @@ void pump()
         // saturation's whenTicked out.
         replace (engine, "whenTicked = 2.6", "whenTicked = 0.5");
         for (const std::string_view key : { "\nticked = ", "\nwhenTicked = 6" }) erase (engine, key);
+        // ...and the waterfall (09.10): [saturation] steerDriveMaxDb and [limiter.peakClipper] place out.
+        for (const std::string_view key : { "\nsteerDriveMaxDb = ", "\nplace = " }) erase (engine, key);
         for (const std::string_view key : { "\nextreme = ", "\nexpectedPassesMaxExtreme = ", "\nnuke = ", "\nexpectedPassesMaxNuke = " }) erase (engine, key);
         for (const std::string_view name : { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs", "lookaheadMs", "oversampling" })
             for (const std::string_view suffix : { "Domain", "Range", "Step", "Comfort" })
@@ -575,7 +577,10 @@ void pump()
     // above (41508f599701f864 / 1a81582c5bc4ef89 before them); the scenario names allStreaming and its master is the same.
     // A person's tick (08.10: [glue] whenTicked 2.6 and its character, [saturation] whenTicked) moves the config's version
     // alone, restated above (cd8695e50c1f280c / 3a842aeaf3dc4689 before it).
-    ok (eventsHash (one) == 0x26f65dd0dff72c76ull && eventsHash (cancelled) == 0x0dd125250dcb6791ull,
+    // The waterfall's two keys ([saturation] steerDriveMaxDb, [limiter.peakClipper] place) and Maximum · nuke (its target
+    // row, its budget, its expected passes) move the config's version alone, restated above (26f65dd0dff72c76 /
+    // 0dd125250dcb6791 before them); the scenario's master asks no share.
+    ok (eventsHash (one) == 0x4d7e59b4a48dc8aeull && eventsHash (cancelled) == 0xba321f6a6122d2a5ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
@@ -661,7 +666,10 @@ void tableBetweenSteps()
             // A master this fixture keeps was not delivered by a job: past the table, its damage is not gradable.
             const bool settled = row.command == Command::GradeDamage && expected == Rejection::None
                 && answer.rejection == Rejection::DamageSettled;
-            ok (answer.rejection == expected || settled, "every command obeys the table and active-job check between pump steps");
+            // THE MASTERS' QUEUE: a master its cell holds back for its timing is queued with a job of its own, never refused.
+            const bool queued = row.command == Command::Master && placed != 0 && expected != Rejection::None
+                && answer.rejection == Rejection::None && answer.job != 0;
+            ok (answer.rejection == expected || settled || queued, "every command obeys the table and active-job check between pump steps");
             if (answer.rejection != Rejection::None) ok (before == encoded (snapshot (*s).view()), "rejection leaves the entire snapshot intact");
         }
 }
