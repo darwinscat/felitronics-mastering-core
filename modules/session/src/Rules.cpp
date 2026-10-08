@@ -108,7 +108,7 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     {
         const auto name = v.string().value_or (std::string_view {});
         out.loudnessMode = name == "maxClean" ? LoudnessMode::MaxClean : name == "maxDense" ? LoudnessMode::MaxDense
-                                                                                             : LoudnessMode::Manual;
+                         : name == "maxExtreme" ? LoudnessMode::MaxExtreme : LoudnessMode::Manual;
     }
     if (const View v = rowView.find ("lowDb"))
     {

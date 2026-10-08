@@ -265,7 +265,7 @@ Checked Session::storageFor (const Request& request) const noexcept
         if (f.lufs && edit->clear.lufs) return rejected (Rejection::Contract, 0);
         if (f.tp && edit->clear.tp) return rejected (Rejection::Contract, 1);
         if (f.loudnessMode && edit->clear.loudnessMode) return rejected (Rejection::Contract, 2);
-        if (f.loudnessMode && std::uint8_t (*f.loudnessMode) > std::uint8_t (LoudnessMode::MaxDense))
+        if (f.loudnessMode && std::uint8_t (*f.loudnessMode) > std::uint8_t (LoudnessMode::MaxExtreme))
             return rejected (Rejection::NotOneOf, 2);
         if (f.lufs)
             if (const Rejection r = knobCheck (rules.lufs, *f.lufs, source_.sampleRate); r != Rejection::None) return rejected (r, 0);

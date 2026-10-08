@@ -500,6 +500,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldLimiterReleaseMs, "field", "limiterReleaseMs" },
     { Term::FieldLimiterLookaheadMs, "field", "limiterLookaheadMs" },
     { Term::FieldLimiterOversampling, "field", "limiterOversampling" },
+    { Term::LoudnessModeMaxExtreme, "loudnessMode", "maxExtreme" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

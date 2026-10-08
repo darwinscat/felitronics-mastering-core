@@ -136,7 +136,9 @@ std::optional<text::Fact> MasterReportText::maxFloorDetail (const MasterReport& 
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     if (report.maxStop != MaxStop::Floor || ! report.deliverable || ! std::isfinite (budgetDb) || ! std::isfinite (p95Db)
         || ! std::isfinite (floorLufs) || ! std::isfinite (firstLufs)) return std::nullopt;
-    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
+    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean
+                                 : report.loudnessMode == LoudnessMode::MaxDense ? Term::LoudnessModeMaxDense
+                                                                                 : Term::LoudnessModeMaxExtreme);
     const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
     const auto budget = Arg::value (budgetDb, Unit::Db,
         hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
@@ -149,7 +151,9 @@ std::optional<text::Fact> MasterReportText::max (const MasterReport& report, dou
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     if (report.loudnessMode == LoudnessMode::Manual || report.status != MeasurementStatus::Ready || ! report.deliverable
         || ! report.achievedLufs) return std::nullopt;
-    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
+    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean
+                                 : report.loudnessMode == LoudnessMode::MaxDense ? Term::LoudnessModeMaxDense
+                                                                                 : Term::LoudnessModeMaxExtreme);
     const auto achieved = Arg::value (*report.achievedLufs, Unit::Lufs, 1);
     const auto steps = Arg::count (std::int64_t (report.guardSteps));
     // The budget printed whole: up to two decimals, the trailing zeros dropped, decided on its hundredths as an integer.

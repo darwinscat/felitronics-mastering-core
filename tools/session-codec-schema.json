@@ -15,7 +15,8 @@
     "LoudnessMode": [
       "Manual",
       "MaxClean",
-      "MaxDense"
+      "MaxDense",
+      "MaxExtreme"
     ],
     "DeliveryMode": [
       "Mastered",
