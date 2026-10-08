@@ -217,6 +217,16 @@ commands: the work that measures and renders drives them (`src/Driver.h`, the li
 session's friend and not public), and they happen only where their row says so. `fcore_session table` prints both tables
 from the code, and ctest holds the text between the markers below to that output byte for byte.
 
+**The masters' queue stands before the table** (`Session::masterQueues`). A `master` that cannot start now — another
+master being made or queued, the previous master's PCM not yet taken or released, the first measurement not ended (the
+table's `NotMeasured` in Loaded, `Busy` in a Mastering column), or, with the panel open, a plan still waiting for what its
+devices read — is queued instead of refused, once what it is asked with passes (its budget resolution, its source and
+revision, a clipped source's consent, an id left for its job). A master asked with `kMaxQueuedMasters` (8) already queued
+is refused `Busy`. The table answers a master only where its readings never come — a first measurement that ended
+without its mandatory readings (`NotMeasured`) — or come only if a person continues a first measurement stopped before
+them (Stopped: `NotMeasured`); a queued master ends `Failed` there. A `forget` of a queued master is taken in every
+column. The cells below are the table's own.
+
 <!-- the table: begin -->
 | command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -243,8 +253,7 @@ from the code, and ctest holds the text between the markers below to that output
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source,
-the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), with the panel open a plan with nothing left to wait for (`master`
-the session decides: `PlanPending`), no device field not measured yet (`importProject`: `PlanPending`; the file's own
+the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), no device field not measured yet (`importProject`: `PlanPending`; the file's own
 target is asked after its name is read, and an export answers the same), an id left for a new job (`load` and `master`), a load's valid
 UTF-8 name, the active job (`cancel`: `NoJob` when none runs, `UnknownJob` when another does), a master kept; 4. the fields — each touched one in the order its struct
 writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
@@ -332,9 +341,10 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
   job, numbered on from the last for the session's whole life, a load included: an id is never 0 and never issued twice,
   and once the last is issued a load or master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
   its job's id; `cancel(job)` stops the named measurement or master, `forget(master)` lets a kept master go. A master the
-  session decides (version 0) waits for what its devices read: with the panel open it is refused (`PlanPending`) until
-  that has ended; with the panel hidden it is taken, and its job measures it first — its recipe, target and a person's
-  layer included, is the project when it was asked for, whatever changes while it waits.
+  session decides (version 0) waits for what its devices read: with the panel open it is queued until that has ended;
+  with the panel hidden it is taken, and its job measures it first. Either way its recipe, target and a person's layer
+  included, is the project when it was asked for, whatever changes while it waits — a master queued behind another
+  master included (the masters' queue, above).
 - **`adoptMachine`** takes the planner's machine layer for the project as it stands — after an import, the decisions the
   file's differ from (`machineDifferences`). A person's layer stays. With no difference to take it is accepted without a
   revision.
@@ -602,8 +612,8 @@ page's slider runs 0…1 (`mixRange`; `mixStep` 0 — no step since 07.10, owner
 takes any share in the domain as written, the project keeps it (`[glue] mix.hand`), a change of target resets it. At 1 the
 glue is the downward compressor it was before, to the bit (`felitronics_session_glue_saturation_tests` pins v0.16.0's
 cd master); `[compressor] mix`, which wrote that 1, is removed (owner, 05.10). The knob below, and every number of it, is the compressor's
-own: the mix scales none of them, and the glue's trace (`GlueGr`) is the compressor's detector, before the mix. The
-report's glue line alone counts the mix — it says what the song got (below).
+own: the mix scales none of them. The report's glue line and the glue's trace (`GlueGr`) count the mix — they say what
+the song got (below).
 The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
 (`dynamics::GainComputer`, soft knee included) takes exactly N dB at the loud places (the P95 and the calibration over it, below), found on that curve by bisection — one
 smooth formula over 0…6 dB (`[glue]`: the ratio by depth, the threshold offset, knee and attack linear, the release's
@@ -1111,7 +1121,7 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
 | LimiterGr / PeakClipGr | `[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]` on the delivered-frame grid. These require `masterId`, the master's source `audioId`, and a nonempty range inside the trace. A zoom selects every retained bucket intersecting the range; requested columns group those buckets and report their actual bounds, including edge buckets that cross the requested bounds. `total` is the selected bucket count, `stored` is the returned count, and `complete` is false for a reduced column count. An unfinished render returns `Pending` without rows. `sampleRate` is the delivery rate. |
 
-| GlueGr | The glue's gain reduction over time: the compressor's own |GR| tap from the delivered render (the render whose audio is the master), rows as LimiterGr's, on LimiterGr's very buckets — the same bounds, the same zoom and grouping, `sampleRate` the delivery rate. The tap is the compressor's detector, read for the input sample its gain was decided for, and it does not move with a parallel mix. Its largest bucket is the compressor's largest reduction; the report's `glueMaxDb` is that carried through the glue's mix — the same number at mix 1. A master whose glue did not compress (out of the chain, or bypassed) keeps no trace and answers `Unavailable` with reason `NoSignal`, the reason its report gives the glue's numbers; an unknown master is `Unavailable` / `Unsupported`, as for every master kind. The trace is in the master's declared memory, a third bucket row beside the other two. |
+| GlueGr | The glue's gain reduction over time: the compressor's own |GR| tap from the delivered render (the render whose audio is the master), rows as LimiterGr's, on LimiterGr's very buckets — the same bounds, the same zoom and grouping, `sampleRate` the delivery rate. The tap is the compressor's detector, read for the input sample its gain was decided for, and each bucket is carried through the parallel blend at the mix that sounded (`detail::glueTakenDb`, the report's own law): the law grows with the reduction, so a bucket's least and largest are exactly the blend's, and its mean is the blend of the detector's mean. Its largest bucket is the report's `glueMaxDb`; at mix 1 the detector's own numbers, to the bit. A master whose glue did not compress (out of the chain, or bypassed) keeps no trace and answers `Unavailable` with reason `NoSignal`, the reason its report gives the glue's numbers; an unknown master is `Unavailable` / `Unsupported`, as for every master kind. The trace is in the master's declared memory, a third bucket row beside the other two. |
 | SaturationShave | What the saturation (the chain's soft clipper) took off the peaks over time, in dB ≥ 0, from the delivered render, rows as LimiterGr's on LimiterGr's very buckets (`sampleRate` the delivery rate). Per internal quantum of the chain (256 frames): the peak of the stage's input, as its aligner holds it — delayed by the stage's own latency, so a peak and its shaved self are in the same quantum — times the stage's clean gain (what it multiplies a sound too small to bend by: the dry share, and the wet one at the shape's slope at zero under its drive compensation, times the output trim — `MasteringChain::clipperQuietGain`), against the peak of its output, floored at 0: only what the curvature took, never a level change. It is the pair the report's `saturationCutMaxDb` reads, so its largest bucket is that number. Every frame of a quantum carries its value: a bucket's `maxDb` is its loudest quantum's shave (for a static shape the bucket's own input peak plus clean gain minus output peak), `meanDb` the frames' mean, `minDb` the least. Peaks are read at the base rate: the oversampled copies live inside the Saturator, and the limiter behind reconstructs its own peaks from this very output. A quantum whose input peak is under −72 dBFS reads 0. On a clean 1 kHz sine under the knee it reads under 0.0001 dB, tanh and tape alike (tape's emphasis filters around the bend move nothing a floor at 0 lets through). The soft clipper sits after the glue (the compressor) and before the landing gain, the limiter and the limiter's peak clipper: gate → input gain → EQ → mono bass → glue → saturation → landing gain → limiter (peak clipper inside it) → dither. A master whose soft clipper did not shape (out of the chain, or bypassed) keeps no trace and answers `Unavailable` with reason `NoSignal`, the reason its report gives the saturation's cut; an unknown master is `Unavailable` / `Unsupported`. The trace is in the master's declared memory, a bucket row beside the others. |
 | DitherFloor | `[hz,dbPerBin,reason]` — the noise floor the current delivery leaves (the plan's dither: bit depth, on, shaping, at the target's rate), on a LOG grid of `columns` points from `fromHz` (> 0) to `toHz`, both ends exactly as asked; nothing allocated until the devices are placed — `Pending` while a measurement runs that can place them, `Cancelled` while it is stopped, `Unavailable` when no plan can be made (a silent source) or nothing runs that would place them (a measured source without a usable loudness and true peak); asked as LowSpectrum is (whole-source frames, no `masterId`), and answered without a measurement. The quantiser's white noise (TPDF ±1 LSB with its rounding, LSB²/4; plain rounding, LSB²/12; LSB = 2^−(bits−1)) through the dither's noise transfer function, in the forensics `meanPower` convention: the power one bin of a Hann window of 16384 points at the SOURCE's rate reads, so it lies on the song's spectrum on one axis (48 kHz, 16-bit TPDF: −138.47 dB per bin, flat). Above the delivery's Nyquist: reason `Unsupported`; 32 bits and more (no quantiser): `NoSignal`. |
 | MasterWaveform | `[firstFrame,lastFrame,channel,min,max,rms,finiteFrames]`, L then R, from the master's retained buckets (at most 2048 a channel). |
@@ -1656,7 +1666,7 @@ measured twice — then the findings: the configured infra-low LR4 reading, chan
 Mid/Side bursts and tempo. A needed tempo goes ahead of a finding, never ahead of a low-end run a device reads. Optional
 outcomes carry their own reasons. Editing needs only the placement; an export and an import also wait until no device
 field is not measured yet (`PlanPending`). Master may run while the source's runs
-continue, subject to what its devices read (the plan): with the panel open it waits for them (`PlanPending`), with the
+continue, subject to what its devices read (the plan): with the panel open it is queued until they have ended, with the
 panel hidden it waits in its own job, its recipe's machine fields placed again as each run ends, and sounds as one asked
 after everything ended (`felitronics_session_hpf_mono_tests`, the same WAV bytes). These results alone do not establish
 `Measured2`: tempo and the second-phase join remain separate work.
@@ -1750,7 +1760,12 @@ source analyzers continue independently. `canMaster` in the snapshot says whethe
 at once or queued (`storageFor (Master {})` accepts it); capacity is reported by the preflight demand. A master is
 queued, never refused for its timing, except where its readings never come (a silent source) or come only if a person
 continues a measurement stopped before its first readings: there it is refused as the table says (`NotMeasured`), a
-queued one included, which ends `Failed`. The snapshot also exposes the pending transfer
+queued one included, which ends `Failed`. A queued master is announced under its own job and renders the recipe taken at
+its command when its turn comes, in the order asked. The snapshot's `masterJobs` lists the recent master jobs (at most
+`kMaxMasterJobs`, 16, the oldest finished one dropped first): `Queued` with its `position` (how many jobs are ahead of it,
+the one being made counted), `Running`, `Done`, `Failed` (a contract fault or the heap's refusal at its start, or its
+readings never coming) and `Cancelled` (a `cancel` of its job); a `forget` of its id takes a queued one out, and a load
+clears the queue and the list. The snapshot also exposes the pending transfer
 token and PCM byte count. Every field is present on decode; a missing key is a decode error.
 
 One session owns at most one pending delivery PCM. Its `MasterToken` names source, completion revision,
@@ -1969,6 +1984,54 @@ layer as it sounds — the snapshot's `project.devices.glue.machine` carries the
 the drive — not a person's: no field is by hand, and the project keeps what was placed. A person's own field still wins for
 that field alone (a hand attack, a hand drive of 0). Where the machine places the glue itself (`byTarget`, cd) the travel
 stands, tick or none; the machine never ticks the saturation. No untouched master moves: a tick is a person's.
+
+THE WATERFALL — A PERSON'S SHARE OF THE PEAK WORK (v0.21.0). `editDevice glue` `share`, `editDevice saturation`
+`share` and `editDevice limiter` `cutShare` (the needles' clipper) are a person's wish, 0…1 with no step, of the share of
+the peak work at the landing that stage takes; the limiter takes the rest. A value outside the domain is `OutOfDomain`,
+one that is no number `NotFinite`, each naming its field (terms `glueShare`, `saturationShare`, `limiterCutShare`);
+`revertEdits` drops the wish. They are a person's fields alone: the machine's layer holds 0 and is never read, and no
+wish moves another field. A master the session decides (version 0) with any wish steers its landing
+(`LandingSearch::steerWaterfall`): each pass reads the four takes — the glue's P95 through its mix, the saturation's usual
+cut, the clipper's P95 over what it clipped, the limiter's P95 on its active windows (a max mode's at its budget) — and
+moves each wished stage to its share of their total: the glue's and the saturation's mix by the blend's own law, the
+clipper's cut by the shortfall in dB within `[limiter.peakClipper] manualDomain`. Shares that add up past 1 are scaled to
+1. The saturation's take is foreseen from the clipper's peak counters (`MasteringChain::clipperForesee`) and solved in
+one move — its mix first, then, once the mix is at 1, its drive, by at most 6 dB a move and up to `[saturation]
+steerDriveMaxDb` (10 dB on the knob, aligned to the programme's peak as the placed drive is; never a person's drive) —
+with a secant on the foresight's own error from the last move. A pass that moved the stages is never a candidate: every
+render before it is forgotten, and the next pass is aimed from its budget excess, lowered by the peak the move adds. At
+most four moves, none once fewer than four passes are left; a zone within 0.1 dB of its share of the total, or 3 % of the
+total where that is more, is met. A share at or under 0.0005 (`detail::kZeroShare`; the page sends shares rounded to
+0.001) takes its stage out of the chain: a glue or a saturation at 0 % does not sound, and a cut share of 0 takes the
+needles' clipper out. The master's report says what came of it (`MasterReport.waterfall`, absent without a wish): per
+zone the share `asked` (the limiter's, the rest), the share `reached`, the `db` it took, the `setting` the landing steered
+to (the glue's and the saturation's mix, the clipper's cut in dB), the saturation's steered `drive` on the knob's dB, and
+the `stop` — `Reached`, `MixAtOne`, `MixAtZero`, `CutAtEnd`, `CutAtZero`, `ComfortRed` (no moved knob has one yet),
+`NotSounding`, `Passes` (out of moves), `Rest` (the limiter's), `NoWish`, `DriveAtCeiling` (the mix at 1 and the drive at
+its ceiling); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
+`extraPasses` the renders the steering moved the stages after. The as-worked export prints each zone's asked, reached, dB
+and stop, under names held to `WaterfallStop` at compile time. A master with no wish is the master it was before the
+waterfall, to the bit, on every target. Known: a large saturation share can take all of the peak work rather than its
+share; the limiter's clipper's threshold is not read again after the last move of the start cut; and the steering is
+outside the det-math zone, so its decisions use the platform's libm. `felitronics_session_waterfall_tests` holds the share
+fields, the report, a 0 % zone, the drive's ceiling, the convergence, cleaner and its switch, the two clippers and
+`place`, Maximum · nuke, the queue's recipe taken at the command, and the masters with no wish to the bit.
+
+TWO CLIPPERS (`[limiter.peakClipper] place`). With a cut wish where the glue or the saturation sounds, the cut zone is a
+peak clipper at the start of the chain — after the high-pass and mono bass, ahead of the glue, on an oversampler of its
+own at the chain's factor (the limiter's oversampling) — its threshold cut from the peak its first pass measures and
+steered from the cut the wish starts at (the limiter's cut as placed, else `betweenCutDb`). `place = "both"` (the
+config's) keeps the limiter's clipper as the wish set it, unsteered, for the peaks the glue and the saturation regrow:
+what it took is the waterfall's `regrownDb` (a P95 over what it clipped), a part of the limiter's rest. `"start"` turns
+the limiter's clipper off; `"limiter"` keeps the cut in the limiter's clipper alone, as before. Without a sounding glue or
+saturation the limiter's clipper takes the cut whatever `place` says.
+
+CLEANER, NOT LOUDER (`[landing.max] <mode>.cleaner`). In a max mode a wish buys a cleaner master, not a louder one: the
+master without the wishes — the shares dropped, every other field of a person's as the project has it — lands first on
+the mode's budget, and the zones then take their shares at that file's loudness, with no budget. Both landings run on one
+topology; a stage only one of them has is bypassed in the other. The waterfall reports `aloneLufs` and `limiterAloneDb`:
+the loudness the landing without the wishes reached and its limiter's take there. A mode whose `cleaner` is false (true
+when absent; no mode writes it) lands its zones on its budget in one landing.
 
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
