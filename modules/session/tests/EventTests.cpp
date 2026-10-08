@@ -334,6 +334,10 @@ void pump()
         // (their domains, ranges, steps and comfort windows).
         replace (targets, "default = \"maxClean\"", "default = \"allStreaming\"");
         erase (targets, "\nmaxExtreme ");
+        // ...and a person's tick (owner, 08.10): [glue] whenTicked back to 0.5, its ticked character out, the
+        // saturation's whenTicked out.
+        replace (engine, "whenTicked = 2.6", "whenTicked = 0.5");
+        for (const std::string_view key : { "\nticked = ", "\nwhenTicked = 6" }) erase (engine, key);
         for (const std::string_view key : { "\nextreme = ", "\nexpectedPassesMaxExtreme = " }) erase (engine, key);
         for (const std::string_view name : { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs", "lookaheadMs", "oversampling" })
             for (const std::string_view suffix : { "Domain", "Range", "Step", "Comfort" })
@@ -568,7 +572,9 @@ void pump()
     // (07.10, v0.20.0), once more (dcabbe73520f0ea7 / 58311773c47f49e5 before it). The default target maxClean, the third
     // max mode and the glue's five and the limiter's three by hand (07.10 and 08.10) move the config's version alone, restated
     // above (41508f599701f864 / 1a81582c5bc4ef89 before them); the scenario names allStreaming and its master is the same.
-    ok (eventsHash (one) == 0xcd8695e50c1f280cull && eventsHash (cancelled) == 0x3a842aeaf3dc4689ull,
+    // A person's tick (08.10: [glue] whenTicked 2.6 and its character, [saturation] whenTicked) moves the config's version
+    // alone, restated above (cd8695e50c1f280c / 3a842aeaf3dc4689 before it).
+    ok (eventsHash (one) == 0x26f65dd0dff72c76ull && eventsHash (cancelled) == 0x0dd125250dcb6791ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
