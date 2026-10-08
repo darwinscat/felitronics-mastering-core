@@ -1327,6 +1327,8 @@ maxClean.ru = "Максимум · чисто"
 maxClean.en = "Maximum · clean"
 maxDense.ru = "Максимум · плотно"
 maxDense.en = "Maximum · dense"
+maxExtreme.ru = "Максимум · экстрим"
+maxExtreme.en = "Maximum · extreme"
 
 [terms.landingLimit]
 unnamed.ru = "одно из ограничений"

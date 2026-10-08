@@ -111,6 +111,7 @@ struct Writer
             text ("loudnessMode.hand = ");
             string (*p.targetEdit.loudnessMode == LoudnessMode::MaxClean ? std::string_view ("maxClean")
                     : *p.targetEdit.loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense")
+                    : *p.targetEdit.loudnessMode == LoudnessMode::MaxExtreme ? std::string_view ("maxExtreme")
                                                                            : std::string_view ("manual"));
             put ('\n');
         }
@@ -250,7 +251,8 @@ struct Writer
         workedLine ("ceilingDbTp", p.targetEdit.tp.value_or (row.tp.toDouble()), p.targetEdit.tp ? "hand" : "target");
         const auto loudnessMode = detail::loudnessModeOf (rules, p);
         workedLine ("loudnessMode", loudnessMode == LoudnessMode::MaxClean ? std::string_view ("maxClean")
-            : loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense") : std::string_view ("manual"),
+            : loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense")
+            : loudnessMode == LoudnessMode::MaxExtreme ? std::string_view ("maxExtreme") : std::string_view ("manual"),
             p.targetEdit.loudnessMode ? "hand" : "target");
 
         text ("\n[delivery]\n");
@@ -522,6 +524,7 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
                 if (name == "manual") out.project.targetEdit.loudnessMode = LoudnessMode::Manual;
                 else if (name == "maxClean") out.project.targetEdit.loudnessMode = LoudnessMode::MaxClean;
                 else if (name == "maxDense") out.project.targetEdit.loudnessMode = LoudnessMode::MaxDense;
+                else if (name == "maxExtreme") out.project.targetEdit.loudnessMode = LoudnessMode::MaxExtreme;
                 else layer.refuse ("hand", unsigned (Rejection::NotOneOf));
             });
         });

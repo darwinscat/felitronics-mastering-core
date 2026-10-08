@@ -174,14 +174,16 @@ std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) no
 {
     const auto master = engine.find ("progress").find ("master");
     const auto key = mode == LoudnessMode::MaxClean ? "expectedPassesMaxClean"
-                   : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense" : "expectedPasses";
+                   : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense"
+                   : mode == LoudnessMode::MaxExtreme ? "expectedPassesMaxExtreme" : "expectedPasses";
     return std::uint32_t (*master.find (key).integer());
 }
 
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
-    return number (engine.find ("landing").find ("max").find (mode == LoudnessMode::MaxClean ? "clean" : "dense").find ("budgetDb"));
+    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense" : "extreme";
+    return number (engine.find ("landing").find ("max").find (name).find ("budgetDb"));
 }
 
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept

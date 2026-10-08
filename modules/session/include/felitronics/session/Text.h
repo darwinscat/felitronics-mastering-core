@@ -452,6 +452,8 @@ enum class Term : std::uint16_t
     FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb, FieldGlueAttackMs, FieldGlueReleaseMs,
     // The limiter's three by hand (08.10) as the fields a refusal names: its third to fifth fields, in Project.h's order.
     FieldLimiterReleaseMs, FieldLimiterLookaheadMs, FieldLimiterOversampling,
+    // The third max mode (07.10, MVP), as a max mode's verdict names it.
+    LoudnessModeMaxExtreme,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };
