@@ -177,7 +177,7 @@ public:
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;
         waterfallOn_ = request.productLanding && request.waterfall();
-        waterfallFrozen_ = waterfallFar_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
+        waterfallFrozen_ = waterfallFar_ = peakStale_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
         wall_ = false; wallSlope_ = std::numeric_limits<double>::quiet_NaN();
         records_ = {};
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
@@ -603,6 +603,25 @@ private:
             }
             // A reading far from the target counts no wish met: the steering waits for a nearer pass before it freezes.
             if (! (valid && waterfallFar_)) waterfallFrozen_ = true;
+        }
+        // THE NEEDLES' PEAK AFTER THE LAST START CUT: a move of the start clipper (its first calibration, a new cut) moves
+        // the peak at the limiter's input by an amount nothing foresees, so the needles' threshold worked out before it
+        // takes more or less than their cut. The pass that froze the waterfall ran with the stages as they stay: its peak,
+        // less its gain, is the one the threshold is worked out from — measured again here, as on the first pass, and
+        // this pass, cut by the old threshold, is never a candidate. One render more, once, after the last such move.
+        if (waterfallOn_ && waterfallFrozen_ && peakStale_ && valid && params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb)
+            && std::isfinite (params_.peakClipPeakDb) && std::isfinite (measurement_.limiterMaxReconstructedPeakDb)
+            && measurement_.limiterMaxReconstructedPeakDb > -180.0)
+        {
+            peakStale_ = false;
+            params_.peakClipPeakDb = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
+            if (budgetOn_) (void) keepsBudget (rec);
+            const double excess = budgetExcess_[(std::size_t) (passes_ - 1)];
+            forgetBeforeSteer();
+            if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
+            aimAfterSteer (valid, excess, 0.0);
+            phase_ = Phase::PassBegin;
+            return StepResult::More;
         }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
         const double err = valid ? std::fabs (level_ - request_.targetLufs)
@@ -1080,10 +1099,10 @@ private:
             // anything — one step lands near — else dB for dB from where it stands.
             const double from = cutNow;
             const double to = std::clamp (cut > 0.05 && from > 0.05 ? from * (want (sCut) / cut) : from + (want (sCut) - cut), 0.0, cutEnd);
-            if (std::fabs (to - from) > 0.1) { (start ? next.startClipCutDb : next.peakClipCutDb) = to; moved = true; }
+            if (std::fabs (to - from) > 0.1) { (start ? next.startClipCutDb : next.peakClipCutDb) = to; moved = true; peakStale_ = peakStale_ || start; }
         }
         if (startProbe && chain_->startClipInputPeakDb() > -180.0)
-        { next.startClipPeakDb = chain_->startClipInputPeakDb(); moved = true; }
+        { next.startClipPeakDb = chain_->startClipInputPeakDb(); moved = true; peakStale_ = true; }
         if (! moved)
         {
             waterfallFar_ = far;
@@ -1358,6 +1377,7 @@ private:
     static constexpr double kWaterfallReadLu = 1.0, kWaterfallToGoLu = 6.0;
     static constexpr double kWaterfallWholeSum = 0.95;
     bool waterfallOn_ = false, waterfallFrozen_ = false;
+    bool peakStale_ = false;      // a start clipper's move since the needles' peak was measured
     bool waterfallFar_ = false;   // the last steering moved nothing on a reading further than kWaterfallReadLu from the target
     int waterfallSteps_ = 0;
     int waterfallFrom_ = 0;

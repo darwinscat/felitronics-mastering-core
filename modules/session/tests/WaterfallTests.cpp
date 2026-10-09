@@ -32,6 +32,13 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 
+// The suites' seam into the session (Session.h befriends it; the library defines none): its master job, as the last
+// master left it.
+struct felitronics::session::detail::Inspector
+{
+    static const MasterJob* masterJob (const Session& s) noexcept { return s.masterJob_.get(); }
+};
+
 namespace
 {
 // A master with no wish, to the bit: a fixture of six seconds (a kick, a click on its attack and a pad that swells, made
@@ -559,6 +566,44 @@ void twoClippers()
 }
 
 //==============================================================================
+// THE NEEDLES' THRESHOLD AFTER THE LAST START CUT: with two clippers ("both"), the limiter's own clipper is set to take
+// [limiter.peakClipper]'s cut off the loudest peak at its input, worked out from that peak as measured. A move of the
+// start clipper's cut moves that peak too, and nothing foresees by how much: the steering measures it again on the pass
+// after its last such move. On maxDense with the page's default shares and on maxClean with 0.2 / 0.3 / 0.2 — both
+// moving the start cut — the delivered render's needles take their cut to 0.01 dB: its peak at the limiter's input less
+// the threshold the clipper was given.
+void needlesAfterStartCut()
+{
+    felitronics::test::group ("the limiter's clipper takes its configured cut after the start clipper's last move");
+    struct Row { std::string_view target; double glue, saturation, cut; };
+    const auto pcm = fixture();
+    for (const Row row : { Row { "maxDense", 0.05, 0.20, 0.05 }, Row { "maxClean", 0.2, 0.3, 0.2 } })
+    {
+        auto made = loaded (pcm, row.target);
+        if (! made || ! editShares (*made, 10, row.glue, row.saturation, row.cut)) { ok (false, "PRECONDITION: a measured session with three shares"); continue; }
+        Session& s = *made;
+        const auto plan = detail::MasterJob::plan (s, command::Master { 90 }, s.project());
+        const double startCut = plan.ready.params.startClipCutDb;
+        // The job is gone once its master is kept: what it held is read on its last step.
+        felitronics::mastering::MasteringChainParams steered {};
+        felitronics::mastering::LoudnessSolution best {};
+        double peakAtZero = std::numeric_limits<double>::quiet_NaN();
+        const bool asked = s.apply (command::Master { 90 }).rejection == Rejection::None;
+        for (unsigned i = 0; asked && i < 4000000 && s.job() != 0; ++i)
+        {
+            (void) s.step (16);
+            if (const auto* job = detail::Inspector::masterJob (s))
+                { steered = job->search.currentParams(); best = job->result(); peakAtZero = job->search.peakClipPeakDb(); }
+        }
+        const bool moved = plan.ready.topology.startClipper && std::isfinite (steered.startClipCutDb) && std::fabs (steered.startClipCutDb - startCut) > 0.1;
+        const double cut = best.measured.limiterMaxReconstructedPeakDb - (peakAtZero + best.preLimiterGainDb) + steered.peakClipCutDb;
+        ok (moved && std::isfinite (cut) && std::fabs (cut - steered.peakClipCutDb) <= 0.01,
+            std::string (row.target) + ": the start cut " + num (startCut) + " → " + num (steered.startClipCutDb)
+                + " dB, the needles took " + num (cut) + " dB of their " + num (steered.peakClipCutDb));
+    }
+}
+
+//==============================================================================
 // MAXIMUM · NUKE: the fourth max mode (enum value 4), its target row maxNuke (−7 LUFS nominal, −1 dBTP, the mode), its
 // limiter budget read from the config (7 dB), and a master planned on the row lands in it.
 void nuke()
@@ -718,9 +763,9 @@ void defaultSharesAsBefore()
     struct Row { std::string_view target; double glue, saturation, cut; std::uint64_t digest; };
     static constexpr Row before[] {
         { "maxClean", 0.02, 0.10, 0.01, 0xde899fc5d14b4cceull },
-        { "maxDense", 0.05, 0.20, 0.05, 0x3984acf02f4efa47ull },
-        { "maxExtreme", 0.15, 0.30, 0.05, 0x08a781489e2aa025ull },
-        { "maxNuke", 0.10, 0.40, 0.10, 0xdb1d37c25d452f7dull },
+        { "maxDense", 0.05, 0.20, 0.05, 0x92746a94b60fe6d1ull },
+        { "maxExtreme", 0.15, 0.30, 0.05, 0x3e99bfba8cecc362ull },
+        { "maxNuke", 0.10, 0.40, 0.10, 0xb433bd4d97bccae5ull },
     };
     const auto pcm = fixture();
     for (const auto& row : before)
@@ -753,6 +798,7 @@ int main()
     convergence();
     cleaner();
     twoClippers();
+    needlesAfterStartCut();
     nuke();
     snapshotAtTheCommand();
     queueAtTheFirstAnalysis();
