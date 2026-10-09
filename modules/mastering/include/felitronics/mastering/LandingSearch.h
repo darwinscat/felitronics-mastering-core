@@ -177,7 +177,7 @@ public:
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;
         waterfallOn_ = request.productLanding && request.waterfall();
-        waterfallFrozen_ = waterfallFar_ = peakStale_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
+        waterfallFrozen_ = waterfallFar_ = peakStale_ = glueUnderStep_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
         wall_ = false; wallSlope_ = std::numeric_limits<double>::quiet_NaN();
         records_ = {};
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
@@ -458,6 +458,9 @@ public:
     // stages, and the parameters its last pass ran with — the steered mixes and cut every candidate shares.
     bool waterfallOn() const noexcept { return waterfallOn_; }
     int waterfallSteps() const noexcept { return waterfallSteps_; }
+    // The last steering found the glue off its want and the mix that meets it within kWaterfallMixStep of the one in force:
+    // the glue stayed where it stood — not for want of moves.
+    bool glueUnderStep() const noexcept { return glueUnderStep_; }
     const MasteringChainParams& currentParams() const noexcept { return params_; }
     int startedPasses() const noexcept { return passes_; }
     int startedRenders() const noexcept { return passes_; }
@@ -875,7 +878,7 @@ private:
     bool steerWaterfall (const SolvePassRecord& rec, bool probe, double& shift) noexcept
     {
         shift = 0.0;
-        waterfallFar_ = false;
+        waterfallFar_ = glueUnderStep_ = false;
         if (waterfallSteps_ >= kWaterfallSteps || passes_ > request_.maxPasses - 4) return false;
         const auto& m = measurement_;
         // THE START CLIPPER (MasteringChainConfig::startClipper) takes the cut zone where it is in the chain; the
@@ -1022,8 +1025,9 @@ private:
         {
             const double mix = mixFor (glueFull, want (sGlue));
             // The glue's loud places come down by what it takes more: the next pass's gain rises by as much.
-            if (std::fabs (mix - params_.compressorMix) > 0.02)
+            if (std::fabs (mix - params_.compressorMix) > kWaterfallMixStep)
                 { next.compressorMix = mix; moved = true; shift -= blendTakenDb (glueFull, mix) - glue; peakLift -= blendTakenDb (glueFull, mix) - glue; }
+            else glueUnderStep_ = true;
         }
         // The foresight's own error, from the last move: the share of the change it foresaw that came (a secant on
         // the curve) — the next aim is set so that share of it lands on the want.
@@ -1069,7 +1073,7 @@ private:
                     drive = 0.5 * (lo + hi);
                 }
             }
-            const bool mixMoves = std::fabs (mix - satMix) > 0.02, driveMoves = drive > drive0 + 0.1;
+            const bool mixMoves = std::fabs (mix - satMix) > kWaterfallMixStep, driveMoves = drive > drive0 + 0.1;
             if ((mixMoves || driveMoves) && foresee (mixMoves ? mix : satMix, driveMoves ? drive : drive0, take, lift))
             {
                 if (mixMoves) next.clipper.mix = float (mix);
@@ -1081,7 +1085,7 @@ private:
         else if (off (sSaturation, saturation) && ! params_.bypassClipper)
         {
             const double mix = std::isfinite (satFull) ? mixFor (satFull, want (sSaturation)) : 1.0;
-            if (std::fabs (mix - satMix) > 0.02) { next.clipper.mix = float (mix); moved = true; }
+            if (std::fabs (mix - satMix) > kWaterfallMixStep) { next.clipper.mix = float (mix); moved = true; }
             // THE DRIVE (owner, 08.10): the mix at 1 and even the full path short of the want, the drive rises from where
             // it stands — the full path's take scaled near in proportion to it — up to the request's ceiling.
             const double drive = drive0;
@@ -1376,9 +1380,11 @@ private:
     static constexpr double kWaterfallDriveStepDb = 6.0;
     static constexpr double kWaterfallReadLu = 1.0, kWaterfallToGoLu = 6.0;
     static constexpr double kWaterfallWholeSum = 0.95;
+    static constexpr double kWaterfallMixStep = 0.02;   // a mix moves only by more than this
     bool waterfallOn_ = false, waterfallFrozen_ = false;
     bool peakStale_ = false;      // a start clipper's move since the needles' peak was measured
     bool waterfallFar_ = false;   // the last steering moved nothing on a reading further than kWaterfallReadLu from the target
+    bool glueUnderStep_ = false;  // the last steering held the glue: its move within kWaterfallMixStep (glueUnderStep())
     int waterfallSteps_ = 0;
     int waterfallFrom_ = 0;
     bool satArmed_ = false;               // the saturation moved last step: its take then and the take foreseen
