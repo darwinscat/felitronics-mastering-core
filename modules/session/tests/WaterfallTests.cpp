@@ -3,8 +3,9 @@
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
 // 0 % out of the chain, the saturation's drive ceiling, a glue held by its step, the steering's convergence, cleaner not
-// louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command — and a master with no wish, to the bit, as the
-// candidate before the waterfall made it (commit 808c058) on every target.
+// louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
+// take — and a master with no wish, to the bit, as the candidate before the waterfall made it (commit 808c058) on every
+// target.
 
 #include "MasterJob.h"
 #include "Devices.h"
@@ -729,6 +730,44 @@ void queueAtTheFirstAnalysis()
 }
 
 //==============================================================================
+// A QUEUE WAITING FOR THE TAKE IS NOT WORK: a master delivered and a second one queued behind it wait for the first one's
+// PCM to be taken or released, which no step does — so `step` says Done (the pump contract: More while a step has work,
+// Done when none does), with no unit spent and nothing published, however often it is called. The release makes the
+// queued master ready: the next step starts it, and it is delivered.
+void queueWaitingForTheTake()
+{
+    felitronics::test::group ("a queue waiting only for the take: step says Done; the release lets the next step start it");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "spotify");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    const auto first = s.apply (command::Master { 3 });
+    const auto second = s.apply (command::Master { 4 });
+    for (unsigned i = 0; i < 4000000 && s.pendingMaster().master == 0; ++i) (void) s.step (16);
+    Stepped st {};
+    for (unsigned i = 0; i < 4000000; ++i) if ((st = s.step (16)).units == 0) break;
+    ok (first.rejection == Rejection::None && second.rejection == Rejection::None && s.pendingMaster().job == first.job
+            && queuedRows (s) == 1 && s.job() == 0,
+        "PRECONDITION: the first master delivered, the second queued behind it, no job running");
+    bool quiet = true;
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        const std::uint64_t revision = s.revision();
+        st = s.step (16);
+        quiet = quiet && st.state == StepState::Done && st.units == 0 && s.events().empty() && s.revision() == revision;
+    }
+    ok (quiet, std::string ("waiting for the take, step says ") + (st.state == StepState::Done ? "Done" : "More")
+                   + " with " + std::to_string (st.units) + " units, " + std::to_string (s.events().size()) + " events");
+    const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
+    st = s.step (16);
+    const bool started = st.state == StepState::More && st.units > 0;
+    for (unsigned i = 0; i < 4000000 && s.pendingMaster().master == 0; ++i) (void) s.step (16);
+    ok (released && started && s.pendingMaster().job == second.job && queuedRows (s) == 0,
+        std::string ("released: the next step ") + (started ? "starts the queued master" : "does not start it")
+            + ", which is delivered");
+}
+
+//==============================================================================
 // A MASTER WITH NO WISH IS THE CANDIDATE BEFORE THE WATERFALL, TO THE BIT: the digests below are commit 808c058's — the
 // same noWishDigest, built from that commit's tree — on every target it had (maxNuke is new).
 void noWishAsBefore()
@@ -830,6 +869,7 @@ int main()
     nuke();
     snapshotAtTheCommand();
     queueAtTheFirstAnalysis();
+    queueWaitingForTheTake();
     noWishAsBefore();
     defaultSharesAsBefore();
     return felitronics::test::report();
