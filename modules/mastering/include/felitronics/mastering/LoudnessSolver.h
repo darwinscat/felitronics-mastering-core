@@ -2393,7 +2393,8 @@ private:
     {
         const MasteringChainResolved r = p.chain->resolved();
         const long long compFrom = r.compressorTapOffset, compTo = compFrom + p.frames;
-        const long long satFrom = (long long) r.compressorLookahead + r.clipperLatency, satTo = satFrom + p.frames;
+        const long long satFrom = (long long) r.compressorTapOffset + r.compressorLookahead + r.clipperLatency;
+        const long long satTo = satFrom + p.frames;
         const long long limDetectorFrom = r.limiterTapOffset, limDetectorTo = limDetectorFrom + p.frames;
         const long long limAppliedFrom = limDetectorFrom + r.limiterLookahead;
         const long long limAppliedTo = limAppliedFrom + p.frames;
@@ -2903,8 +2904,9 @@ private:
         const MasteringChainResolved r = chain.resolved();
         const long long compFrom = r.compressorTapOffset;
         const long long compTo   = compFrom + frames;
-        // The soft clipper's output time, as MasteringChainTaps states it for `clipperShaveDb` (and `preLimiter`).
-        const long long satFrom  = (long long) r.compressorLookahead + r.clipperLatency;
+        // The soft clipper's output time, as MasteringChainTaps states it for `clipperShaveDb` (and `preLimiter`): the
+        // start clipper's latency (`compressorTapOffset`) is in front of it as well.
+        const long long satFrom  = (long long) r.compressorTapOffset + r.compressorLookahead + r.clipperLatency;
         const long long satTo    = satFrom + frames;
         const long long limDetectorFrom = r.limiterTapOffset;
         const long long limDetectorTo = limDetectorFrom + frames;
