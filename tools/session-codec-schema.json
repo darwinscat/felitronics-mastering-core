@@ -59,7 +59,8 @@
       "Rest",
       "NoWish",
       "DriveAtCeiling",
-      "MixStep"
+      "MixStep",
+      "TotalMoved"
     ],
     "SaturationType": [
       "Tanh",
