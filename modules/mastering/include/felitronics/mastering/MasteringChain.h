@@ -160,9 +160,9 @@ struct MasteringChainParams
 // than hidden, because a statistic cropped to the wrong window is the defect this exists to prevent:
 //
 //   * `compressorGrDb[j]`  — the signed gain reduction the compressor's detector computed for CHAIN
-//                            INPUT SAMPLE j, i.e. `resolved().compressorTapOffset`, which is 0. (It is
-//                            applied to the lookahead-delayed copy of that sample, which is the
-//                            compressor's own contract, not this one's.) It is the gain reduction of
+//                            INPUT SAMPLE j - `resolved().compressorTapOffset`, the start clipper's latency (0
+//                            without that stage). (It is applied to the lookahead-delayed copy of that sample,
+//                            which is the compressor's own contract, not this one's.) It is the gain reduction of
 //                            the COMPRESSED path and does not move with `compressorMix`: at mix 0 it
 //                            still reads what the compressor did to a signal nobody hears. That is a
 //                            statement about the detector, and a limit on it is a limit on how hard
@@ -170,10 +170,11 @@ struct MasteringChainParams
 //   * `preLimiter[c][j]`   — the sample at the pre-limiter node, taken BEFORE `preLimiterGainDb` is
 //                            applied, so it does NOT depend on that gain: everything upstream of the
 //                            gain node is a constant of a loudness search. Its frame j is chain input
-//                            sample `j - (compressorLookahead + clipperLatency)`, NOT j — the compressor
-//                            delays the programme by its lookahead and the clipper by its own latency,
-//                            and both are still in front of this point. A bypassed compressor still
-//                            delays (its bypass is warm, through its own curve), so the offset does not
+//                            sample `j - (compressorTapOffset + compressorLookahead + clipperLatency)`, NOT j —
+//                            the start clipper delays the programme by its latency, the compressor by its
+//                            lookahead and the clipper by its own, and all three are in front of this point.
+//                            A bypassed compressor still delays (its bypass is warm, through its own curve),
+//                            and so does a bypassed start clipper (an exact delay), so the offset does not
 //                            depend on the bypass flags — only on which stages are PRESENT.
 //   * `limiterGrDb`,
 //     `limiterPeakLin`,
@@ -188,7 +189,8 @@ struct MasteringChainParams
 //                            `clipperQuietGain()`, against the peak of its output — the pair `ClipperPeaks` counts,
 //                            floored at 0. Every frame of a quantum carries that quantum's value. 0 where nothing
 //                            was measured: no stage, a bypassed or fading one, an input peak under 2^-12 (-72 dBFS).
-//                            Its frame j is chain input sample `j - (compressorLookahead + clipperLatency)` of
+//                            Its frame j is chain input sample
+//                            `j - (compressorTapOffset + compressorLookahead + clipperLatency)` of
 //                            `resolved()` — the clipper's output time, the same as `preLimiter`'s. (No field of its
 //                            own there: `MasteringChainResolved`'s layout is frozen by the `fc_master` C ABI.)
 //
