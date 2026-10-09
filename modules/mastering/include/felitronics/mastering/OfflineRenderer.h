@@ -253,7 +253,7 @@ private:
 // forwards numbers the core computed, and a sum it assembled itself would be a second description of
 // this module's storage, drifting the first time a stage grows a buffer.
 //
-// It covers constructing the chain (its three dry aligners and Debug proxies), preparing it, and
+// It covers constructing the chain (its four dry aligners and Debug proxies), preparing it, and
 // preparing the renderer at the block the facade chose. `createInstanceBytes` adds the solver's and
 // converter's construction. The facade's OWN object — its instance record — is its `sizeof` and is
 // published separately, because the page adds what applies rather than being handed one number it

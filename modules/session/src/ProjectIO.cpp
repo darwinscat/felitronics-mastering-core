@@ -111,6 +111,8 @@ struct Writer
             text ("loudnessMode.hand = ");
             string (*p.targetEdit.loudnessMode == LoudnessMode::MaxClean ? std::string_view ("maxClean")
                     : *p.targetEdit.loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense")
+                    : *p.targetEdit.loudnessMode == LoudnessMode::MaxExtreme ? std::string_view ("maxExtreme")
+                    : *p.targetEdit.loudnessMode == LoudnessMode::MaxNuke ? std::string_view ("maxNuke")
                                                                            : std::string_view ("manual"));
             put ('\n');
         }
@@ -250,7 +252,9 @@ struct Writer
         workedLine ("ceilingDbTp", p.targetEdit.tp.value_or (row.tp.toDouble()), p.targetEdit.tp ? "hand" : "target");
         const auto loudnessMode = detail::loudnessModeOf (rules, p);
         workedLine ("loudnessMode", loudnessMode == LoudnessMode::MaxClean ? std::string_view ("maxClean")
-            : loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense") : std::string_view ("manual"),
+            : loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense")
+            : loudnessMode == LoudnessMode::MaxExtreme ? std::string_view ("maxExtreme")
+            : loudnessMode == LoudnessMode::MaxNuke ? std::string_view ("maxNuke") : std::string_view ("manual"),
             p.targetEdit.loudnessMode ? "hand" : "target");
 
         text ("\n[delivery]\n");
@@ -289,6 +293,34 @@ struct Writer
                 if (hand) origin = "hand";
                 else if (isOn && detail::tickFrom (rules, layers) == TickFrom::Touched) origin = "hand";
                 else if (! detail::same (double (machine), double (defaultValue))) origin = "machine";
+                // The glue's five as they applied: the numbers the render gave its compressor — a field by hand at its
+                // value, every other at the law at the amount as it sounded — not the ones placed with the machine's own
+                // amount. A glue out of the chain applied none, and its five stay as the project holds them.
+                if (device == Device::Glue && chain && rendered.topology.compressor && ! rendered.params.bypassCompressor)
+                {
+                    const auto& c = rendered.params.compressor;
+                    const auto name = Of::fields[field];
+                    const double* applied = name == "thresholdDb" ? &c.thresholdDb : name == "ratio" ? &c.ratio
+                        : name == "kneeDb" ? &c.kneeDb : name == "attackMs" ? &c.attackMs : name == "releaseMs" ? &c.releaseMs : nullptr;
+                    if (applied)
+                    {
+                        workedLine (name, *applied, hand || master.recipe.readyVersion == 1 ? std::string_view ("hand")
+                            : ! detail::same (*applied, double (defaultValue)) ? std::string_view ("machine") : std::string_view ("default"));
+                        return;
+                    }
+                }
+                // The waterfall: the mixes and the cut as the landing steered them, the machine's.
+                if (chain && master.report && master.report->waterfall)
+                {
+                    const auto name = Of::fields[field];
+                    const auto& v = rendered.params;
+                    if (device == Device::Glue && name == "mix") { workedLine (name, v.compressorMix, "machine"); return; }
+                    if (device == Device::Saturation && name == "mix") { workedLine (name, double (v.clipper.mix), "machine"); return; }
+                    if (device == Device::Saturation && name == "drive" && master.report->waterfall->saturation.drive)
+                    { workedLine (name, *master.report->waterfall->saturation.drive, "machine"); return; }
+                    if (device == Device::Limiter && name == "needlesDb" && std::isfinite (v.peakClipCutDb))
+                    { workedLine (name, v.peakClipCutDb, "machine"); return; }
+                }
                 if (isOn && chain)
                 {
                     bool active = truthOf (sounded);
@@ -312,6 +344,35 @@ struct Writer
                 else workedLine (Of::fields[field], sounded, origin);
             }, settings, layers.machine, layers.hand, def);
         });
+        // THE WATERFALL: per zone the share asked, the share reached and the dB taken; the limiter's asked is the rest.
+        if (chain && master.report && master.report->waterfall)
+        {
+            const auto& w = *master.report->waterfall;
+            text ("\n[waterfall]\n");
+            const auto zone = [&] (std::string_view name, const MasterWaterfallZone& z)
+            {
+                const auto out = [&] (std::string_view what, const auto& n, std::string_view origin)
+                { text (name); text (what); text (" = "); value (n); text (" # "); text (origin); put ('\n'); };
+                if (z.asked) out ("Asked", *z.asked, "hand");
+                if (z.reached) out ("Reached", *z.reached, "machine");
+                if (z.db) out ("Db", *z.db, "machine");
+                if (z.setting) out ("Setting", *z.setting, "machine");
+                constexpr std::string_view stops[] = { "reached", "mixAtOne", "mixAtZero", "cutAtEnd", "cutAtZero", "comfortRed",
+                                                       "notSounding", "passes", "rest", "noWish", "driveAtCeiling" };
+                static_assert (std::size (stops) == detail::enumLast<WaterfallStop>() + 1u, "a name for every WaterfallStop");
+                out ("Stop", stops[std::size_t (z.stop)], "machine");
+            };
+            zone ("cut", w.cut);
+            zone ("glue", w.glue);
+            zone ("saturation", w.saturation);
+            zone ("limiter", w.limiter);
+            if (w.regrownDb) workedLine ("regrownDb", *w.regrownDb, "machine");
+            if (w.totalDb) workedLine ("totalDb", *w.totalDb, "machine");
+            workedLine ("extraPasses", w.extraPasses, "machine");
+            // Cleaner, not louder: the loudness the master without the wishes reached, and its limiter's take there.
+            if (w.aloneLufs) workedLine ("aloneLufs", *w.aloneLufs, "machine");
+            if (w.limiterAloneDb) workedLine ("limiterAloneDb", *w.limiterAloneDb, "machine");
+        }
         if (chain) renderState (rendered);
     }
 };
@@ -359,7 +420,8 @@ template <class T> bool field (toml::Reader& in, std::string_view key, const Rul
     {
         if (! in.optional (key, out)) return false;
         if constexpr (std::is_same_v<T, std::int32_t>)
-            if (! rules.slope (out)) in.refuse (key, unsigned (Rejection::NotOneOf));
+            if (! (rule.kind == detail::FieldRule::Kind::Oversampling ? rules.oversampling (out) : rules.slope (out)))
+                in.refuse (key, unsigned (Rejection::NotOneOf));
     }
     return true;
 }
@@ -521,6 +583,8 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
                 if (name == "manual") out.project.targetEdit.loudnessMode = LoudnessMode::Manual;
                 else if (name == "maxClean") out.project.targetEdit.loudnessMode = LoudnessMode::MaxClean;
                 else if (name == "maxDense") out.project.targetEdit.loudnessMode = LoudnessMode::MaxDense;
+                else if (name == "maxExtreme") out.project.targetEdit.loudnessMode = LoudnessMode::MaxExtreme;
+                else if (name == "maxNuke") out.project.targetEdit.loudnessMode = LoudnessMode::MaxNuke;
                 else layer.refuse ("hand", unsigned (Rejection::NotOneOf));
             });
         });
@@ -585,13 +649,17 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         fail (Rejection::PlanPending, t.find ("name")->position);
         return out;
     }
-    eachDevice (out.project.devices, [&] (Device device, const auto& layers)
+    eachDevice (out.project.devices, [&] (Device device, auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
         const auto* section = root.find (Of::name);
         const auto* table = section ? std::get_if<toml::Table> (&section->data) : nullptr;
-        Of::each (rules, [&] (std::uint8_t i, const FieldRule&, const auto& machine, const auto& hand, const auto& current)
+        Of::each (rules, [&] (std::uint8_t i, const FieldRule&, auto& machine, const auto& hand, const auto& current)
         {
+            // The glue's five follow the amount by the law and are no decision: a machine value a file wrote for them (an
+            // earlier build's numbers of its own input) gives way to the machine's for this source and is no difference.
+            if constexpr (std::is_same_v<std::remove_cvref_t<decltype (layers.machine)>, GlueFields<Value>>)
+                if (i >= 3) machine = current;
             const auto at = [&] (std::string_view author)
             {
                 const auto* v = table ? table->find (Of::fields[i]) : nullptr;

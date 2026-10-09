@@ -106,7 +106,22 @@ constexpr Golden kGolden[] = {
     // 294f80d8221bb306; updated in place, as above.
     // ...and the two diodes by hand (owner, 07.10): [saturation] bias 0.2 and dcBlockHz 10, written for asym alone — no
     // existing master moves (every other type keeps bias 0 and no blocker); it was a38dce3eb12a1f77; updated in place, as above.
-    { "2026-10", 0x06ea4bbff433f2e6ull },
+    // ...and the glue's five and the limiter's three by hand with their domains and comfort windows, the third max mode
+    // (a target row with its high-pass floor at the machine's top, 50 Hz, its 3 dB budget, its expected passes) and maxClean
+    // the target a new session starts on (owner, 07.10 and 08.10): numbers added, none of an existing target's changed —
+    // measured, every one of the 30 targets' untouched master of Cold Gaze of Eternity and of Cat in Space is byte for byte
+    // v0.20.0's (PCM and WAV, native), so a v0.20.0 project keeps its sound and its import; it was 06ea4bbff433f2e6; updated
+    // in place, as above.
+    // ...and a person's tick (owner, 08.10): [glue] whenTicked 2.6 with its ticked character (ratio 2, knee 6 dB, attack
+    // 30 ms, release 300 ms) and [saturation] whenTicked 6 — a master a person ticked a glue or a saturation on for sounds
+    // otherwise; no untouched master moves (a tick is a person's: no target's untouched master has one); it was
+    // 3299e8a01bc682c9; updated in place, as above.
+    // ...and the waterfall and the fourth max mode (09.10): [saturation] steerDriveMaxDb 10 (the drive the steering may
+    // raise), [limiter.peakClipper] place both (the start clipper beside the limiter's), a max mode's cleaner (true when
+    // absent, written by none) and Maximum · nuke (a target row appended, its 7 dB budget, its expected passes) — numbers
+    // added, none of an existing target's changed: each moves a master only where a person asks a share or picks nuke,
+    // so no untouched master moves (the WAV contract's recording holds); it was 2b0de0cc2cc8ac7b; updated in place, as above.
+    { "2026-10", 0xbe07aaa73e1c26bfull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -166,6 +181,10 @@ constexpr Row kRows[] = {
     // the max modes as targets (owner, 04.10, v0.15.0): allStreaming's medium; lufs is where the manual mode starts
     { "maxClean",      S, -13,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxClean },
     { "maxDense",      S, -11,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxDense },
+    // the third (owner, 07.10): as loud as a limiter budget of 3 dB allows, the high-pass from 50 Hz (08.10), mono bass to 150 Hz
+    { "maxExtreme",    S, -9,   -1,   150,  50,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxExtreme },
+    // the fourth: extreme's row with a limiter budget of 5 dB; the manual mode starts at −7
+    { "maxNuke",       S, -7,   -1,   150,  50,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxNuke },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -207,7 +226,7 @@ std::vector<std::string> departures (const config::Config& c)
                                       : x.album.has_value() && same (x.album->lufs, r.albumLufs) && x.album->desktopOnly,
               at + ".album");
     }
-    need (t.defaultTarget == "allStreaming", "a session starts on allStreaming");
+    need (t.defaultTarget == "maxClean", "a session starts on Maximum · clean (owner, 07.10)");
     need (t.main == std::vector<std::string> { "allStreaming", "lp", "cdDynamic", "cd", "bandcamp", "club" }, "the main targets");
 
     // THE ENGINE'S DECIDED NUMBERS.
@@ -281,7 +300,11 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.0),
           "the glue knob runs 0…3 dB, stepless (owner, 07.10)");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
-    need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
+    need (same (e.glue.whenTickedUpToDb, 2.6), "ticked on untouched, the glue is up to 2.6 dB (owner, 08.10)");
+    need (same (e.glue.ticked.ratio, 2.0) && same (e.glue.ticked.kneeDb, 6.0) && same (e.glue.ticked.attackMs, 30.0)
+          && same (e.glue.ticked.releaseMs, 300.0),
+          "a tick on an untouched glue gives it ratio 2, knee 6 dB, attack 30 ms and release 300 ms — glue, not a compressor (owner, 08.10)");
+    need (same (e.saturation.whenTickedDb, 6.0), "ticked on untouched, the saturation drives 6 dB (owner, 08.10)");
     need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.0) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
           && same (e.glue.mixDomain.min, 0.0) && same (e.glue.mixDomain.max, 1.0),
           "the glue in parallel by default: mix 40 %, a knob 0…100 %, stepless (owner, 05.10 and 07.10)");
@@ -436,7 +459,7 @@ void aDepartureIsNamed()
         { false, "middleLufs = [-10, -8]", "middleLufs = [-11, -8]",
           "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
-        { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
+        { true, "lufs = -7, tp = -1, monoBass = 120", "lufs = -8, tp = -1, monoBass = 120", "targets.youtubeMusic.lufs" },
         { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
           "targets.club.hpfFloor" },
         { false, "note = { soundingAtLeastS = 3 }", "note = { soundingAtLeastS = 2 }",
@@ -477,7 +500,10 @@ void aDepartureIsNamed()
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
-        { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "whenTicked = 2.6", "whenTicked = 2.7", "ticked on untouched, the glue is up to 2.6 dB (owner, 08.10)" },
+        { false, "ticked = { ratio = 2,", "ticked = { ratio = 2.5,",
+          "a tick on an untouched glue gives it ratio 2, knee 6 dB, attack 30 ms and release 300 ms — glue, not a compressor (owner, 08.10)" },
+        { false, "whenTicked = 6", "whenTicked = 5", "ticked on untouched, the saturation drives 6 dB (owner, 08.10)" },
         { false, "aboveLufs = -12", "aboveLufs = -13",
           "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
         { false, "peakAboveDbTp = -1.5", "peakAboveDbTp = -2",

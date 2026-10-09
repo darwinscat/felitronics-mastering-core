@@ -86,7 +86,9 @@ constexpr Name<TargetClass> kTargetClasses[] = { { "specification", TargetClass:
                                                   { "streaming", TargetClass::Streaming },
                                                   { "other", TargetClass::Other } };
 constexpr Name<LoudnessMode> kLoudnessModes[] = { { "manual", LoudnessMode::Manual }, { "maxClean", LoudnessMode::MaxClean },
-                                                  { "maxDense", LoudnessMode::MaxDense } };
+                                                  { "maxDense", LoudnessMode::MaxDense },
+                                                  { "maxExtreme", LoudnessMode::MaxExtreme },
+                                                  { "maxNuke", LoudnessMode::MaxNuke } };
 constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
                                               { "noNormalisation", TargetNote::NoNormalisation } };
 constexpr Name<Detector> kDetectors[] = { { "peak", Detector::Peak }, { "rms", Detector::Rms } };
@@ -97,6 +99,9 @@ constexpr Name<CompressorMode> kModes[] = { { "downCompress", CompressorMode::Do
 constexpr Name<ThresholdFrom> kThresholdFrom[] = { { "shortTermP95", ThresholdFrom::ShortTermP95 } };
 constexpr Name<ConfidenceLabel> kConfidence[] = { { "low", ConfidenceLabel::Low }, { "medium", ConfidenceLabel::Medium },
                                                   { "high", ConfidenceLabel::High } };
+// [limiter.peakClipper] place: checked here, read by the master's plan alone (MasterJob::plan).
+enum class Place : std::uint8_t { Start, Limiter, Both };
+constexpr Name<Place> kPlaces[] = { { "start", Place::Start }, { "limiter", Place::Limiter }, { "both", Place::Both } };
 constexpr Name<Law> kLaws[] = { { "byDepth", Law::ByDepth }, { "linear", Law::Linear }, { "geometric", Law::Geometric } };
 constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh }, { "atan", SaturationShape::Atan },
                                               { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym },
@@ -203,6 +208,18 @@ struct Doc
         if (v.size() != 2) { refuse (in, key, Refusal::NotAPair); return false; }
         if (! (v[0] < v[1])) { refuse (in, key, Refusal::OutOfOrder); return false; }
         out = { v[0], v[1] };
+        return true;
+    }
+
+    // [min, max] of integers within `domain`, min < max: a bound written with a decimal point is the wrong type, at its
+    // line and column, for a reader that takes the two as integers.
+    bool intPair (Reader& in, std::string_view key, Span& out, const I& domain)
+    {
+        std::vector<std::int32_t> v;
+        if (! in.required (key, v, domain)) return false;
+        if (v.size() != 2) { refuse (in, key, Refusal::NotAPair); return false; }
+        if (! (v[0] < v[1])) { refuse (in, key, Refusal::OutOfOrder); return false; }
+        out = { double (v[0]), double (v[1]) };
         return true;
     }
 
@@ -342,12 +359,19 @@ void readLanding (Doc& d, Reader& in, Landing& o)
             {
                 m.required ("budgetDb", budget, R { 0.25, 60.0 });
                 d.onQuarterDb (m, "budgetDb");
+                // `cleaner`: true when absent, written only when false; the master's plan reads it (detail::maxCleaner)
+                bool cleaner = false;
+                if (m.optional ("cleaner", cleaner) && cleaner) d.refuse (m, "cleaner", Refusal::WrittenDefault);
             });
         };
         mode ("clean", o.cleanBudgetDb);
         mode ("dense", o.denseBudgetDb);
         // the denser mode takes no less of the limiter
         d.notAbove (t, true, o.cleanBudgetDb, o.denseBudgetDb, "dense");
+        mode ("extreme", o.extremeBudgetDb);
+        d.notAbove (t, true, o.denseBudgetDb, o.extremeBudgetDb, "extreme");
+        mode ("nuke", o.nukeBudgetDb);
+        d.notAbove (t, true, o.extremeBudgetDb, o.nukeBudgetDb, "nuke");
     });
 }
 
@@ -359,6 +383,8 @@ R hpfDomain() { return { std::numeric_limits<double>::min(), 3999.999999999 }; }
 
 void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
 {
+    Place place = Place::Both;
+    d.name (in, "place", place, kPlaces);
     const R domain = readDomain (d, in, "manualDomain", o.manualDomain, R { 0.0, 6.0 });
     in.required ("littleNeedDb", o.littleNeedDb, R { 0.0, 24.0 });
     // The classes: short needles are shorter, carry less bass and come with more PLR than long ones; the short class's
@@ -391,6 +417,8 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     d.below (in, between && sh, o.betweenCutDb, o.shortCutDb, "shortCutDb");
 }
 
+void readComfort (Doc& d, Reader& in, std::string_view key, Comfort& c, const R& domain);
+
 void readLimiter (Doc& d, Reader& in, Limiter& o)
 {
     in.required ("ceilingMarginDb", o.ceilingMarginDb, R { 0.0, 3.0 });
@@ -400,6 +428,22 @@ void readLimiter (Doc& d, Reader& in, Limiter& o)
     const bool slow = in.required ("slowReleaseMs", o.slowReleaseMs, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
     d.notAbove (in, fast && slow, o.releaseMs, o.slowReleaseMs, "slowReleaseMs");   // the slow envelope is not the faster
     in.table ("peakClipper", Need::Required, [&] (Reader& t) { readPeakClipper (d, t, o.peakClipper); });
+    // The three by hand (08.10): the release and the lookahead, each its domain inside what felitronics-core's limiter
+    // takes (a release of at least 8 samples at the lowest source rate, a lookahead of at most 20 ms), its travel inside
+    // the domain, its step, its field; the oversampling's domain inside the limiter's factors, 2 to 16, two integers — the
+    // session reads them as integers (Rules::oversampling).
+    const auto hand = [&] (std::string_view domainKey, std::string_view rangeKey, std::string_view stepKey,
+                           std::string_view comfortKey, Limiter::HandKnob& k, const R& limits)
+    {
+        const R domain = readDomain (d, in, domainKey, k.domain, limits);
+        d.pair (in, rangeKey, k.range, domain);
+        in.required (stepKey, k.step, R { 0.0, 1000.0 });   // 0: no step
+        readComfort (d, in, comfortKey, k.comfort, domain);
+    };
+    hand ("releaseMsDomain", "releaseMsRange", "releaseMsStep", "releaseMsComfort", o.releaseKnob,
+          R { 8000.0 / kSourceRates[0], 5000.0 });
+    hand ("lookaheadMsDomain", "lookaheadMsRange", "lookaheadMsStep", "lookaheadMsComfort", o.lookaheadKnob, R { 0.0, 20.0 });
+    d.intPair (in, "oversamplingDomain", o.oversamplingDomain, I { 2, 16 });
 }
 
 // The low end (analysis::LowEnd): the main run and the infra-low run — the same geometry, split at infraLowCrossoverHz —
@@ -626,11 +670,34 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
         in.required ("mix", o.mix, travel ? R { o.mixRange.min, o.mixRange.max } : share);
         readComfort (d, in, "mixComfort", o.mixComfort, share);
     }
+    // The five by hand: each its domain inside the schema's limits, its travel inside the domain, its step, its field.
+    const auto hand = [&] (std::string_view domainKey, std::string_view rangeKey, std::string_view stepKey,
+                           std::string_view comfortKey, Glue::HandKnob& k, const R& limits)
+    {
+        const R domain = readDomain (d, in, domainKey, k.domain, limits);
+        d.pair (in, rangeKey, k.range, domain);
+        in.required (stepKey, k.step, R { 0.0, 1000.0 });   // 0: no step
+        readComfort (d, in, comfortKey, k.comfort, domain);
+    };
+    hand ("thresholdDbDomain", "thresholdDbRange", "thresholdDbStep", "thresholdDbComfort", o.thresholdDb, R { -60.0, 0.0 });
+    hand ("ratioDomain", "ratioRange", "ratioStep", "ratioComfort", o.ratioKnob, R { 1.0, 20.0 });
+    hand ("kneeDbDomain", "kneeDbRange", "kneeDbStep", "kneeDbComfort", o.kneeDb, R { 0.0, 24.0 });
+    hand ("attackMsDomain", "attackMsRange", "attackMsStep", "attackMsComfort", o.attackMs, R { 0.01, 1000.0 });
+    hand ("releaseMsDomain", "releaseMsRange", "releaseMsStep", "releaseMsComfort", o.releaseMs, R { 1.0, 5000.0 });
     // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
     // and a project's take the whole domain.
     const R machine = hi ? R { knob.min, o.knobMaxDb } : knob;
     in.required ("default", o.defaultUpToDb, machine);
     in.required ("whenTicked", o.whenTickedUpToDb, machine);
+    // The tick's character (08.10): each number inside its field's domain, which a person's value also keeps to.
+    in.table ("ticked", Need::Required, [&] (Reader& t)
+    {
+        const auto within = [] (const Span& s) { return R { s.min, s.max }; };
+        t.required ("ratio", o.ticked.ratio, within (o.ratioKnob.domain));
+        t.required ("kneeDb", o.ticked.kneeDb, within (o.kneeDb.domain));
+        t.required ("attackMs", o.ticked.attackMs, within (o.attackMs.domain));
+        t.required ("releaseMs", o.ticked.releaseMs, within (o.releaseMs.domain));
+    });
     in.table ("byTarget", Need::Required, [&] (Reader& t)
     {
         for (const auto& e : t.data().entries())
@@ -672,6 +739,9 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     readComfort (d, in, "driveComfort", o.driveComfort, drive);
     d.pair (in, "driveRange", o.driveRange, drive);
     in.required ("driveDb", o.driveDb, drive);
+    in.required ("whenTicked", o.whenTickedDb, drive);
+    double steerDriveMaxDb = 0.0;   // checked here, read by the master's plan alone (MasterJob::plan)
+    in.required ("steerDriveMaxDb", steerDriveMaxDb, drive);
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain
     in.required ("mixStep", o.mixStep, R { 0.001, 1.0 });
     const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });
@@ -1183,6 +1253,8 @@ void readProgress (Doc& d, Reader& in, Progress& o)
         t.required ("expectedPasses", o.masterExpectedPasses, I { 1, 1000 });
         t.required ("expectedPassesMaxClean", o.masterExpectedPassesMaxClean, I { 1, 1000 });
         t.required ("expectedPassesMaxDense", o.masterExpectedPassesMaxDense, I { 1, 1000 });
+        t.required ("expectedPassesMaxExtreme", o.masterExpectedPassesMaxExtreme, I { 1, 1000 });
+        t.required ("expectedPassesMaxNuke", o.masterExpectedPassesMaxNuke, I { 1, 1000 });
         if (! (o.masterPassWeight * o.masterExpectedPasses + o.masterMeasureWeight > 0)) d.outOfRange (t, "passWeight");
     });
 }

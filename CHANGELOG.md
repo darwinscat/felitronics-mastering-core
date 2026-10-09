@@ -2,6 +2,151 @@
 
 # Changelog
 
+## v0.21.0 — 2026-10-09
+
+### session — the glue's five and the limiter's three by hand, Maximum · extreme, Maximum · clean by default
+
+- The glue's threshold, ratio, knee, attack and release are fields a person may set (ABI 16), each with a comfort
+  window: the knob's field is neutral inside it and shades through a warning to red past it — a hint, never a refusal.
+  A field set by hand wins for itself alone; every field left alone follows the travel's law at the amount as it sounds,
+  and no hand value of one field moves another's: a hand field no longer stands in for a tick that was never written.
+- The snapshot's `project.devices.glue.machine` is the five as they apply — the law at the amount that sounds, on the
+  measured P95 and tempo — not the values placed at the machine's own amount (a person's 2 dB used to show ratio 1.00,
+  knee 8, attack 30 and release 250 while 1.6, 5.7, 19.5 and 112 sounded). The project keeps the five as placed; an
+  import takes the machine's five for its source, so a project saved by v0.20.0, or with an earlier build's numbers,
+  opens with no machine difference.
+- The limiter's release, lookahead and oversampling are fields a person may set (the same ABI 16); release and lookahead carry
+  comfort windows; oversampling is 2, 4, 8 or 16, anything else `NotOneOf`. The machine keeps the
+  constants.
+- A glue release set by hand follows no tempo: the plan names none, and no tempo line is said for it.
+- The config build refuses an oversampling bound written with a decimal point (`[limiter] oversamplingDomain`), at its
+  line and column: the session reads the two as integers.
+- The eight fields are named in English in the ru catalogue too: Threshold, Ratio, Knee, Attack, Release, Release,
+  Lookahead, Oversampling.
+- A third max mode, Maximum · extreme (`LoudnessMode` 3): limiter budget 3 dB, high-pass floor 50 Hz, mono bass 150 Hz.
+- A new session starts on Maximum · clean.
+- The machine-difference capacity (`kDeviceFields`) is 37, the device field walk's length again: the eight fields and
+  the waterfall's three shares.
+- A master's exported as-worked report prints the glue's five as they applied — the numbers its render gave the
+  compressor, a field by hand at its value and every other at the law at the amount as it sounded — not the ones placed
+  at the machine's own amount. A glue out of the chain applied none, and its five stay as the project holds them.
+
+### session — the glue's line counts its mix
+
+- The master report's glue line ("Glue took X dB off the loud places, Y dB at most"; `MasterCost::glueP95Db` and
+  `glueMaxDb`) now says what the song got: the drop of the glue stage's output — the dry signal at 1 − mix under the
+  compressed one at mix — against its input, on the same 4 ms windows (their P95) and the same largest sample. It was the
+  compressed path's own gain reduction, so a glue at mix 40 % printed what the same glue printed at 100 %. At mix 1 the
+  numbers are unchanged, to the bit; at 0.4 they come to about 0.4 of mix 1's (a little under, the loss being in dB); at 0
+  the glue took 0 dB. The saturation's line already measured its stage after its mix, so the two now read alike. The
+  glue's trace (`GlueGr`) counts the mix too: each bucket goes through the same law at the mix that sounded, so its
+  largest is the report's `glueMaxDb`, and at mix 1 the trace is the compressor's detector, to the bit. No sample of any
+  master moves.
+
+### session — a master is never refused for its timing: the masters' queue
+
+- A master asked while another is made or queued, while the previous master's PCM waits for its transfer, before the
+  first measurement ended, or with the panel open while the plan waits for what its devices read, is queued with the
+  project as it is at that command — its recipe, target and a person's fields included — and starts by itself, in the
+  order asked. An edit or a change of target after the command does not reach it. What it is asked with (its budget
+  resolution, source, revision, a clipped source's consent) is checked at the command. Eight wait at most; a ninth is
+  refused `Busy`.
+- The snapshot lists the recent master jobs (`Snapshot.masterJobs`, at most 16, the oldest finished one dropped first): a
+  `MasterJobRow` of job, state and position, the state `Queued` (position: how many jobs are ahead of it, the one being
+  made counted), `Running`, `Done`, `Failed` or `Cancelled`. `cancel` of a queued job lists it `Cancelled`, `forget` of
+  its id takes it out, and a load clears the queue and the list. `canMaster` says whether a master asked now would be
+  taken, at once or queued.
+- A refusal for the source's content stays a refusal. On a source whose first measurement ended without its mandatory
+  readings (silence) a master is refused `NotMeasured`, and one queued before ends `Failed` with it. Where the first
+  measurement stopped before its first readings, which come only if a person continues it, a master is refused by the
+  state table's cell (`NotMeasured`), a queued one included.
+- The state table's cells do not move: the queue stands before the table. A master the session decides is no longer
+  refused `PlanPending` while the open panel's plan waits; it is queued.
+
+### session — a fourth max mode, Maximum · nuke
+
+- `maxNuke` «Максимум · нюк» (`LoudnessMode` 4) is appended after Maximum · extreme: extreme's target row (high-pass
+  floor 50 Hz, mono bass 150 Hz) with a limiter budget of 7 dB (`[landing.max] nuke.budgetDb`, by ear, not measured on
+  the budget-curve ladder) and lufs −7, where its manual mode starts. Its progress bar expects six renders
+  (`expectedPassesMaxNuke`), and its texts are in every language of the catalogue. `editTarget` `loudnessMode` takes 4;
+  5 is `NotOneOf`.
+- With the zones at 10, 40 and 10 % it landed three songs at −8.03, −7.89 and −7.08 LUFS, worst-window ODG −0.75, −0.43
+  and −0.85.
+
+### session — a person's tick on the glue and the saturation
+
+- A tick on a glue the machine left at 0, the amount untouched, gives `[glue] whenTicked` 2.6 dB (it was 0.5) and the
+  tick's character `[glue] ticked`: ratio 2, knee 6 dB, attack 30 ms, release 300 ms — the threshold the travel's at the
+  amount, the release fixed, so no tempo line is said for it. A tick on a saturation the machine left at 0, the drive
+  untouched, gives a drive of `[saturation] whenTicked` 6 dB. Both are the machine's layer as it sounds, not a person's:
+  the snapshot's machine layer carries them and no field is by hand. A person's own field still wins for itself; cd's
+  glue, which the machine places, keeps the travel. A shell no longer sends these numbers as hand edits.
+
+### session · mastering — the waterfall: a person's share of the peak work for the glue, the saturation and the needles' cut
+
+- Three fields a person may set (ABI 16): the glue's `share`, the saturation's `share` and the limiter's `cutShare` (the
+  needles' clipper), each 0…1 with no step — the share of the peak work at the landing that stage takes; the limiter
+  takes the rest. They are a person's fields alone: the machine's layer holds 0 and is never read, and a wish moves no
+  other field. A value outside the domain is `OutOfDomain`, one that is no number `NotFinite`, each naming its field
+  (terms `glueShare`, `saturationShare`, `limiterCutShare`, in ru and en); `revertEdits` drops the wish.
+- A master the session decides with a wish steers its landing: each pass reads the four takes — the glue's P95 through
+  its mix, the saturation's usual cut, the clipper's P95 over what it clipped, the limiter's P95 on its active windows (a
+  max mode's at its budget) — and moves each wished stage to its share of their total: the glue's and the saturation's
+  mix, the clipper's cut in dB within `[limiter.peakClipper] manualDomain`. Shares that add up past 1 are scaled to 1. A
+  pass that moved the stages is never a candidate: every render before it is forgotten, and the next pass is aimed from
+  its budget excess, lowered by the peak the move adds. At most four moves, none once fewer than four passes are left.
+- The saturation's take is foreseen from the clipper's peak counters and solved in one move — its mix first, then its
+  drive by at most 6 dB a move — with a secant on the foresight's own error from the last move; the first (probe) pass
+  steers the glue and the saturation too.
+- Once the saturation's mix is at 1, the waterfall raises its drive, on the knob's dB, up to `[saturation]
+  steerDriveMaxDb` (new, 10 dB, by ear, not measured on the ladder) — never a person's drive. The comfort's red warns a
+  person; it does not stop the machine.
+- A zone at 0 % leaves its stage out of the chain: a glue or a saturation share of 0 (at or under 0.0005; the page sends
+  shares rounded to 0.001) does not sound, and a cut share of 0 takes the needles' clipper out. A zone asked 0 % whose
+  stage is out reached it.
+- The master's report says what came of it (`MasterReport.waterfall`, absent without a wish): per zone the share asked
+  (the limiter's: the rest), the share reached, the dB it took, the setting the landing steered to (the mixes, the cut in
+  dB), the saturation's steered drive, and what stopped it (`WaterfallStop`: `Reached`, `MixAtOne`, `MixAtZero`,
+  `CutAtEnd`, `CutAtZero`, `ComfortRed`, `NotSounding`, `Passes`, `Rest`, `NoWish`, `DriveAtCeiling`), the four takes'
+  total and the extra passes the steering took. The exported as-worked report prints each zone's asked, reached, dB and
+  stop; its table of stop names is checked against the enum at compile time, so `driveAtCeiling` is named rather than
+  read past the table's end.
+- A master with no wish is byte for byte the master before the waterfall, on every target. The `2026-10` sound version
+  moves in place: the waterfall's keys and Maximum · nuke are added, and no number of an existing target changes.
+
+### session · mastering — a max mode with a wish lands cleaner, not louder
+
+- In a max mode the zones buy a cleaner master, not a louder one: the master without the wishes — the shares dropped,
+  every other field of a person's as the project has it — lands first on the mode's budget, then the zones take their
+  shares at that file's loudness, with no budget. Both landings run on one topology; a stage only one of them has is
+  bypassed in the other. The waterfall reports `aloneLufs` and `limiterAloneDb`: the loudness the landing without the
+  wishes reached and its limiter's take there.
+- A max mode delivered by its landing with the zones reports that landing: its target is the loudness the landing
+  without them reached (or the floor it was pulled up to), its miss and `targetMet` from there; above the ceiling or out
+  of passes it stops `TruePeak` or `Passes`, and the first landing's stop is said only where it landed.
+- Per mode, `[landing.max] <mode>.cleaner` (new; true when absent, no mode writes it): false lands the zones on the
+  budget in one landing. Measured for nuke: `cleaner = false` at a budget of 5 dB was 0.9–1.5 LU louder than 7 dB with
+  cleaner, at a worse grade (−1.13, −0.96, −1.16) and a flatter loudness range.
+
+### session · mastering — two clippers: the cut zone at the start of the chain
+
+- With a cut wish where the glue or the saturation sounds, a peak clipper at the start of the chain — after the
+  high-pass and mono bass, ahead of the glue, on an oversampler of its own at the chain's factor (the limiter's
+  oversampling) — takes the cut zone by a steered threshold, cut from the peak its first pass measures. The limiter's own
+  clipper stays as the wish set it, unsteered, for the peaks the glue and the saturation regrow; what it took is the
+  waterfall's `regrownDb` (a P95 over what it clipped), a part of the limiter's rest.
+- `[limiter.peakClipper] place` (new): `both` (the config's) as above, `start` turns the limiter's clipper off,
+  `limiter` keeps the cut in the limiter's clipper alone, as before. Without a sounding glue or saturation the limiter's
+  clipper takes the cut whatever `place` says.
+- The mastering ABI (`fc_master`) pins the start clipper's switch, cut, peak and bypass in its layout and leaves them
+  unmapped, as the limiter clipper's cut and peak are, so its renders and `fcore_master`'s do not move.
+
+### session · mastering — known limits of the waterfall
+
+- A large saturation share takes all of the peak work instead of its share.
+- The limiter's clipper's threshold is not read again after the last move of the start cut.
+- The steering's decisions use the platform's libm: the landing search is outside the det-math zone.
+
 ## v0.20.0 — 2026-10-07
 
 ### session — `[hpf] note.aboveHz` is removed

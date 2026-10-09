@@ -25,10 +25,8 @@
 // values may be appended. tools/session-abi-check.mjs compares a compiled probe to the v1 manifest
 // on every tier, including wasm32; its mutation control must fail on a changed or missing line.
 //
-// FC_SESSION_ABI_VERSION IS A FLOOR, as FC_MASTER_ABI_VERSION is: after the first release that carries this surface,
-// each batch of additions that lands together in one release — entry points, fields, values — moves the number up by
-// one and adds one row below, so a page's "module version >= page version" gate is its protection against calling an
-// export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
+// FC_SESSION_ABI_VERSION IS A FLOOR, as FC_MASTER_ABI_VERSION is: a page's "module version >= page version" gate is
+// its protection against calling an export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
 // manifest's `define FC_SESSION_ABI_VERSION=4` is therefore checked as "at least 4", like a boundary struct's size;
 // a lower number is a change. The manifest itself only grows from its declared base (`base v0.6.0`): CI refuses a pull
 // request that removes or edits a line under the same base, or declares an older one.
@@ -86,7 +84,15 @@
 //                text::FactId::LoudestLowEnergy (458) and Observation.third 1 on loudestLowNote; the two diodes, cubic and
 //                asym, saturation types a person may pick, their words text::Term::SaturationTypeAsym and
 //                SaturationTypeCubic (152, 153). No entry point.
-#define FC_SESSION_ABI_VERSION 15u
+//  16            v0.21.0: the glue's five and the limiter's three by hand — GlueFieldsValue/Touched.thresholdDb, ratio,
+//                kneeDb, attackMs and releaseMs and LimiterFieldsValue/Touched.releaseMs, lookaheadMs and oversampling, in
+//                editDevice and revertEdits; their words text::Term::FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb,
+//                FieldGlueAttackMs and FieldGlueReleaseMs (154-158), FieldLimiterReleaseMs, FieldLimiterLookaheadMs and
+//                FieldLimiterOversampling (159-161); LoudnessMode MaxExtreme (3) and MaxNuke (4) and their words (162,
+//                163); the waterfall — the glue's and the saturation's share and the limiter's cutShare, their words
+//                (164-166), MasterReport.waterfall (MasterWaterfall, MasterWaterfallZone, WaterfallStop); the masters'
+//                queue — Snapshot.masterJobs (MasterJobRow, MasterJobState). All appended; no entry point.
+#define FC_SESSION_ABI_VERSION 16u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u

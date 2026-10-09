@@ -136,9 +136,10 @@ struct MasterCost
     std::uint64_t sourceFrames = 0, masterFrames = 0;
     std::span<const MasterSection> sections;
     std::span<const MasterWaveformBucket> waveform;
-    // WHAT THE GLUE AND THE SATURATION DID, each measured on its own stage (owner decisions 3.8, 3.9), dB, positive.
-    // The glue: the compressor's gain reduction over the programme in 4 ms windows — its P95, the loud places, and its
-    // largest sample. The saturation: how much less the peak of a loud place got than a quiet sound does — the peak
+    // WHAT THE GLUE AND THE SATURATION DID, each measured on its own stage after its own mix (owner decisions 3.8, 3.9),
+    // dB, positive. The glue: what its output lost against its input — the compressor's gain reduction over the
+    // programme in 4 ms windows, its P95, the loud places, and its largest sample, each carried through the parallel
+    // blend at the mix the stage applied (owner, 08.10); at mix 1 the compressor's own numbers. The saturation: how much less the peak of a loud place got than a quiet sound does — the peak
     // of the stage's input against the peak of its output, quantum by quantum, the mix and the output knob included;
     // the largest cut and the usual one, the median, over the loudest [saturation] cut.loudShare of the quanta. Never
     // the fall of the whole chain's true peak. A stage out of the chain has no number: NoSignal.
@@ -197,6 +198,38 @@ struct MasterDamage
     std::optional<double> sourceLraLu, masterLraLu, lraChangeLu, lraChangePercent;
     MeasurementReason lraReason = MeasurementReason::NotImplemented;
 };
+// THE WATERFALL: what stopped a zone short of (or past) its asked share, by more than 0.1 dB of the total's share
+// (or 3 % of the total, where that is more): its mix at 1 or at 0,
+// the clipper's cut at its domain's end or at 0, its comfort window's red (no moved knob has one yet), a stage that did
+// not sound, or the steering out of moves (Passes). Reached within that; Rest, the limiter's; NoWish, no share asked.
+// DriveAtCeiling: the saturation's mix at 1 and its steered drive at [saturation] steerDriveMaxDb.
+enum class WaterfallStop : std::uint8_t { Reached, MixAtOne, MixAtZero, CutAtEnd, CutAtZero, ComfortRed, NotSounding, Passes, Rest,
+                                          NoWish, DriveAtCeiling };
+// One zone: the share of the peak work a person asked (absent: no wish; the limiter's, the rest), the share the delivered
+// render reached, the dB the zone took — the glue's P95 through its mix, the saturation's usual cut, the needles' clipper's
+// P95 over what it clipped, the limiter's P95 on its active windows — the setting the landing steered to (the glue's and
+// the saturation's mix, the clipper's cut in dB; absent for the limiter and a stage that did not sound), and its stop.
+struct MasterWaterfallZone
+{
+    std::optional<double> asked, reached, db, setting;
+    WaterfallStop stop = WaterfallStop::NoWish;
+    std::optional<double> drive;   // the saturation's drive as the landing steered it, the knob's dB; absent elsewhere
+};
+// The four zones, their total in dB, and the passes the fitting took beyond the landing's own (each a render the steering
+// moved the stages after, so never a candidate).
+struct MasterWaterfall
+{
+    MasterWaterfallZone glue, saturation, cut, limiter;
+    std::optional<double> totalDb;
+    std::uint32_t extraPasses = 0;
+    // A max mode with a wish (cleaner, not louder): the loudness the landing without the wishes reached, and its
+    // limiter's take there (P95 on the active windows) — the master with the zones stands on the same loudness.
+    std::optional<double> aloneLufs, limiterAloneDb;
+    // Two clippers ([limiter.peakClipper] place): the cut zone was the start clipper's, and this is what the
+    // limiter's own clipper took off the peaks the glue and the saturation regrew (a P95 over what it clipped) — a part
+    // of the limiter's rest. Absent where the cut zone was the limiter's clipper.
+    std::optional<double> regrownDb;
+};
 struct MasterReport
 {
     MeasurementStatus status = MeasurementStatus::Unavailable;
@@ -228,6 +261,7 @@ struct MasterReport
     DeliveryMode deliveryMode = DeliveryMode::Mastered;
     double deliveryGainDb = 0.0;
     bool deliveryDithered = false;
+    std::optional<MasterWaterfall> waterfall;  // a person's wish of shares only
 };
 // What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
 // source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), the limiter's budget it was

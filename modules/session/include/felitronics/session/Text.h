@@ -448,6 +448,17 @@ enum class Term : std::uint16_t
     FieldGlueMix,
     // The two diodes, types a person may pick (v0.20.0, owner 07.10): the asymmetric (Asym), the symmetric (Cubic).
     SaturationTypeAsym, SaturationTypeCubic,
+    // The glue's five by hand (07.10) as the fields a refusal names: its fourth to eighth fields, in Project.h's order.
+    FieldGlueThresholdDb, FieldGlueRatio, FieldGlueKneeDb, FieldGlueAttackMs, FieldGlueReleaseMs,
+    // The limiter's three by hand (08.10) as the fields a refusal names: its third to fifth fields, in Project.h's order.
+    FieldLimiterReleaseMs, FieldLimiterLookaheadMs, FieldLimiterOversampling,
+    // The third max mode (07.10), as a max mode's verdict names it.
+    LoudnessModeMaxExtreme,
+    // The fourth max mode (08.10), as a max mode's verdict names it.
+    LoudnessModeMaxNuke,
+    // The waterfall's three shares as the fields a refusal names: the glue's ninth, the saturation's sixth and the
+    // limiter's sixth field, in Project.h's order.
+    FieldGlueShare, FieldSaturationShare, FieldLimiterCutShare,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };

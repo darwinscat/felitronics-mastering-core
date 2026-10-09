@@ -81,6 +81,22 @@ struct DamageJobEntry
 inline constexpr std::size_t kMaxDamageGrades = 32;
 static_assert (kMaxDamageGrades + kAnalyzers + 8 <= kEventBatch, "a new source's last words of every grade fit its batch");
 
+// THE MASTERS' QUEUE: every master accepted is a job; one asked while another is made, while the previous master's
+// PCM waits for its transfer, before the first measurement ended or while the plan it needs is pending is QUEUED with
+// the project as it is at that command (the recipe) and starts by itself, in the order asked, when its turn comes.
+// The snapshot's masterJobs lists the recent ones: Queued (position = how many jobs are ahead of it, the one being made
+// counted), Running (the session's master job: waiting for what its devices read, or rendering), Done (kept), Failed
+// (a contract fault or the heap's refusal at its start), Cancelled (cancel of its job id). A load clears the list.
+enum class MasterJobState : std::uint8_t { Queued, Running, Done, Failed, Cancelled };
+struct MasterJobRow
+{
+    JobId job = 0;
+    MasterJobState state = MasterJobState::Queued;
+    std::uint32_t position = 0;
+};
+inline constexpr std::size_t kMaxQueuedMasters = 8;   // a master asked past it is refused Busy
+inline constexpr std::size_t kMaxMasterJobs = 16;     // the rows the snapshot lists, the oldest finished one dropped first
+
 struct ProjectText
 {
     Rejection rejection = Rejection::None;
@@ -230,7 +246,7 @@ struct GlueFinding
     // ...and once the tempo is decided — the measured one, or [compressor.tempo] bpmWhenUnsure: the tempo, the release
     // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits]. A
     // glue in the chain waits for its tempo; nothing measures the tempo of one out of it, whose release is stated at
-    // bpmWhenUnsure until a tempo is decided.
+    // bpmWhenUnsure until a tempo is decided. A release set by hand is both releases, and no tempo: bpm is none.
     std::optional<double> bpm, releaseAskedMs, releaseMs;
     bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
     bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
@@ -239,7 +255,8 @@ struct GlueFinding
     // point for the knob.
     std::optional<double> p95DetectorDb;
     // The tempo the detector gave and the rule did not follow — its label under [compressor.tempo] trustedConfidence: the
-    // release stays at bpmWhenUnsure, and the number is said beside it. None where the tempo was followed or gave none.
+    // release stays at bpmWhenUnsure, and the number is said beside it. None where the tempo was followed or gave none, or
+    // the release is set by hand.
     std::optional<double> tempoUnsureBpm;
 };
 
@@ -849,6 +866,9 @@ private:
     MachineDifference differences_[kDeviceFields] {};
     std::size_t differenceCount_ = 0;
     PlanView plan_ {};
+    // The glue's five as the machine's layer applies them on the plan's inputs (detail::glueMachine): the snapshot's
+    // machine layer shows these, not the values placed with the machine's own amount.
+    GlueFinding glueMachine_ {};
     std::uint64_t planRuns_ = 0;
     bool machineFromFile_ = false;
     // A master asked for with measurements its devices read still running: its recipe's project is the one captured then
@@ -860,6 +880,31 @@ private:
     bool jobMasterAnyway_ = false;
     std::optional<double> jobBudgetResolutionDb_;
     bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
+    // THE MASTERS' QUEUE: the masters asked while one could not start, each with its job id, its request and the
+    // project at its command; the rows the snapshot lists.
+    struct QueuedMaster
+    {
+        JobId id = 0;
+        command::Master request {};
+        Project project {};
+        bool machineFromFile = false;
+    };
+    std::array<QueuedMaster, kMaxQueuedMasters> masterQueue_ {};
+    std::size_t queuedCount_ = 0;
+    std::array<MasterJobRow, kMaxMasterJobs> masterJobs_ {};
+    std::size_t masterJobCount_ = 0;
+    [[nodiscard]] bool masterQueues (const command::Master& master) const noexcept;
+    [[nodiscard]] bool readingsNeverCome() const noexcept;
+    [[nodiscard]] bool readingsHalted() const noexcept;
+    [[nodiscard]] bool queueReady() const noexcept;
+    [[nodiscard]] bool queued (JobId job) const noexcept;
+    [[nodiscard]] Checked masterStorage (const command::Master& master, const Project& project, bool queued) const noexcept;
+    void beginMaster (const command::Master& master, const Project& project, bool machineFromFile, JobId queuedId) noexcept;
+    [[nodiscard]] Rejection masterConsent (const command::Master& master, const Project& project) const noexcept;
+    void promoteQueuedMaster() noexcept;
+    void removeQueued (JobId job) noexcept;
+    void noteMasterJob (JobId job, MasterJobState state) noexcept;
+    void forgetMasterJob (JobId job) noexcept;
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};

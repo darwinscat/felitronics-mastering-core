@@ -139,8 +139,8 @@ static_assert (sizeof (dynamics::CompressorParams)     == 96);
 static_assert (sizeof (saturation::Saturator::Params)  == 28);
 static_assert (sizeof (limiter::TruePeakLimiterParams) == 56);   // + dualRelease, slowReleaseMs (v6); + peakClip, overCeilingDb, kneeDb (v11)
 static_assert (sizeof (dither::DitherParams)           == 24);
-static_assert (sizeof (MasteringChainConfig)           == 48);
-static_assert (sizeof (MasteringChainParams)           == 6616);   // + compressorMix (v3), peak clipper (v11), air shelf (v12), the clipper's cut and peak (unmapped) — see below
+static_assert (sizeof (MasteringChainConfig)           == 56);     // + the start clipper's switch (unmapped) — see below
+static_assert (sizeof (MasteringChainParams)           == 6640);   // + compressorMix (v3), peak clipper (v11), air shelf (v12), the clipper's cut and peak, the start clipper's three (unmapped) — see below
 static_assert (sizeof (MasteringChainResolved)         == 112);    // + compressorMix (v3), + peakClipperThresholdDbTp (v11), + the air-shelf pair (v12)
 
 // THE PIN THAT WORKS THROUGH INHERITANCE. A structured binding cannot decompose a type whose base has
@@ -213,20 +213,24 @@ static_assert (! BraceInit<dynamics::CompressorParams,
 
     MasteringChainConfig cfg {};
     auto& [k_block, k_eq, k_mb, k_air, k_comp, k_clip, k_lim, k_dith,
-           k_clook, k_llook, k_os, k_taps, k_hpf] = cfg;
+           k_clook, k_llook, k_os, k_taps, k_hpf, k_start] = cfg;
     (void) k_block; (void) k_eq; (void) k_mb; (void) k_air; (void) k_comp; (void) k_clip; (void) k_lim; (void) k_dith;
-    (void) k_clook; (void) k_llook; (void) k_os; (void) k_taps; (void) k_hpf;
+    (void) k_clook; (void) k_llook; (void) k_os; (void) k_taps; (void) k_hpf; (void) k_start;
 
     // `p_mix` and `r_mix` arrived with compressorMix as a build break here, and are mapped since ABI v3 — `toCore` and
     // `fromCore` below, at the end of `fc_master_params` and `fc_master_resolved`.
     // `p_cut` and `p_peak` (peakClipCutDb, peakClipPeakDb: the session's threshold worked out from the peak at the
     // limiter's input) are NOT mapped, and the ABI does not grow for them: every params object here is value-initialised,
     // so they stay NaN and this ABI's threshold stands where its caller puts it — the renders it made before, bit for bit.
+    // `k_start`, `p_scut`, `p_speak` and `p_sbyp` (the session's peak clipper at the start of the chain: its switch, its cut
+    // and peak, its bypass) are NOT mapped either, for the same reason: every config object here is value-initialised, so
+    // the switch stays false, the chain holds no start clipper and its three params are never read.
     MasteringChainParams prm {};
     auto& [p_in, p_pre, p_eq, p_mb, p_air, p_comp, p_clip, p_lim, p_dith,
-           p_bE, p_bM, p_bC, p_bK, p_bL, p_bD, p_mix, p_cut, p_peak] = prm;
+           p_bE, p_bM, p_bC, p_bK, p_bL, p_bD, p_mix, p_cut, p_peak, p_scut, p_speak, p_sbyp] = prm;
     (void) p_in; (void) p_pre; (void) p_eq; (void) p_mb; (void) p_air; (void) p_comp; (void) p_clip; (void) p_lim;
     (void) p_dith; (void) p_bE; (void) p_bM; (void) p_bC; (void) p_bK; (void) p_bL; (void) p_bD; (void) p_mix; (void) p_cut; (void) p_peak;
+    (void) p_scut; (void) p_speak; (void) p_sbyp;
 
     MasteringChainResolved res {};
     auto& [r_lat, r_blk, r_clook, r_clip, r_lim, r_llook, r_os, r_ctap, r_ltap,

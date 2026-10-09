@@ -114,6 +114,10 @@ void Session::clearMasters() noexcept
     job_ = 0;
     jobRecipe_ = {};
     jobWaiting_ = false;                       // a load ends a waiting master too: the needles are the new project's
+    // The masters' queue goes with them: a new file starts with none queued and no rows.
+    for (std::size_t i = 0; i < queuedCount_; ++i) masterQueue_[i] = {};
+    queuedCount_ = 0;
+    masterJobs_ = {}; masterJobCount_ = 0;
     jobMasterAnyway_ = false;
     jobBudgetResolutionDb_.reset();
     masterJob_.reset();

@@ -7,6 +7,7 @@
 
 #include "Limiter.h"
 #include "Devices.h"
+#include "Dynamics.h"
 #include "Grid.h"
 #include "Observations.h"
 #include "BuildContract.h"
@@ -162,6 +163,10 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
             if (f.cutting) f.overDb = *answer.overDb;
             break;
     }
+    // A wished cut share (the waterfall) cuts needles no person set: from the knob's amount, the landing steers it.
+    // A wished cut share of 0 takes the needles' clipper out of the chain — a zone at 0 % does not sound.
+    if (devices.limiter.hand.cutShare && ! (*devices.limiter.hand.cutShare > detail::kZeroShare)) f.cutting = false;
+    else if (devices.limiter.hand.cutShare && ! devices.limiter.hand.needles && ! f.cutting) { f.cutting = true; f.overDb = knob.overDb; }
     // Only a device the shell offers is a person's to turn; placement took a person's layer off one it does not.
     if (! offeredByShell (in, Device::Limiter)) { f.cutting = false; f.mode = Needles::Off; }
     const bool machineCuts = answer.proposed != NeedlesClass::None;
@@ -177,16 +182,18 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
     f.needlesAgainstMedium = target.vinyl && f.cutting;
     f.vinylTopHz = target.vinyl ? number (in.rules.engine.find ("observations").find ("vinylTop").find ("aboveHz")) : 0.0;
 
-    // The limiter's own settings, as writeLimiter and the chain's topology take them.
+    // The limiter's own settings, as writeLimiter and the chain's topology take them: the release, the lookahead and
+    // the oversampling as they sound — a person's field where set (08.10), else the machine's, the constants.
     const auto limiter = in.rules.engine.find ("limiter");
     const auto chain = in.rules.engine.find ("chain");
-    f.releaseMs = number (limiter.find ("releaseMs"));
+    const auto sounding = settingsOf (in.rules, devices.limiter);
+    f.releaseMs = sounding.releaseMs;
     f.dualRelease = limiter.find ("dualRelease").boolean().value_or (false);
     f.slowReleaseMs = number (limiter.find ("slowReleaseMs"));
-    f.lookaheadMs = number (limiter.find ("lookaheadMs"));
+    f.lookaheadMs = sounding.lookaheadMs;
     limiter::TruePeakLimiterConfig taken;
     taken.lookaheadMs = f.lookaheadMs;
-    taken.oversampleFactor = int (number (chain.find ("oversampleFactor")));
+    taken.oversampleFactor = int (sounding.oversampling);
     taken.tapsPerPhase = int (number (chain.find ("tapsPerPhase")));
     f.oversampling = std::int32_t (limiter::TruePeakLimiter::oversampleFactorFor (taken));
     return f;

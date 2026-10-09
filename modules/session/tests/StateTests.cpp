@@ -49,6 +49,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -424,6 +425,22 @@ void everyCellOfTheTable()
                 ok (a.rejection == Rejection::None && a.revision == before + moves && s.revision() == before + moves
                         && a.command == 1000 + c,
                     what + ": accepted, the revision moved by " + std::to_string (moves) + ", the id given back (" + nameOf (a.rejection) + ")");
+            }
+            // THE MASTERS' QUEUE: a master is never refused for its timing. Where its cell says it cannot start now — before
+            // the first measurement ended, before the devices are placed, while another is made — it is taken with a job of
+            // its own and listed Queued, the job running (if any) untouched. With the first measurement stopped before its
+            // readings (Stopped) they come only if a person continues it: the cell answers, as for any refused command.
+            else if (Command (c) == Command::Master && Column (col) != Column::Empty && Column (col) != Column::Stopped)
+            {
+                const JobId running = s.job();
+                const Answer a = s.apply (r);
+                bool listed = false;
+                const auto jobs = s.snapshot().view().masterJobs;
+                for (const auto& row : std::span (jobs.items.data(), jobs.count))
+                    listed = listed || (row.job == a.job && row.state == MasterJobState::Queued);
+                ok (a.rejection == Rejection::None && a.job != 0 && a.job != running && s.job() == running && listed
+                        && a.command == 1000 + c,
+                    what + ": queued, where its cell says " + nameOf (cell) + " (" + nameOf (a.rejection) + ")");
             }
             else
                 rejectedWhole (s, r, cell, kNoField, what);
@@ -834,6 +851,52 @@ void theOtherRejections()
     }
 }
 
+// THE MASTERS' QUEUE HAS ITS REFUSALS — never a master's timing: a full queue refuses the next master Busy, and a source
+// whose first measurement ended without its mandatory readings (silence) refuses it NotMeasured, its turn never coming.
+// Each refused whole.
+void theQueueHasItsRefusals()
+{
+    felitronics::test::group ("the masters' queue: Busy when full, NotMeasured on a source with no mandatory readings");
+    {
+        Situation x = situation (Column::Loaded);
+        Session& s = *x.s;
+        bool queued = true;
+        for (std::size_t i = 0; i < kMaxQueuedMasters; ++i)
+        {
+            const Answer a = s.apply (validRequest (Command::Master, x, CommandId (2000 + i)));
+            queued = queued && a.rejection == Rejection::None && a.job != 0;
+        }
+        ok (queued && s.job() == 0, "PRECONDITION: " + std::to_string (kMaxQueuedMasters) + " masters queued before the first measurement ended");
+        rejectedWhole (s, validRequest (Command::Master, x, 2100), Rejection::Busy, kNoField, "a master past a full queue");
+    }
+    {
+        auto s = fresh();
+        Audio a = makeAudio (2, 48000);
+        for (auto& p : a.planes) std::fill (p.begin(), p.end(), 0.0f);
+        ok (accepted (*s, loadOf (a)), "PRECONDITION: a second of silence loaded");
+        for (unsigned i = 0; i < 100000 && s->measurementJob() != 0; ++i) (void) s->step (16);
+        rejectedWhole (*s, command::Master { 3 }, Rejection::NotMeasured, kNoField,
+                       "a master on silence, measured with no mandatory readings");
+    }
+    {
+        // Asked while the silence is measured, a master is queued; once the measurement ends without the readings, its
+        // turn refuses it NotMeasured — Failed, with a Rejected event under its job — and the queue is empty, not stuck.
+        auto s = fresh();
+        Audio a = makeAudio (2, 48000);
+        for (auto& p : a.planes) std::fill (p.begin(), p.end(), 0.0f);
+        ok (accepted (*s, loadOf (a)), "PRECONDITION: a second of silence loaded");
+        const Answer early = s->apply (command::Master { 3 });
+        bool refused = false;
+        for (unsigned i = 0; i < 100000 && s->step (16).state == StepState::More; ++i)
+            for (const auto& e : s->events())
+                refused = refused || (e.kind == EventKind::Rejected && e.jobId == early.job && e.payload.rejected.code == Rejection::NotMeasured);
+        const auto jobs = s->snapshot().view().masterJobs;
+        const bool failed = jobs.count == 1 && jobs.items[0].job == early.job && jobs.items[0].state == MasterJobState::Failed;
+        ok (early.rejection == Rejection::None && early.job != 0 && failed && refused && s->job() == 0 && ! s->snapshot().view().canMaster,
+            "a master queued on silence ends Failed (NotMeasured) once the measurement ends without its readings; nothing waits");
+    }
+}
+
 void everyRejectionWasProduced()
 {
     felitronics::test::group ("every rejection code was produced above, each with nothing changed");
@@ -1067,12 +1130,15 @@ void theMachinePlacesWhatAPersonCouldSet()
                     if constexpr (std::is_same_v<T, double>)
                     {
                         const auto x = detail::decimalOf (v);
-                        good = x && detail::compare (*x, rule.knob.from) >= 0 && detail::compare (*x, rule.knob.to) <= 0
-                            && (rule.knob.step.mantissa == 0 || detail::onGrid (*x, rule.knob.from, rule.knob.step))
+                        // The glue's five (fields 3…7) are the law's numbers at the amount, not a typed value: inside
+                        // their domain, at any precision.
+                        const bool law = device == Device::Glue && i >= 3;
+                        good = (law ? rule.knob.accepts (v, 48000) : x && detail::compare (*x, rule.knob.from) >= 0 && detail::compare (*x, rule.knob.to) <= 0
+                            && (rule.knob.step.mantissa == 0 || detail::onGrid (*x, rule.knob.from, rule.knob.step)))
                             && std::bit_cast<std::uint64_t> (v) != std::bit_cast<std::uint64_t> (-0.0);
                     }
                     else if constexpr (std::is_same_v<T, std::int32_t>)
-                        good = r.slope (v);
+                        good = rule.kind == detail::FieldRule::Kind::Oversampling ? r.oversampling (v) : r.slope (v);
                     else if constexpr (std::is_same_v<T, Needles>)
                         good = std::uint8_t (v) <= std::uint8_t (Needles::Off);
                     if (! good)
@@ -1129,6 +1195,7 @@ int main()
     jobIds();
     aLoadDisarms();
     theSourceHash();
+    theQueueHasItsRefusals();
     everyRejectionWasProduced();
     return felitronics::test::report();
 }

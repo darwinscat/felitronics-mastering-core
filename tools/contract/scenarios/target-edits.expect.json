@@ -159,7 +159,13 @@
       "value": {
         "mix": null,
         "on": null,
-        "upToDb": null
+        "upToDb": null,
+        "thresholdDb": null,
+        "ratio": null,
+        "kneeDb": null,
+        "attackMs": null,
+        "releaseMs": null,
+        "share": null
       },
       "session": "main"
     },
@@ -171,7 +177,8 @@
         "on": null,
         "drive": null,
         "mix": null,
-        "type": null
+        "type": null,
+        "share": null
       },
       "session": "main"
     },
@@ -191,7 +198,11 @@
       "path": "project.devices.limiter.hand",
       "value": {
         "needles": null,
-        "needlesDb": null
+        "needlesDb": null,
+        "releaseMs": null,
+        "lookaheadMs": null,
+        "oversampling": null,
+        "cutShare": null
       },
       "session": "main"
     },

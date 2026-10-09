@@ -272,6 +272,10 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     while (! snapshot (*s).view().mandatoryMeasurementsReady && s->measurementJob() != 0)
     { (void) step (*s, 1); collect(); }
     if (! snapshot (*s).view().mandatoryMeasurementsReady) detail::Inspector::mandatory (*s);
+    // The scenario names its target, All streaming — its master is a manual one — rather than lean on the one a new
+    // session starts on.
+    ok (apply (*s, command::SetTarget { 5, "allStreaming" }).rejection == Rejection::None, "the scenario names All streaming");
+    collect();
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
     ok (snapshot (*s).view().masterProgress.totalUnits == 12 && snapshot (*s).view().masterProgress.totalPasses == 12,
@@ -325,6 +329,23 @@ void pump()
         {
             if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
         };
+        // v0.21.0 (07.10 and 08.10), after v0.20.0: the default target back to allStreaming, the third max
+        // mode out (its target row, its budget, its expected passes), the glue's five and the limiter's three by hand out
+        // (their domains, ranges, steps and comfort windows).
+        replace (targets, "default = \"maxClean\"", "default = \"allStreaming\"");
+        erase (targets, "\nmaxExtreme ");
+        erase (targets, "\nmaxNuke ");
+        // ...and a person's tick (owner, 08.10): [glue] whenTicked back to 0.5, its ticked character out, the
+        // saturation's whenTicked out.
+        replace (engine, "whenTicked = 2.6", "whenTicked = 0.5");
+        for (const std::string_view key : { "\nticked = ", "\nwhenTicked = 6" }) erase (engine, key);
+        // ...and the waterfall (09.10): [saturation] steerDriveMaxDb and [limiter.peakClipper] place out.
+        for (const std::string_view key : { "\nsteerDriveMaxDb = ", "\nplace = " }) erase (engine, key);
+        for (const std::string_view key : { "\nextreme = ", "\nexpectedPassesMaxExtreme = ", "\nnuke = ", "\nexpectedPassesMaxNuke = " }) erase (engine, key);
+        for (const std::string_view name : { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs", "lookaheadMs", "oversampling" })
+            for (const std::string_view suffix : { "Domain", "Range", "Step", "Comfort" })
+                for (const auto key = "\n" + std::string (name) + std::string (suffix) + " = "; engine.find (key) != std::string::npos;)
+                    erase (engine, key);
         // v0.20.0 (owner, 07.10), after v0.19.0: [hpf] note.aboveHz back (20 Hz), [lowEnd.run] fftOrderUpToHz out, the
         // saturation's bias and DC blocker at 0.
         replace (engine, "note = { soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 3 }");
@@ -551,8 +572,15 @@ void pump()
     // removed (07.10, v0.20.0) once more (368c55877f9bb7fe / 16eb2ed2f0970d35 before it); [lowEnd.run] fftOrderUpToHz (07.10,
     // v0.20.0) once more (150088df2017d43a / bd3c2671c8004c1d before it); [lowEnd] lowestNoteFromHz 30 (07.10, v0.20.0) once
     // more (9610c2a7fc971f3f / 0a28dfdf08da9a7d before it); [saturation] bias 0.2 and dcBlockHz 10, the asymmetric diode's
-    // (07.10, v0.20.0), once more (dcabbe73520f0ea7 / 58311773c47f49e5 before it).
-    ok (eventsHash (one) == 0x41508f599701f864ull && eventsHash (cancelled) == 0x1a81582c5bc4ef89ull,
+    // (07.10, v0.20.0), once more (dcabbe73520f0ea7 / 58311773c47f49e5 before it). The default target maxClean, the third
+    // max mode and the glue's five and the limiter's three by hand (07.10 and 08.10) move the config's version alone, restated
+    // above (41508f599701f864 / 1a81582c5bc4ef89 before them); the scenario names allStreaming and its master is the same.
+    // A person's tick (08.10: [glue] whenTicked 2.6 and its character, [saturation] whenTicked) moves the config's version
+    // alone, restated above (cd8695e50c1f280c / 3a842aeaf3dc4689 before it).
+    // The waterfall's two keys ([saturation] steerDriveMaxDb, [limiter.peakClipper] place) and Maximum · nuke (its target
+    // row, its budget, its expected passes) move the config's version alone, restated above (26f65dd0dff72c76 /
+    // 0dd125250dcb6791 before them); the scenario's master asks no share.
+    ok (eventsHash (one) == 0x4d7e59b4a48dc8aeull && eventsHash (cancelled) == 0xba321f6a6122d2a5ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
@@ -638,7 +666,10 @@ void tableBetweenSteps()
             // A master this fixture keeps was not delivered by a job: past the table, its damage is not gradable.
             const bool settled = row.command == Command::GradeDamage && expected == Rejection::None
                 && answer.rejection == Rejection::DamageSettled;
-            ok (answer.rejection == expected || settled, "every command obeys the table and active-job check between pump steps");
+            // THE MASTERS' QUEUE: a master its cell holds back for its timing is queued with a job of its own, never refused.
+            const bool queued = row.command == Command::Master && placed != 0 && expected != Rejection::None
+                && answer.rejection == Rejection::None && answer.job != 0;
+            ok (answer.rejection == expected || settled || queued, "every command obeys the table and active-job check between pump steps");
             if (answer.rejection != Rejection::None) ok (before == encoded (snapshot (*s).view()), "rejection leaves the entire snapshot intact");
         }
 }

@@ -25,7 +25,7 @@ namespace felitronics::session::detail
 // of [hpf], or one of the Needles modes.
 struct FieldRule
 {
-    enum class Kind : std::uint8_t { Flag, Knob, Slope, Needles, SaturationType };
+    enum class Kind : std::uint8_t { Flag, Knob, Slope, Needles, SaturationType, Oversampling };
     Kind kind = Kind::Flag;
     Knob knob {};
 };
@@ -34,6 +34,16 @@ inline FieldRule knobRule (const Knob& k) noexcept { return { FieldRule::Kind::K
 inline FieldRule slopeRule() noexcept { return { FieldRule::Kind::Slope, {} }; }
 inline FieldRule needlesRule() noexcept { return { FieldRule::Kind::Needles, {} }; }
 inline FieldRule saturationTypeRule() noexcept { return { FieldRule::Kind::SaturationType, {} }; }
+inline FieldRule oversamplingRule() noexcept { return { FieldRule::Kind::Oversampling, {} }; }
+// A waterfall share (the glue's and the saturation's `share`, the limiter's `cutShare`): a fraction of the peak work, on
+// 0…1 with no step (the page moves it by 0.001) — a rule of its own, no device's knob read from the config.
+inline FieldRule shareRule() noexcept
+{
+    Knob k;
+    k.from = { 0, 1, false }; k.to = { 10, 1, false }; k.step = { 0, 1, false };
+    k.domain = Knob::Domain::Bounded; k.minimum = k.from; k.maximum = k.to;
+    return knobRule (k);
+}
 
 // The saturation types a person may pick (the page offers them): Tanh, the four of felitronics-core v0.57.0, and the two
 // diodes (owner, 07.10): Cubic, the symmetric, and Asym, the asymmetric. Atan is the config's only — a research setting,
@@ -96,7 +106,8 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
 {
     static constexpr Device device = Device::Glue;
     static constexpr std::string_view name = "glue";
-    static constexpr std::string_view fields[] = { "on", "upToDb", "mix" };
+    static constexpr std::string_view fields[] = { "on", "upToDb", "mix", "thresholdDb", "ratio", "kneeDb", "attackMs",
+                                                   "releaseMs", "share" };
     static auto& layers (Devices& d) noexcept { return d.glue; }
     static const auto& layers (const Devices& d) noexcept { return d.glue; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -104,6 +115,12 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
         v (0, flagRule(), s.on...);
         v (1, knobRule (r.glue), s.upToDb...);
         v (2, knobRule (r.glueMix), s.mix...);
+        v (3, knobRule (r.glueThreshold), s.thresholdDb...);
+        v (4, knobRule (r.glueRatio), s.ratio...);
+        v (5, knobRule (r.glueKnee), s.kneeDb...);
+        v (6, knobRule (r.glueAttack), s.attackMs...);
+        v (7, knobRule (r.glueRelease), s.releaseMs...);
+        v (8, shareRule(), s.share...);
     }
 };
 
@@ -111,7 +128,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
 {
     static constexpr Device device = Device::Saturation;
     static constexpr std::string_view name = "saturation";
-    static constexpr std::string_view fields[] = { "on", "drive", "mix", {}, "type" };   // 3 names nothing
+    static constexpr std::string_view fields[] = { "on", "drive", "mix", {}, "type", "share" };   // 3 names nothing
     static auto& layers (Devices& d) noexcept { return d.saturation; }
     static const auto& layers (const Devices& d) noexcept { return d.saturation; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -120,6 +137,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
         v (1, knobRule (r.drive), s.drive...);
         v (2, knobRule (r.mix), s.mix...);
         v (4, saturationTypeRule(), s.type...);
+        v (5, shareRule(), s.share...);
     }
 };
 
@@ -141,13 +159,18 @@ template <template <class> class F> struct DeviceOf<LimiterFields<F>>
 {
     static constexpr Device device = Device::Limiter;
     static constexpr std::string_view name = "limiter";
-    static constexpr std::string_view fields[] = { "needles", "needlesDb" };
+    static constexpr std::string_view fields[] = { "needles", "needlesDb", "releaseMs", "lookaheadMs", "oversampling",
+                                                   "cutShare" };
     static auto& layers (Devices& d) noexcept { return d.limiter; }
     static const auto& layers (const Devices& d) noexcept { return d.limiter; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
     {
         v (0, needlesRule(), s.needles...);
         v (1, knobRule (r.needles), s.needlesDb...);
+        v (2, knobRule (r.limiterRelease), s.releaseMs...);
+        v (3, knobRule (r.limiterLookahead), s.lookaheadMs...);
+        v (4, oversamplingRule(), s.oversampling...);
+        v (5, shareRule(), s.cutShare...);
     }
 };
 

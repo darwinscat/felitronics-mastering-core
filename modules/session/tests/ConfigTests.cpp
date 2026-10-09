@@ -146,6 +146,11 @@ void theSchemaRefuses()
     mustRefuse (E, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0", "0", Fault::OutOfRange, "landing.limiterSlopeSpacingDb");
     mustRefuse (E, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.01", "0.01", Fault::OutOfRange,
                 "landing.max.budgetResolutionDb");
+    // A max mode's `cleaner`: true when absent, so it is written only as false; written as false it is read so.
+    mustRefuse (E, "dense = { budgetDb = 1.75 }", "dense = { budgetDb = 1.75, cleaner = true }", "true", Fault::Refused,
+                "landing.max.dense.cleaner", Refusal::WrittenDefault);
+    // Written as false it binds; the master's plan is its one reader (MasterJobTests: maxCleanerSwitch).
+    mustAccept (E, "dense = { budgetDb = 1.75 }", "dense = { budgetDb = 1.75, cleaner = false }");
 
     // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
     // key the typo stood for is missing, pointed at the table that lacks it.
@@ -191,21 +196,31 @@ void theSchemaRefuses()
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
     // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
-    mustRefuse (E, "whenTicked = 0.5", "whenTicked = 3.5", "3.5", Fault::OutOfRange, "glue.whenTicked");
+    mustRefuse (E, "whenTicked = 2.6", "whenTicked = 3.5", "3.5", Fault::OutOfRange, "glue.whenTicked");
+    // The tick's character lies in each field's own domain (ratio 1…10, attack within attackMsDomain), and the saturation's
+    // tick within the drive's domain.
+    mustRefuse (E, "ticked = { ratio = 2,", "ticked = { ratio = 11,", "11", Fault::OutOfRange, "glue.ticked.ratio");
+    mustRefuse (E, "attackMs = 30, releaseMs = 300 }", "attackMs = 0, releaseMs = 300 }", "0", Fault::OutOfRange, "glue.ticked.attackMs");
+    mustRefuse (E, "whenTicked = 6", "whenTicked = 13", "13", Fault::OutOfRange, "saturation.whenTicked");
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3 }");
     mustAccept (T, "lowDb = 0.5", "lowDb = 5.25");
     mustAccept (T, "monoBass = 150, hpfFloor = 32", "monoBass = 150, hpfFloor = 100.25");
     // Wrong types.
     mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
     mustRefuse (T, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
-    mustRefuse (T, "default = \"allStreaming\"", "default = 14", "14", Fault::WrongType, "default");
+    mustRefuse (T, "default = \"maxClean\"", "default = 14", "14", Fault::WrongType, "default");
     mustRefuse (E, "dualRelease = false", "dualRelease = 0", "0", Fault::WrongType, "limiter.dualRelease");
+    // The oversampling's bounds are integers — the session reads them so (Rules::oversampling): a bound written with a
+    // decimal point stops the config here, at its line and column, not the session when a factor is checked.
+    mustRefuse (E, "oversamplingDomain = [2, 16]", "oversamplingDomain = [2.0, 16.0]", "2.0", Fault::WrongType, "limiter.oversamplingDomain[0]");
+    mustRefuse (E, "oversamplingDomain = [2, 16]", "oversamplingDomain = [2.5, 16.5]", "2.5", Fault::WrongType, "limiter.oversamplingDomain[0]");
+    mustAccept (E, "oversamplingDomain = [2, 16]", "oversamplingDomain = [4, 8]");
 
     // Out of a domain: its own, an item of an array, and a range another key states (the edit travel, the knob).
     mustAccept (E, "hzMax = 80", "hzMax = 500");
     mustRefuse (E, "passes = 12", "passes = 0", "0", Fault::OutOfRange, "landing.passes");
     mustAccept (T, "lufs = -23", "lufs = -30");
-    mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
+    mustRefuse (T, "monoBass = 150, hpfFloor = 32", "monoBass = 400, hpfFloor = 32", "400", Fault::OutOfRange, "targets.lp.monoBass");
     mustRefuse (E, "betweenCutDb = 1.5", "betweenCutDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenCutDb");
     // A bound the ranges cannot say: above zero, above the core's own number, a hole in a range.
     mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 4000, bitDepth = 24 }\n# YouTube Music",
@@ -223,7 +238,7 @@ void theSchemaRefuses()
     mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", class = \"specification\", lufs = -23", Fault::Refused, "targets.\"\"",
                 Refusal::EmptyKey);
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cdd = 2.6 }", "2.6", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
-    mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
+    mustRefuse (T, "default = \"maxClean\"", "default = \"maxClea\"", "\"maxClea\"", Fault::Refused, "default",
                 Refusal::NotATarget);
     mustAccept (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18");
     mustRefuse (E, "detector = \"rms\"", "detector = \"rsm\"", "\"rsm\"", Fault::Refused, "compressor.detector", Refusal::NotOneOf);
@@ -399,7 +414,8 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "monoBass.comfort", "glue.comfort", "glue.mixComfort", "saturation.driveComfort", "saturation.cut",
+    "monoBass.zones", "monoBass.comfort", "glue.comfort", "glue.mixComfort", "glue.thresholdDbComfort", "glue.ratioComfort",
+    "glue.kneeDbComfort", "glue.attackMsComfort", "glue.releaseMsComfort", "limiter.releaseMsComfort", "limiter.lookaheadMsComfort", "saturation.driveComfort", "saturation.cut",
     "tilt.normal", "low.normal",
     "bands.body.normal", "bands.mud.normal", "bands.forward.normal", "bands.brightness.normal", "bands.air.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
@@ -530,7 +546,7 @@ void theSoundIsWhatCanChangeAMaster()
     const std::string rows = spotifyRow + loudRow, swapped = loudRow + spotifyRow;
     const Case cases[] = {
         { config::Document::Targets, rows, swapped, "two target rows swapped: the order a shell lists them in", false },
-        { config::Document::Targets, "default = \"allStreaming\"", "default = \"spotify\"",
+        { config::Document::Targets, "default = \"maxClean\"", "default = \"spotify\"",
           "the default target: a project that omits an unchanged target reopens on it", true },
         { config::Document::Targets, "lufs = { domain = \"finite\", from = -25,", "lufs = { domain = \"finite\", from = -26,", "the hand edit's travel", false },
         { config::Document::Targets, "green = [-15, -13], step = 0 }", "green = [-15, -13], step = 0.05 }",

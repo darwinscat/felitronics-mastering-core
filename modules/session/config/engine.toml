@@ -79,6 +79,13 @@ limiterSlopeSpacingDb = 0.5
 # ladder (allStreaming, TP −1), medians of the home mixes / the Cambridge corpus:
 #   clean   budget 0.5 dB — −13.05 / −12.04 LUFS, a little above streaming
 #   dense   budget 1.75 dB — −11.22 / −10.53 LUFS
+#   extreme budget 3 dB (owner, 07.10) — by ear, not measured on the ladder
+#   nuke    budget 7 dB — by ear (about −8 LUFS asked on Cold Gaze), not measured on the ladder. With its zones (10/40/10) on
+#           three songs: Cold Gaze −8.03, cat-in-space −7.89, Deny Control −7.08 LUFS, worst-window ODG −0.75 / −0.43 / −0.85
+# cleaner: with a wish of shares, true (absent) lands the master without the wishes on the budget first and the zones at
+#   that loudness (cleaner, not louder); false lands the zones on the budget at once. Written only as false. Measured
+#   for nuke: cleaner = false at budget 5 was 0.9–1.5 LU louder than budget 7 with cleaner, at a worse grade
+#   (−1.13 / −0.96 / −1.16) and a flatter LRA.
 # ceilingLufs: how high a max mode searches — no goal, a bound well above any landing a budget allows.
 # floorLufs: how low a max master ever lands, whichever target the mode sits on (owner, 04.10: "always pulled up to −14"):
 #   a mix so dense the budget holds it under is landed again there, with no budget, and delivered there.
@@ -89,6 +96,8 @@ floorLufs = -14
 budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
+extreme = { budgetDb = 3.0 }
+nuke = { budgetDb = 7.0 }
 
 # THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
 # held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.
@@ -104,6 +113,23 @@ releaseMs = 50
 dualRelease = false
 slowReleaseMs = 200
 lookaheadMs = 1
+# THE THREE BY HAND (owner, 08.10): the limiter's release, its lookahead and its oversampling, each a field a person may
+# set; the machine keeps the constants above (releaseMs, lookaheadMs) and [chain] oversampleFactor. The oversampling is
+# the chain's: the saturation stage, when it sounds, runs at the same factor.
+# <name>Domain: what a command and a project accept. <name>Range, <name>Step: the knob's travel and step — hints (0: no
+#   step). <name>Comfort: the knob's field — neutral over the whole domain until the owner sets one. A lookahead under two
+#   samples of the source rate is taken as two (felitronics-core's floor).
+# oversamplingDomain: a person may pick a power of two within it. felitronics-core's TruePeakLimiter takes 2 to 16 and
+#   refuses more, so 32 is not offered.
+releaseMsDomain = [1, 1000]
+releaseMsRange = [1, 1000]
+releaseMsStep = 0
+releaseMsComfort = { low = 20, high = 300, warningLow = 5, warningHigh = 600 }
+lookaheadMsDomain = [0, 10]
+lookaheadMsRange = [0, 10]
+lookaheadMsStep = 0
+lookaheadMsComfort = { low = 0.5, high = 3, warningLow = 0.2, warningHigh = 6 }
+oversamplingDomain = [2, 16]
 
 # THE PEAK CLIPPER INSIDE THE LIMITER, in the limiter's oversampler, its threshold relative to the ceiling. For a person it
 # is part of the limiter, not a device: the report has one limiter line (the ceiling and the master's true peak), the
@@ -135,7 +161,13 @@ lookaheadMs = 1
 # manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel — 0 to 6 dB, the whole domain — and step, 0.1 dB (owner,
 #   02.10); 0 since 07.10 — no step, a typed cut is kept as typed (owner: «все ручки недискретные»). The manual cut
 #   starts at betweenCutDb, the "between" class, inside manualDomain.
+# place (owner 08.10): where the cut zone's clipper stands — "start" (after the high-pass and the mono bass, ahead of the
+#   glue, on an oversampler of its own at the chain's factor — the limiter's oversampling; only where the glue or the
+#   saturation sounds, else the limiter's takes the cut),
+#   "limiter" (inside the limiter, as before), "both" (the start one takes the cut zone, the limiter's keeps its needles for
+#   the peaks the glue and the saturation regrow, reported apart within the limiter's rest).
 [limiter.peakClipper]
+place = "both"
 manualDomain = [0, 6]
 littleNeedDb = 3
 shortP90Ms = 2
@@ -367,7 +399,7 @@ trustedConfidence = "high"
 # THE GLUE — one continuous knob for the whole compressor, "up to N dB" (owner decisions 3.8, 3.8а): what a person turns,
 # what a project holds and what every glue number below is written in. N IS THE LOSS ON THE LOUD PLACES: the static curve
 # takes exactly N dB at the short-term P95 of the input brought to [input] referenceLufs — not a ceiling on the live
-# reduction; what the compressor really did (its P95 and its maximum) is measured after the master and reported. The
+# reduction; what the glue really took (its P95 and its maximum, after its mix) is measured after the master and reported. The
 # machine sets it only on the targets in byTarget (cd alone), never above knobMaxDb; everywhere else it is a taste of the
 # manual mode. 0, the left end, takes the compressor out of the chain — not "a compressor at zero". The glue does not enter
 # the loudness path: with a 12…30 ms attack it lowers loudness, not peaks. Without a P95 the glue is unavailable to the
@@ -376,7 +408,13 @@ trustedConfidence = "high"
 # domain: what a command and a project accept, 0…6 dB. knobMinDb…knobMaxDb, knobStepDb: the slider's travel and step —
 #   hints (an owner decision: the slider runs 0…3); a value between steps or past the travel is taken as written.
 # default: the glue a target without an entry in byTarget starts with, dB on the knob.
-# whenTicked: what the knob takes when a person ticks the glue on without touching the knob, dB.
+# whenTicked: what the knob takes when a person ticks the glue on without touching the knob, where the machine left it at
+#   0, dB (owner, 08.10: 2.6, the page's default until then).
+# ticked: THE CHARACTER OF THAT TICK (owner, 08.10, «клей, а не компрессор» — the page's default until then): the ratio,
+#   the knee (dB), the attack and the release (ms) the glue takes there instead of the travel's; the threshold stays the
+#   travel's at the amount, and the release is fixed — it follows no tempo. They are the machine's layer as it sounds, not
+#   a person's: a person's own field still wins for that field alone. Where the machine places the glue itself (byTarget)
+#   the travel stands, whatever the tick. Each lies in its field's domain below.
 # byTarget: the machine's glue per target, dB on the knob (an owner decision: cd alone, 2.6).
 # THE TRAVEL — ONE SMOOTH FORMULA for the whole domain, no steps and no rounding. Every compressor value moves along a
 # travel g by its law, from `from` at g = 0 towards `to` at g = 1 and on by the same law past it:
@@ -407,7 +445,8 @@ trustedConfidence = "high"
 [glue]
 domain = [0, 6]
 default = 0
-whenTicked = 0.5
+whenTicked = 2.6
+ticked = { ratio = 2, kneeDb = 6, attackMs = 30, releaseMs = 300 }
 byTarget = { cd = 2.6 }
 detectorOverP95Db = 1.5
 ratio = { from = 1.0, to = 2.7, law = "byDepth" }
@@ -430,6 +469,33 @@ mix = 0.4
 mixRange = [0, 1]
 mixStep = 0
 mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
+# THE FIVE BY HAND (owner, 07.10): the compressor's threshold, ratio, knee, attack and release, each a field a person may
+# set. A field set by hand wins for that field alone; every field left alone follows the travel above at the amount as it
+# sounds (a person's or the machine's), as before. thresholdDb is dBFS on the input brought to [input] referenceLufs —
+# the level the compressor reads; the others are the compressor's own units. A hand value is taken as written within its
+# domain: [compressor.limits] clamp the travel, never a person's number.
+# <name>Domain: what a command and a project accept. <name>Range, <name>Step: the knob's travel and step — hints (0: no
+#   step). <name>Comfort: the knob's field, as comfort above — the owner's numbers of 07.10.
+thresholdDbDomain = [-40, 0]
+thresholdDbRange = [-40, 0]
+thresholdDbStep = 0
+thresholdDbComfort = { low = -30, high = -10, warningLow = -36, warningHigh = -6 }
+ratioDomain = [1, 10]
+ratioRange = [1, 10]
+ratioStep = 0
+ratioComfort = { low = 1.2, high = 3, warningLow = 1, warningHigh = 6 }
+kneeDbDomain = [0, 12]
+kneeDbRange = [0, 12]
+kneeDbStep = 0
+kneeDbComfort = { low = 2, high = 10, warningLow = 0.5, warningHigh = 12 }
+attackMsDomain = [0.1, 100.0]
+attackMsRange = [0.1, 100.0]
+attackMsStep = 0
+attackMsComfort = { low = 5, high = 50, warningLow = 1, warningHigh = 80 }
+releaseMsDomain = [10, 1000]
+releaseMsRange = [10, 1000]
+releaseMsStep = 0
+releaseMsComfort = { low = 50, high = 500, warningLow = 25, warningHigh = 800 }
 
 # SATURATION — the peak-normalised saturator, the chain's clipper stage. A taste of the manual mode: the machine never
 # sets it, and it does not shorten needles (the peak clipper inside the limiter does).
@@ -444,6 +510,9 @@ mixComfort = { low = 0.3, high = 1, warningLow = 0, warningHigh = 1 }
 # driveRange 0…12 dB: above twelve tanh squares music rather than densifying it; driveStep 0.5 dB: less is not heard, more
 #   is a jerk. mix 0…1. No output knob: the landing sets the level before the limiter, so a trim would be undone.
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
+# whenTicked: the drive a person's tick gives a saturation whose drive the machine left at 0 and no one has touched, dB on
+#   the knob, as driveDb (owner, 08.10: 6, the page's default until then) — the machine's layer as it sounds, not a
+#   person's; a person's own drive, 0 included, wins. The machine never ticks the saturation itself.
 # shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
 #   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer, tape, cubic —
 #   the symmetric diode, a hard knee and flat past |x| = 1/k, odd harmonics — and asym — the asymmetric diode, a second
@@ -476,6 +545,10 @@ driveDomain = [0, 12]
 mixDomain = [0, 1]
 shape = "tape"
 driveDb = 0
+whenTicked = 6
+# steerDriveMaxDb (owner, 08.10): the waterfall raises the drive, on the knob's dB, when the mix at 100 % takes less
+#   than the wished share — up to this, never a person's drive; 10 dB is by ear, not measured on the ladder. The comfort's red warns a person; it does not stop the machine.
+steerDriveMaxDb = 10
 driveRange = [0, 12]
 driveStep = 0
 driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }
@@ -912,6 +985,8 @@ measureWeight = 0.15
 expectedPasses = 3
 expectedPassesMaxClean = 7
 expectedPassesMaxDense = 6
+expectedPassesMaxExtreme = 6
+expectedPassesMaxNuke = 6
 
 # THE BLIND PAIRED PREFERENCE TEST — a development tool, never on a public page: its protocol. Two lanes A / B without
 # labels at equal loudness, "A better / B better / no preference", revealed after the last answer. Nothing here feeds the
