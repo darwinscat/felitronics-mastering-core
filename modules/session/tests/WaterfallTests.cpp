@@ -354,6 +354,24 @@ void driveCeiling()
 }
 
 //==============================================================================
+// THE CEILING BY MEASUREMENT (engine.toml, [saturation] steerDriveMaxDb): maxNuke at the page's shares (0.10 / 0.40 /
+// 0.10) on the fixture wants more saturation than its mix at 1 and a drive of 10 dB take — the steering raises the drive
+// past 10 dB, to no more than the ceiling.
+void nukeDrivePastTen()
+{
+    felitronics::test::group ("maxNuke at the page's shares: the saturation's drive past 10 dB, up to the ceiling");
+    const double ceiling = number (detail::rules().engine.find ("saturation").find ("steerDriveMaxDb"));
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "maxNuke");
+    const Kept* k = made && editShares (*made, 10, 0.10, 0.40, 0.10) ? master (*made, 20) : nullptr;
+    const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+    const double drive = w ? w->saturation.drive.value_or (-1.0) : -1.0;
+    ok (w && drive > 10.05 && drive <= ceiling + 0.05,
+        "the drive " + num (drive) + " dB (the ceiling " + num (ceiling) + " dB), the saturation reached "
+            + num (w ? w->saturation.reached.value_or (-1.0) : -1.0) + " of its 0.40");
+}
+
+//==============================================================================
 // A LARGE SATURATION SHARE TAKES ITS SHARE: on maxDense and maxExtreme a saturation asked 30 % to all of the peak work
 // lands on its share of the total the delivered render reports — within the steering's tolerance (0.1 dB, or 3 % of the
 // total where that is more) and 0.1 dB more, the limiter's take the steering read on its last pass near the target
@@ -702,7 +720,7 @@ void defaultSharesAsBefore()
         { "maxClean", 0.02, 0.10, 0.01, 0xde899fc5d14b4cceull },
         { "maxDense", 0.05, 0.20, 0.05, 0x3984acf02f4efa47ull },
         { "maxExtreme", 0.15, 0.30, 0.05, 0x08a781489e2aa025ull },
-        { "maxNuke", 0.10, 0.40, 0.10, 0x71058d33de4a27f8ull },
+        { "maxNuke", 0.10, 0.40, 0.10, 0xdb1d37c25d452f7dull },
     };
     const auto pcm = fixture();
     for (const auto& row : before)
@@ -729,6 +747,7 @@ int main()
     waterfallReport();
     zeroZone();
     driveCeiling();
+    nukeDrivePastTen();
     saturationAtLargeShares();
     wholeSumKeepsRatios();
     convergence();

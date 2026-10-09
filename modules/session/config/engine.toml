@@ -547,8 +547,13 @@ shape = "tape"
 driveDb = 0
 whenTicked = 6
 # steerDriveMaxDb (owner, 08.10): the waterfall raises the drive, on the knob's dB, when the mix at 100 % takes less
-#   than the wished share — up to this, never a person's drive; 10 dB is by ear, not measured on the ladder. The comfort's red warns a person; it does not stop the machine.
-steerDriveMaxDb = 10
+#   than the wished share — up to this, never a person's drive. The comfort's red warns a person; it does not stop the machine.
+#   12 dB by measurement: maxNuke at the page's shares (glue 0.10, saturation 0.40, cut 0.10), the saturation's reached
+#   share at a ceiling of 10 / 12 / 15 / 18 / 24 dB — the WaterfallTests fixture 0.30 / 0.34 / 0.33 / 0.33 / 0.33, Cat in
+#   Space 0.43 / 0.41 / 0.41 / 0.41 / 0.41, Cold Gaze of Eternity 0.40 / 0.40 / 0.41 / 0.41 / 0.41: the songs reach 0.4 at
+#   10 already, and past 12 more drive buys no share (the steering stops by 12.3–13.0 dB). maxClean, maxDense and
+#   maxExtreme at the page's shares never reach 10 dB on those three (the masters at 10 and at 24 are the same).
+steerDriveMaxDb = 12
 driveRange = [0, 12]
 driveStep = 0
 driveComfort = { low = 0, high = 1.5, warningLow = 0, warningHigh = 8 }

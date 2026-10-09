@@ -121,7 +121,10 @@ constexpr Golden kGolden[] = {
     // absent, written by none) and Maximum · nuke (a target row appended, its 7 dB budget, its expected passes) — numbers
     // added, none of an existing target's changed: each moves a master only where a person asks a share or picks nuke,
     // so no untouched master moves (the WAV contract's recording holds); it was 2b0de0cc2cc8ac7b; updated in place, as above.
-    { "2026-10", 0xbe07aaa73e1c26bfull },
+    // ...and the steering's drive ceiling by measurement (09.10): [saturation] steerDriveMaxDb 12 — it moves a master only
+    // where a person asks a saturation share the drive at 10 dB could not meet; it was be07aaa73e1c26bf; updated in place,
+    // as above.
+    { "2026-10", 0x2ccf8164502e8c2bull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
