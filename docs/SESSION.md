@@ -995,7 +995,9 @@ is a decode error, and a snapshot is never persisted. `Snapshot` owns the pass r
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles,
 mastering, and a delivered master's damage — last, behind every other work. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
-`Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
+`Done` when none does. A master queued behind a delivered one is not such a job while it waits only for that master's PCM
+to be taken or released: no step advances it, so `step` returns `Done`; the take or the release readies it, and the
+shell steps again. Zero units poll without progress. The shell measures its own speed and converts time to
 units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
 publishes at most four newly decided clipping runs, or advances report finalization by at most 1024 entries.
 The report drains reference true peak and scans tail energy, integrated gates, and short-term gates without changing
