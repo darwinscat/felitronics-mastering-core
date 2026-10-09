@@ -479,12 +479,22 @@ const masterCompleted = handle => {
 // new session starts on; before the measurement's steps, so the ready events recorded are the last step's, as before.
 ok(cmd(masterSession, {kind:'setTarget', commandId:'5', target:'allStreaming'}).kind === 'accepted',
    'the master smoke fixture names All streaming');
-let readySnapshot = null;
+// The steps run until the first measurement ended and placed the devices, not until canMaster: since the masters' queue,
+// canMaster is true from the load on (a master asked before then is queued, and its demand is priced when its turn comes),
+// so a ready master asked at canMaster would wait in the queue. Every smoke below waits the same way.
+let readySnapshot = null, beforeReadings = null;
 for (let i = 0; i < 20000; ++i) {
-    if (i % 32 === 0 && (readySnapshot = masterSnapshot())?.canMaster) break;
+    if (i % 32 === 0) {
+        readySnapshot = masterSnapshot();
+        if (i === 0) beforeReadings = readySnapshot;
+        if (readySnapshot?.devicesPlaced) break;
+    }
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
-ok(readySnapshot?.canMaster === true, 'mandatory readings make the ready command available');
+ok(beforeReadings?.mandatoryMeasurementsReady === false && beforeReadings?.canMaster === true,
+   'before the mandatory readings a master would be queued: canMaster is true');
+ok(readySnapshot?.devicesPlaced === true && readySnapshot?.mandatoryMeasurementsReady === true
+    && readySnapshot?.canMaster === true, 'mandatory readings make the ready command available');
 const readyWire = masterWire('snapshot'), readyEvents = masterWire('events');
 const sourceId = BigInt(readySnapshot?.source?.hash ?? '0');
 const revision = BigInt(readySnapshot?.revision ?? '0');
@@ -1068,7 +1078,7 @@ const unsafeLoadAnswer = unsafeLoadStatus === STATUS.OK ? reply() : null;
 M._free(unsafeMeta); M._free(unsafePointers); M._free(unsafePcm);
 let unsafeReady = null;
 for (let i = 0; i < 20000; ++i) {
-    if (i % 16 === 0 && (unsafeReady = snapshotFor(unsafeSession))?.canMaster) break;
+    if (i % 16 === 0 && (unsafeReady = snapshotFor(unsafeSession))?.devicesPlaced) break;
     if (M._fc_session_step(unsafeSession, 16, resultSize) !== STATUS.OK) break;
 }
 const unsafeTarget = {kind:'editTarget', commandId:'2', fields:{lufs:-14, tp:-6}};
@@ -1132,7 +1142,7 @@ const lateLoadAnswer = lateLoadStatus === STATUS.OK ? reply() : null;
 M._free(lateMeta); M._free(latePointers); M._free(latePcm);
 let lateReady = null;
 for (let i = 0; i < 20000; ++i) {
-    if (i % 16 === 0 && (lateReady = masterSnapshot(lateSession))?.canMaster) break;
+    if (i % 16 === 0 && (lateReady = masterSnapshot(lateSession))?.devicesPlaced) break;
     if (M._fc_session_step(lateSession, 16, resultSize) !== STATUS.OK) break;
 }
 const lateReadyWire = masterWire('snapshot', lateSession);
@@ -1332,7 +1342,7 @@ for (const p of growth) M._free(p);
     M._free(leanMeta); M._free(leanPointers); M._free(leanPcm);
     let leanReady = null;
     for (let i = 0; i < 20000; ++i) {
-        if (i % 32 === 0 && (leanReady = transfer('summary', leanSession).value)?.canMaster) break;
+        if (i % 32 === 0 && (leanReady = transfer('summary', leanSession).value)?.devicesPlaced) break;
         if (M._fc_session_step(leanSession, 16, resultSize) !== STATUS.OK) break;
     }
     ok(leanReady?.canMaster === true && leanReady.masterRowsIncluded === false && accepts(leanReady, 'SessionSnapshot'),
