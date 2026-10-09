@@ -2008,7 +2008,8 @@ zone the share `asked` (the limiter's, the rest), the share `reached`, the `db` 
 to (the glue's and the saturation's mix, the clipper's cut in dB), the saturation's steered `drive` on the knob's dB, and
 the `stop` — `Reached`, `MixAtOne`, `MixAtZero`, `CutAtEnd`, `CutAtZero`, `ComfortRed` (no moved knob has one yet),
 `NotSounding`, `Passes` (out of moves), `Rest` (the limiter's), `NoWish`, `DriveAtCeiling` (the mix at 1 and the drive at
-its ceiling); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
+its ceiling), `MixStep` (the glue's mix that meets its share within the steering's least move of a mix, 0.02, of the one in
+force, so the glue stayed); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
 `extraPasses` the renders the steering moved the stages after. The as-worked export prints each zone's asked, reached, dB
 and stop, under names held to `WaterfallStop` at compile time. A master with no wish is the master it was before the
 waterfall, to the bit, on every target. Known: a large saturation share can take all of the peak work rather than its

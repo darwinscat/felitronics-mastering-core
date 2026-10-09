@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
-// 0 % out of the chain, the saturation's drive ceiling, the steering's convergence, cleaner not louder and its switch,
-// the two clippers, Maximum · nuke, the queue's snapshot at the command — and a master with no wish, to the bit, as the
+// 0 % out of the chain, the saturation's drive ceiling, a glue held by its step, the steering's convergence, cleaner not
+// louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command — and a master with no wish, to the bit, as the
 // candidate before the waterfall made it (commit 808c058) on every target.
 
 #include "MasterJob.h"
@@ -447,6 +447,33 @@ void wholeSumKeepsRatios()
 }
 
 //==============================================================================
+// A GLUE HELD BY ITS STEP SAYS SO: the glue's threshold by hand at −40 dB and ratio 8, asked 0.7 on maxDense — the
+// steering's second look finds the glue short of its share by more than its tolerance, but the mix that meets it lies
+// within 0.02 of the one in force (a mix moves only by more), so nothing moves and the steering ends after one move:
+// MixStep, not Passes. At −30 dB the same share runs out of the steering's four moves: Passes there.
+void glueUnderStep()
+{
+    felitronics::test::group ("a glue the steering holds under a mix's step stops on MixStep; one out of moves on Passes");
+    const auto pcm = fixture();
+    struct Row { double thresholdDb; WaterfallStop stop; bool outOfMoves; };
+    for (const Row row : { Row { -40.0, WaterfallStop::MixStep, false }, Row { -30.0, WaterfallStop::Passes, true } })
+    {
+        auto made = loaded (pcm, "maxDense");
+        GlueFields<Touched> g; g.thresholdDb = row.thresholdDb; g.ratio = 8.0;
+        const bool hand = made && made->apply (command::EditDevice { 5, g }).rejection == Rejection::None;
+        const Kept* k = hand && editShares (*made, 10, 0.7, std::nullopt, std::nullopt) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const auto& z = w ? w->glue : MasterWaterfallZone {};
+        const double mix = z.setting.value_or (-1.0), reached = z.reached.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        ok (w && z.stop == row.stop && mix > 0.001 && mix < 0.999 && reached >= 0.0 && reached < 0.7 && (moves >= 4u) == row.outOfMoves,
+            "threshold " + num (row.thresholdDb) + " dB, glue asked 0.700: reached " + num (reached) + ", mix " + num (mix) + ", "
+                + std::to_string (moves) + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want "
+                + std::to_string (unsigned (row.stop)) + ")");
+    }
+}
+
+//==============================================================================
 // CONVERGENCE: the steering moves the stages at most three times on the fixture (extraPasses; with a cut wish the start
 // clipper's first pass, which measures the peak its threshold is cut from, is one of them), and the landing's own passes
 // after them are no more than the no-wish landing's and two. A max mode's cleaner landing holds the master without the
@@ -795,6 +822,7 @@ int main()
     nukeDrivePastTen();
     saturationAtLargeShares();
     wholeSumKeepsRatios();
+    glueUnderStep();
     convergence();
     cleaner();
     twoClippers();
