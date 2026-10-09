@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
-// 0 % out of the chain, the saturation's drive ceiling, a glue held by its step, the steering's convergence, cleaner not
-// louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
+// 0 % out of the chain, the saturation's drive ceiling, a glue held by its step, a zone met on the steering's total, the
+// steering's convergence, cleaner not louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
 // take — and a master with no wish, to the bit, as the candidate before the waterfall made it (commit 808c058) on every
 // target.
 
@@ -475,6 +475,40 @@ void glueUnderStep()
 }
 
 //==============================================================================
+// A ZONE MET ON THE STEERING'S TOTAL SAYS SO: the glue alone on maxClean (0.15, 0.30, 0.50), maxDense (0.40) and
+// maxExtreme (0.10), the cut alone on maxDense (0.25), and the saturation on maxDense at 0.25 beside the page's glue and
+// cut (0.05 each) — the steering's last look finds the zone within its tolerance of its share of the total it foresees at
+// the target and moves nothing more, with moves left; the delivered render's total comes out elsewhere, and the zone's
+// share of it misses the asked one by more than the tolerance: TotalMoved, not Passes.
+void metOnTheSteeringsTotal()
+{
+    felitronics::test::group ("a zone met on the total the steering foresaw stops on TotalMoved, not Passes");
+    const auto pcm = fixture();
+    struct Row { std::string_view target; int zone; std::optional<double> glue, saturation, cut; };
+    const Row rows[] {
+        { "maxClean", 0, 0.15, std::nullopt, std::nullopt }, { "maxClean", 0, 0.30, std::nullopt, std::nullopt },
+        { "maxClean", 0, 0.50, std::nullopt, std::nullopt }, { "maxDense", 0, 0.40, std::nullopt, std::nullopt },
+        { "maxExtreme", 0, 0.10, std::nullopt, std::nullopt }, { "maxDense", 2, std::nullopt, std::nullopt, 0.25 },
+        { "maxDense", 1, 0.05, 0.25, 0.05 },
+    };
+    for (const auto& row : rows)
+    {
+        auto made = loaded (pcm, row.target);
+        const Kept* k = made && editShares (*made, 10, row.glue, row.saturation, row.cut) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const MasterWaterfallZone none {};
+        const auto& z = ! w ? none : row.zone == 0 ? w->glue : row.zone == 1 ? w->saturation : w->cut;
+        const double total = w ? w->totalDb.value_or (0.0) : 0.0, asked = z.asked.value_or (-1.0), db = z.db.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        const bool missed = total > 0.0 && std::fabs (asked * total - db) > std::fmax (0.1, 0.03 * total);
+        ok (w && z.stop == WaterfallStop::TotalMoved && missed && moves < 4u,
+            std::string (row.target) + ", " + (row.zone == 0 ? "glue" : row.zone == 1 ? "saturation" : "cut") + " asked " + num (asked)
+                + ": reached " + num (z.reached.value_or (-1.0)) + " (" + num (db) + " dB of " + num (total) + "), " + std::to_string (moves)
+                + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want " + std::to_string (unsigned (WaterfallStop::TotalMoved)) + ")");
+    }
+}
+
+//==============================================================================
 // CONVERGENCE: the steering moves the stages at most three times on the fixture (extraPasses; with a cut wish the start
 // clipper's first pass, which measures the peak its threshold is cut from, is one of them), and the landing's own passes
 // after them are no more than the no-wish landing's and two. A max mode's cleaner landing holds the master without the
@@ -862,6 +896,7 @@ int main()
     saturationAtLargeShares();
     wholeSumKeepsRatios();
     glueUnderStep();
+    metOnTheSteeringsTotal();
     convergence();
     cleaner();
     twoClippers();

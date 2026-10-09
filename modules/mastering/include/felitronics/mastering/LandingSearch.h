@@ -18,6 +18,13 @@
 namespace felitronics::mastering
 {
 
+// How the waterfall's last steering left a wished zone it did not move (LandingSearch::holds()): None — it moved, the
+// steering was out of moves, or the reading was not one to count a wish on; Met — within its tolerance of its share of the
+// total the steering foresaw at the target; Step — off its share, but the setting that meets it lay within the steering's
+// least move of that setting of the one in force.
+enum class SteerHold : std::uint8_t { None, Met, Step };
+struct SteerHolds { SteerHold glue = SteerHold::None, saturation = SteerHold::None, cut = SteerHold::None; };
+
 // One landing owns one solver while it is active. The caller owns source and output
 // planar buffers. A saved candidate is restored directly when available; allocation failure falls back to the
 // counted delivery render used before v0.18.
@@ -177,7 +184,7 @@ public:
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;
         waterfallOn_ = request.productLanding && request.waterfall();
-        waterfallFrozen_ = waterfallFar_ = peakStale_ = glueUnderStep_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
+        waterfallFrozen_ = waterfallFar_ = peakStale_ = false; holds_ = {}; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
         wall_ = false; wallSlope_ = std::numeric_limits<double>::quiet_NaN();
         records_ = {};
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
@@ -458,9 +465,9 @@ public:
     // stages, and the parameters its last pass ran with — the steered mixes and cut every candidate shares.
     bool waterfallOn() const noexcept { return waterfallOn_; }
     int waterfallSteps() const noexcept { return waterfallSteps_; }
-    // The last steering found the glue off its want and the mix that meets it within kWaterfallMixStep of the one in force:
-    // the glue stayed where it stood — not for want of moves.
-    bool glueUnderStep() const noexcept { return glueUnderStep_; }
+    // How the last steering left each wished zone it did not move (SteerHold): met on its foreseen total, or held by the
+    // least move of its setting — not for want of moves.
+    SteerHolds holds() const noexcept { return holds_; }
     const MasteringChainParams& currentParams() const noexcept { return params_; }
     int startedPasses() const noexcept { return passes_; }
     int startedRenders() const noexcept { return passes_; }
@@ -878,7 +885,8 @@ private:
     bool steerWaterfall (const SolvePassRecord& rec, bool probe, double& shift) noexcept
     {
         shift = 0.0;
-        waterfallFar_ = glueUnderStep_ = false;
+        waterfallFar_ = false;
+        holds_ = {};
         if (waterfallSteps_ >= kWaterfallSteps || passes_ > request_.maxPasses - 4) return false;
         const auto& m = measurement_;
         // THE START CLIPPER (MasteringChainConfig::startClipper) takes the cut zone where it is in the chain; the
@@ -1017,6 +1025,12 @@ private:
         const double near = std::fmax (kWaterfallToleranceDb, kWaterfallToleranceShare * total);
         const auto off = [&] (double share, double taken) noexcept
             { return ! restAtTarget && ! lost && std::isfinite (share) && std::fabs (want (share) - taken) > near; };
+        // Met as this steering sees it (holds()): on a reading it counts a wish on, within the tolerance of its want.
+        const auto met = [&] (double share, double taken) noexcept
+            { return ! restAtTarget && ! lost && ! far && std::isfinite (share) && std::fabs (want (share) - taken) <= near; };
+        if (met (sGlue, glue)) holds_.glue = SteerHold::Met;
+        if (met (sSaturation, saturation)) holds_.saturation = SteerHold::Met;
+        if (! probe && ! startProbe && clipping && met (sCut, cut)) holds_.cut = SteerHold::Met;
         MasteringChainParams next = params_;
         bool moved = false;
         // What the moves before the gain node add to the loudest peak, for the needles' threshold of the next pass.
@@ -1027,7 +1041,7 @@ private:
             // The glue's loud places come down by what it takes more: the next pass's gain rises by as much.
             if (std::fabs (mix - params_.compressorMix) > kWaterfallMixStep)
                 { next.compressorMix = mix; moved = true; shift -= blendTakenDb (glueFull, mix) - glue; peakLift -= blendTakenDb (glueFull, mix) - glue; }
-            else glueUnderStep_ = true;
+            else holds_.glue = SteerHold::Step;
         }
         // The foresight's own error, from the last move: the share of the change it foresaw that came (a secant on
         // the curve) — the next aim is set so that share of it lands on the want.
@@ -1384,7 +1398,7 @@ private:
     bool waterfallOn_ = false, waterfallFrozen_ = false;
     bool peakStale_ = false;      // a start clipper's move since the needles' peak was measured
     bool waterfallFar_ = false;   // the last steering moved nothing on a reading further than kWaterfallReadLu from the target
-    bool glueUnderStep_ = false;  // the last steering held the glue: its move within kWaterfallMixStep (glueUnderStep())
+    SteerHolds holds_ {};         // how the last steering left each wished zone it did not move (holds())
     int waterfallSteps_ = 0;
     int waterfallFrom_ = 0;
     bool satArmed_ = false;               // the saturation moved last step: its take then and the take foreseen

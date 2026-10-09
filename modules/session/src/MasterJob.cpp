@@ -632,7 +632,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     floorRequest.waterfallGlueShare = floorRequest.waterfallSaturationShare = floorRequest.waterfallCutShare
         = std::numeric_limits<double>::quiet_NaN();
     floorPass = false; floorFirstPasses = 0; floorFirstWork = 0;
-    waterfall = plan.request.waterfall(); waterfallSteps = 0; glueUnderStep = false; steered = plan.ready.params;
+    waterfall = plan.request.waterfall(); waterfallSteps = 0; holds = {}; steered = plan.ready.params;
     waterfallGlueShare = plan.request.waterfallGlueShare;
     waterfallSaturationShare = plan.request.waterfallSaturationShare;
     waterfallCutShare = plan.request.waterfallCutShare;
@@ -814,7 +814,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
         if (! floorPass && search.waterfallOn())
-        { steered = search.currentParams(); waterfallSteps = std::uint32_t (search.waterfallSteps()); glueUnderStep = search.glueUnderStep(); }
+        { steered = search.currentParams(); waterfallSteps = std::uint32_t (search.waterfallSteps()); holds = search.holds(); }
         // THE LANDING WITHOUT THE WISHES, DONE: its file's loudness is the target of the landing with the zones, which
         // goes on from its gain with no budget and twelve passes of its own; its passes stay in the log before the new ones.
         if (cleanPhase)
@@ -1122,10 +1122,17 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             const bool clipping = startCut ? std::isfinite (steered.startClipCutDb)
                                            : ready.params.limiter.peakClip && std::isfinite (steered.peakClipCutDb);
             const double cutSetting = startCut ? steered.startClipCutDb : steered.peakClipCutDb;
+            // Short of its share or past it with moves left: the steering held the zone — met on the total it foresaw at
+            // the target, which the delivered render's total left (TotalMoved), or its move under its setting's least step.
+            const auto held = [] (MasterWaterfallZone& z, mastering::SteerHold hold, WaterfallStop step) noexcept
+            {
+                if (z.stop != WaterfallStop::Passes) return;
+                if (hold == mastering::SteerHold::Met) z.stop = WaterfallStop::TotalMoved;
+                else if (hold == mastering::SteerHold::Step) z.stop = step;
+            };
             MasterWaterfall w;
             w.glue = zone (waterfallGlueShare, glueDb, compressing, steered.compressorMix, false);
-            // Short of its share or past it with moves left: the steering held the glue, its move under a mix's step.
-            if (w.glue.stop == WaterfallStop::Passes && glueUnderStep) w.glue.stop = WaterfallStop::MixStep;
+            held (w.glue, holds.glue, WaterfallStop::MixStep);
             w.saturation = zone (waterfallSaturationShare, saturationDb, shaping, double (steered.clipper.mix), false);
             // The steered drive, back on the knob's dB; the mix at 1 with the drive at its ceiling stops there.
             if (shaping && std::isfinite (saturationDriveScale) && saturationDriveScale > 0.0)
@@ -1134,7 +1141,9 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                 if (w.saturation.stop == WaterfallStop::MixAtOne)
                     w.saturation.stop = double (steered.clipper.driveDb) >= saturationDriveMaxDb - 0.05 ? WaterfallStop::DriveAtCeiling : WaterfallStop::Passes;
             }
+            held (w.saturation, holds.saturation, WaterfallStop::MixStep);
             w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (cutSetting) : std::nullopt, true);
+            held (w.cut, holds.cut, WaterfallStop::Passes);
             w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb + regrownDb);
             if (startCut) w.regrownDb = regrownDb;
             w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;
