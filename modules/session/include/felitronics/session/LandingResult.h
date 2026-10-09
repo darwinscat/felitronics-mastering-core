@@ -206,9 +206,10 @@ struct MasterDamage
 // the saturation's mix that meets its share lay within the steering's least move of a mix (0.02) of the one in force, so
 // it stayed. TotalMoved:
 // the steering's last look found the zone within its tolerance of its share of the total it foresaw at the target; the
-// delivered render's total came out elsewhere, and the zone's share of it is off by more.
+// delivered render's total came out elsewhere, and the zone's share of it is off by more. CutStep: the clipper's cut that
+// meets its share lay within the steering's least move of a cut (0.1 dB) of the one in force, so it stayed.
 enum class WaterfallStop : std::uint8_t { Reached, MixAtOne, MixAtZero, CutAtEnd, CutAtZero, ComfortRed, NotSounding, Passes, Rest,
-                                          NoWish, DriveAtCeiling, MixStep, TotalMoved };
+                                          NoWish, DriveAtCeiling, MixStep, TotalMoved, CutStep };
 // One zone: the share of the peak work a person asked (absent: no wish; the limiter's, the rest), the share the delivered
 // render reached, the dB the zone took — the glue's P95 through its mix, the saturation's usual cut, the needles' clipper's
 // P95 over what it clipped, the limiter's P95 on its active windows — the setting the landing steered to (the glue's and

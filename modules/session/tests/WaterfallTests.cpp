@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
-// 0 % out of the chain, the saturation's drive ceiling, a glue and a saturation held by their step, a zone met on the steering's total, the
+// 0 % out of the chain, the saturation's drive ceiling, a glue, a saturation and a cut held by their step, a zone met on the steering's total, the
 // steering's convergence, cleaner not louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
 // take — and a master with no wish, to the bit, as the candidate before the waterfall made it (commit 808c058) on every
 // target.
@@ -504,6 +504,30 @@ void saturationUnderStep()
 }
 
 //==============================================================================
+// A CUT HELD BY ITS STEP SAYS SO: the cut alone on maxClean, asked 0.10 or 0.15 — the clipper's take moves in steps of
+// 0.1 dB (a P95 over what it clipped), so after the first move it still reads 0.2 dB, off its want by more than the
+// tolerance; the cut that meets it (the cut scaled by want / take) lies within 0.1 dB of the one in force, and a cut moves
+// only by more: CutStep, not Passes.
+void cutUnderStep()
+{
+    felitronics::test::group ("a clipper's cut the steering holds under its step stops on CutStep");
+    const auto pcm = fixture();
+    for (const double share : { 0.10, 0.15 })
+    {
+        auto made = loaded (pcm, "maxClean");
+        const Kept* k = made && editShares (*made, 10, std::nullopt, std::nullopt, share) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const auto& z = w ? w->cut : MasterWaterfallZone {};
+        const double cut = z.setting.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        ok (w && z.stop == WaterfallStop::CutStep && cut > 0.01 && moves < 4u,
+            "maxClean, cut asked " + num (share) + ": reached " + num (z.reached.value_or (-1.0)) + " (" + num (z.db.value_or (-1.0))
+                + " dB of " + num (w ? w->totalDb.value_or (0.0) : 0.0) + "), cut " + num (cut) + " dB, " + std::to_string (moves)
+                + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want " + std::to_string (unsigned (WaterfallStop::CutStep)) + ")");
+    }
+}
+
+//==============================================================================
 // A ZONE MET ON THE STEERING'S TOTAL SAYS SO: the glue alone on maxClean (0.15, 0.30, 0.50), maxDense (0.40) and
 // maxExtreme (0.10), the cut alone on maxDense (0.25), and the saturation on maxDense at 0.25 beside the page's glue and
 // cut (0.05 each) — the steering's last look finds the zone within its tolerance of its share of the total it foresees at
@@ -926,6 +950,7 @@ int main()
     wholeSumKeepsRatios();
     glueUnderStep();
     saturationUnderStep();
+    cutUnderStep();
     metOnTheSteeringsTotal();
     convergence();
     cleaner();

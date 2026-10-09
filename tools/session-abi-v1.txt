@@ -2184,6 +2184,7 @@ enum felitronics::session::WaterfallStop::NoWish=9
 enum felitronics::session::WaterfallStop::DriveAtCeiling=10
 enum felitronics::session::WaterfallStop::MixStep=11
 enum felitronics::session::WaterfallStop::TotalMoved=12
+enum felitronics::session::WaterfallStop::CutStep=13
 # The masters' queue (09.10): a master is never refused for its timing; the snapshot lists the recent master jobs, each
 # with its state and how many are ahead of it.
 codec MasterJobRow.job uint32

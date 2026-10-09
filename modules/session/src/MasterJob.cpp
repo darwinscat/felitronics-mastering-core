@@ -1143,7 +1143,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             }
             held (w.saturation, holds.saturation, WaterfallStop::MixStep);
             w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (cutSetting) : std::nullopt, true);
-            held (w.cut, holds.cut, WaterfallStop::Passes);
+            held (w.cut, holds.cut, WaterfallStop::CutStep);
             w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb + regrownDb);
             if (startCut) w.regrownDb = regrownDb;
             w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;

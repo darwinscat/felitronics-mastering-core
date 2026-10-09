@@ -2013,7 +2013,8 @@ the `stop` — `Reached`, `MixAtOne`, `MixAtZero`, `CutAtEnd`, `CutAtZero`, `Com
 its ceiling), `MixStep` (the glue's or the saturation's mix that meets its share within the steering's least move of a
 mix, 0.02, of the one in force, so the mix stayed), `TotalMoved` (the steering's last look found the zone within its tolerance of its share of the
 total it foresaw at the target and left it; the delivered render's total came out elsewhere, and the zone's share of it
-misses by more); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
+misses by more), `CutStep` (the clipper's cut that meets its share within the steering's least move of a cut, 0.1 dB, of
+the one in force, so the cut stayed); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
 `extraPasses` the renders the steering moved the stages after. The as-worked export prints each zone's asked, reached, dB
 and stop, under names held to `WaterfallStop` at compile time. A master with no wish is the master it was before the
 waterfall, to the bit, on every target. Known: a large saturation share can take all of the peak work rather than its

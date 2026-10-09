@@ -359,7 +359,7 @@ struct Writer
                 if (z.setting) out ("Setting", *z.setting, "machine");
                 constexpr std::string_view stops[] = { "reached", "mixAtOne", "mixAtZero", "cutAtEnd", "cutAtZero", "comfortRed",
                                                        "notSounding", "passes", "rest", "noWish", "driveAtCeiling", "mixStep",
-                                                       "totalMoved" };
+                                                       "totalMoved", "cutStep" };
                 static_assert (std::size (stops) == detail::enumLast<WaterfallStop>() + 1u, "a name for every WaterfallStop");
                 out ("Stop", stops[std::size_t (z.stop)], "machine");
             };
