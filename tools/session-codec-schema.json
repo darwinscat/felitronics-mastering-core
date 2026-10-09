@@ -58,7 +58,10 @@
       "Passes",
       "Rest",
       "NoWish",
-      "DriveAtCeiling"
+      "DriveAtCeiling",
+      "MixStep",
+      "TotalMoved",
+      "CutStep"
     ],
     "SaturationType": [
       "Tanh",

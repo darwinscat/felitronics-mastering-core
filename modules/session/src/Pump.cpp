@@ -391,9 +391,9 @@ void Session::endAllDamage() noexcept
 Stepped Session::step (std::uint32_t budget) noexcept
 {
     eventCount_ = 0; oldWorldEvents_ = 0;
-    // With no work there is no arithmetic to refuse and no publication to number.
-    // A queue waiting only for the previous master's PCM to be taken keeps the shell stepping.
-    if (! hasWork()) return { queuedCount_ != 0 && pendingMaster_.master != 0 ? StepState::More : StepState::Done, 0, false };
+    // With no work there is no arithmetic to refuse and no publication to number. A queue waiting only for the previous
+    // master's PCM to be taken or released is not work: no step advances it, so Done — the take or the release readies it.
+    if (! hasWork()) return { StepState::Done, 0, false };
     if (checkFloatingPointEnvironment() != Status::Ok)
     {
         Notification event;
@@ -815,6 +815,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
         ++units;
     }
     replan();
-    return { hasWork() || (queuedCount_ != 0 && pendingMaster_.master != 0) ? StepState::More : StepState::Done, units, false };
+    return { hasWork() ? StepState::More : StepState::Done, units, false };
 }
 } // namespace felitronics::session

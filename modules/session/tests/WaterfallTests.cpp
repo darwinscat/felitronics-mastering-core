@@ -2,9 +2,10 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
-// 0 % out of the chain, the saturation's drive ceiling, the steering's convergence, cleaner not louder and its switch,
-// the two clippers, Maximum · nuke, the queue's snapshot at the command — and a master with no wish, to the bit, as the
-// candidate before the waterfall made it (commit 808c058) on every target.
+// 0 % out of the chain, the saturation's drive ceiling, a glue, a saturation and a cut held by their step, a zone met on the steering's total, the
+// steering's convergence, cleaner not louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
+// take — and a master with no wish, to the bit, as the candidate before the waterfall made it (commit 808c058) on every
+// target.
 
 #include "MasterJob.h"
 #include "Devices.h"
@@ -31,6 +32,13 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
+
+// The suites' seam into the session (Session.h befriends it; the library defines none): its master job, as the last
+// master left it.
+struct felitronics::session::detail::Inspector
+{
+    static const MasterJob* masterJob (const Session& s) noexcept { return s.masterJob_.get(); }
+};
 
 namespace
 {
@@ -354,41 +362,208 @@ void driveCeiling()
 }
 
 //==============================================================================
-// A LARGE SATURATION WISH IS NEVER TURNED INTO NONE: on maxDense and maxExtreme a saturation asked 80 % (maxDense) or
-// 60 % (maxExtreme) to all of the peak work has its drive raised, and the pass after that move finds the limiter louder
-// than the target by more than it takes — at rest as read at the target. That reading once counted as no work at all:
-// every wish 0 dB, the mix sent to 0, the next pass back to 1, and the moves ran out on a mix of 0 with the drive raised.
-// Now that reading moves nothing: the mix stays at 1 with the drive where it went (the ceiling on maxExtreme), and the
-// saturation takes at least its share — all of the work here, so a share under 1 is overshot (stop Passes; the steering's
-// total holds the limiter's take apart from the saturation's, which on this fixture takes the limiter's whole place).
-// maxDense asked 60 % is not here: the steering's first pass counts it met and the landing's limiter then takes less.
+// THE CEILING BY MEASUREMENT (engine.toml, [saturation] steerDriveMaxDb): maxNuke at the page's shares (0.10 / 0.40 /
+// 0.10) on the fixture wants more saturation than its mix at 1 and a drive of 10 dB take — the steering raises the drive
+// past 10 dB, to no more than the ceiling.
+void nukeDrivePastTen()
+{
+    felitronics::test::group ("maxNuke at the page's shares: the saturation's drive past 10 dB, up to the ceiling");
+    const double ceiling = number (detail::rules().engine.find ("saturation").find ("steerDriveMaxDb"));
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "maxNuke");
+    const Kept* k = made && editShares (*made, 10, 0.10, 0.40, 0.10) ? master (*made, 20) : nullptr;
+    const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+    const double drive = w ? w->saturation.drive.value_or (-1.0) : -1.0;
+    ok (w && drive > 10.05 && drive <= ceiling + 0.05,
+        "the drive " + num (drive) + " dB (the ceiling " + num (ceiling) + " dB), the saturation reached "
+            + num (w ? w->saturation.reached.value_or (-1.0) : -1.0) + " of its 0.40");
+}
+
+//==============================================================================
+// A LARGE SATURATION SHARE TAKES ITS SHARE: on maxDense and maxExtreme a saturation asked 30 % to all of the peak work
+// lands on its share of the total the delivered render reports — within the steering's tolerance (0.1 dB, or 3 % of the
+// total where that is more) and 0.1 dB more, the limiter's take the steering read on its last pass near the target
+// against the landing's own last pass — or, where its mix at 1 and its drive at [saturation] steerDriveMaxDb take less,
+// stops there: DriveAtCeiling. The steering once read the zones' work as added on top of the limiter's: a wish past half
+// of the total overshot by more than it missed on every move, and shares 0.6–0.9 took all of the work (before that, none).
 void saturationAtLargeShares()
 {
-    felitronics::test::group ("a large saturation wish: its mix at 1 with the drive raised, never left at 0");
+    felitronics::test::group ("a large saturation share takes its share of the peak work, or stops at the drive's ceiling");
     const double ceiling = number (detail::rules().engine.find ("saturation").find ("steerDriveMaxDb"));
-    const double tolerance = 0.03;
     const auto pcm = fixture();
-    struct Row { std::string_view target; double share; };
-    for (const Row row : { Row { "maxDense", 0.8 }, Row { "maxDense", 0.9 }, Row { "maxExtreme", 0.6 }, Row { "maxExtreme", 0.8 },
-                           Row { "maxExtreme", 0.9 }, Row { "maxExtreme", 1.0 } })
+    for (const std::string_view target : { "maxDense", "maxExtreme" })
+        for (const double share : { 0.3, 0.6, 0.8, 0.9, 1.0 })
+        {
+            auto made = loaded (pcm, target);
+            const Kept* k = made && editShares (*made, 10, std::nullopt, share, std::nullopt) ? master (*made, 20) : nullptr;
+            const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+            const auto& z = w ? w->saturation : MasterWaterfallZone {};
+            const double total = w ? w->totalDb.value_or (0.0) : 0.0, db = z.db.value_or (-1.0);
+            const double mix = z.setting.value_or (-1.0), drive = z.drive.value_or (-1.0);
+            const bool reached = total > 0.0 && std::fabs (share * total - db) <= std::fmax (0.1, 0.03 * total) + 0.1;
+            const bool atCeiling = mix >= 0.999 && std::fabs (drive - ceiling) <= 0.1 && db < share * total
+                                && z.stop == WaterfallStop::DriveAtCeiling;
+            ok (w && (reached || atCeiling),
+                std::string (target) + ", saturation asked " + num (share) + ": reached " + num (z.reached.value_or (-1.0)) + " (" + num (db)
+                    + " dB of " + num (total) + "), mix " + num (mix) + ", drive " + num (drive) + " dB, stop "
+                    + std::to_string (unsigned (z.stop)) + ", " + std::to_string (w ? w->extraPasses : 0u) + " moves");
+        }
+}
+
+//==============================================================================
+// A WHOLE SUM KEEPS ITS RATIOS: shares 0.5 / 0.4 / 0.1 (glue, saturation, cut — the limiter asked nothing) and half of
+// each, 0.25 / 0.2 / 0.05, on maxDense, maxExtreme and maxNuke: in both, every zone lands on one common fraction of its
+// asked share (the reached sum over the asked sum), within the steering's tolerance (0.1 dB, or 3 % of the total where
+// that is more). Where the whole sum cannot be met (the glue's mix at 1, the saturation's drive at its ceiling), every
+// zone comes down by the same factor; each held at its own most, the zones of such a sum once all ran to their maxima
+// and the cut took twice its part of what was reached.
+void wholeSumKeepsRatios()
+{
+    felitronics::test::group ("shares summing to the whole keep their ratios where the sum cannot be met");
+    const auto pcm = fixture();
+    for (const std::string_view target : { "maxDense", "maxExtreme", "maxNuke" })
+        for (const double k : { 1.0, 0.5 })
+        {
+            const double asked[] { 0.5 * k, 0.4 * k, 0.1 * k };
+            auto made = loaded (pcm, target);
+            const Kept* m = made && editShares (*made, 10, asked[0], asked[1], asked[2]) ? master (*made, 20) : nullptr;
+            const auto* w = m && m->report->waterfall ? &*m->report->waterfall : nullptr;
+            const MasterWaterfallZone none {};
+            const MasterWaterfallZone* zones[] { w ? &w->glue : &none, w ? &w->saturation : &none, w ? &w->cut : &none };
+            const double total = w ? w->totalDb.value_or (0.0) : 0.0;
+            double reachedSum = 0.0;
+            for (const auto* z : zones) reachedSum += z->reached.value_or (0.0);
+            const double fraction = reachedSum / (k * 1.0);
+            bool kept = total > 0.0;
+            std::string line;
+            for (unsigned i = 0; i < 3; ++i)
+            {
+                const double db = zones[i]->db.value_or (-1.0);
+                kept = kept && std::fabs (fraction * asked[i] * total - db) <= std::fmax (0.1, 0.03 * total);
+                line += (i ? ", " : "") + num (zones[i]->reached.value_or (-1.0)) + " (" + num (db) + " dB)";
+            }
+            ok (w && kept, std::string (target) + ", asked " + num (asked[0]) + "/" + num (asked[1]) + "/" + num (asked[2]) + ": reached "
+                    + line + " of " + num (total) + " dB, the common fraction " + num (fraction));
+        }
+}
+
+//==============================================================================
+// A GLUE HELD BY ITS STEP SAYS SO: the glue's threshold by hand at −40 dB and ratio 8, asked 0.7 on maxDense — the
+// steering's second look finds the glue short of its share by more than its tolerance, but the mix that meets it lies
+// within 0.02 of the one in force (a mix moves only by more), so nothing moves and the steering ends after one move:
+// MixStep, not Passes. At −30 dB the same share runs out of the steering's four moves: Passes there.
+void glueUnderStep()
+{
+    felitronics::test::group ("a glue the steering holds under a mix's step stops on MixStep; one out of moves on Passes");
+    const auto pcm = fixture();
+    struct Row { double thresholdDb; WaterfallStop stop; bool outOfMoves; };
+    for (const Row row : { Row { -40.0, WaterfallStop::MixStep, false }, Row { -30.0, WaterfallStop::Passes, true } })
     {
-        auto made = loaded (pcm, row.target);
-        const Kept* k = made && editShares (*made, 10, std::nullopt, row.share, std::nullopt) ? master (*made, 20) : nullptr;
+        auto made = loaded (pcm, "maxDense");
+        GlueFields<Touched> g; g.thresholdDb = row.thresholdDb; g.ratio = 8.0;
+        const bool hand = made && made->apply (command::EditDevice { 5, g }).rejection == Rejection::None;
+        const Kept* k = hand && editShares (*made, 10, 0.7, std::nullopt, std::nullopt) ? master (*made, 20) : nullptr;
         const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
-        const auto& z = w ? w->saturation : MasterWaterfallZone {};
-        const double mix = z.setting.value_or (-1.0), drive = z.drive.value_or (-1.0), reached = z.reached.value_or (-1.0);
-        const bool extreme = row.target == "maxExtreme";
-        const bool atOne = mix >= 0.999 && drive > 6.5 /* the machine sets 6 */ && (! extreme || std::fabs (drive - ceiling) <= 0.1) && reached >= row.share - tolerance;
-        const bool stop = row.share < 1.0 || z.stop == WaterfallStop::Reached || z.stop == WaterfallStop::DriveAtCeiling;
-        ok (w && atOne && stop,
-            std::string (row.target) + ", saturation asked " + num (row.share) + ": reached " + num (reached) + " (" + num (z.db.value_or (-1.0))
-                + " dB of " + num (w ? w->totalDb.value_or (-1.0) : -1.0) + "), mix " + num (mix) + ", drive " + num (drive) + " dB, stop "
-                + std::to_string (unsigned (z.stop)) + ", " + std::to_string (w ? w->extraPasses : 0u) + " moves");
+        const auto& z = w ? w->glue : MasterWaterfallZone {};
+        const double mix = z.setting.value_or (-1.0), reached = z.reached.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        ok (w && z.stop == row.stop && mix > 0.001 && mix < 0.999 && reached >= 0.0 && reached < 0.7 && (moves >= 4u) == row.outOfMoves,
+            "threshold " + num (row.thresholdDb) + " dB, glue asked 0.700: reached " + num (reached) + ", mix " + num (mix) + ", "
+                + std::to_string (moves) + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want "
+                + std::to_string (unsigned (row.stop)) + ")");
     }
 }
 
 //==============================================================================
-// CONVERGENCE: the steering moves the stages at most twice on the fixture (extraPasses), and the landing's own passes
+// A SATURATION HELD BY ITS STEP SAYS SO: a Cubic saturation driven by hand at 12 dB (the steering never moves a person's
+// drive) takes its loud places steeply at a small mix — a mix's step of 0.02 there is more than half a dB. Asked 0.06 or
+// 0.10 alone on maxDense, the steering's first move lands the mix near the want; its next look finds the take off by more
+// than its tolerance, but the mix that meets it lies within 0.02 of the one in force, so nothing moves: MixStep, not
+// Passes. Asked 0.20, the second move lands it: Reached.
+void saturationUnderStep()
+{
+    felitronics::test::group ("a saturation's mix the steering holds under its step stops on MixStep");
+    const auto pcm = fixture();
+    struct Row { double share; WaterfallStop stop; };
+    for (const Row row : { Row { 0.06, WaterfallStop::MixStep }, Row { 0.10, WaterfallStop::MixStep }, Row { 0.20, WaterfallStop::Reached } })
+    {
+        auto made = loaded (pcm, "maxDense");
+        SaturationFields<Touched> f; f.drive = 12.0; f.type = SaturationType::Cubic;
+        const bool hand = made && made->apply (command::EditDevice { 5, f }).rejection == Rejection::None;
+        const Kept* k = hand && editShares (*made, 10, std::nullopt, row.share, std::nullopt) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const auto& z = w ? w->saturation : MasterWaterfallZone {};
+        const double mix = z.setting.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        ok (w && z.stop == row.stop && mix > 0.001 && mix < 0.999 && moves < 4u,
+            "Cubic at 12 dB by hand, saturation asked " + num (row.share) + ": reached " + num (z.reached.value_or (-1.0)) + " ("
+                + num (z.db.value_or (-1.0)) + " dB of " + num (w ? w->totalDb.value_or (0.0) : 0.0) + "), mix " + num (mix) + ", "
+                + std::to_string (moves) + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want "
+                + std::to_string (unsigned (row.stop)) + ")");
+    }
+}
+
+//==============================================================================
+// A CUT HELD BY ITS STEP SAYS SO: the cut alone on maxClean, asked 0.10 or 0.15 — the clipper's take moves in steps of
+// 0.1 dB (a P95 over what it clipped), so after the first move it still reads 0.2 dB, off its want by more than the
+// tolerance; the cut that meets it (the cut scaled by want / take) lies within 0.1 dB of the one in force, and a cut moves
+// only by more: CutStep, not Passes.
+void cutUnderStep()
+{
+    felitronics::test::group ("a clipper's cut the steering holds under its step stops on CutStep");
+    const auto pcm = fixture();
+    for (const double share : { 0.10, 0.15 })
+    {
+        auto made = loaded (pcm, "maxClean");
+        const Kept* k = made && editShares (*made, 10, std::nullopt, std::nullopt, share) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const auto& z = w ? w->cut : MasterWaterfallZone {};
+        const double cut = z.setting.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        ok (w && z.stop == WaterfallStop::CutStep && cut > 0.01 && moves < 4u,
+            "maxClean, cut asked " + num (share) + ": reached " + num (z.reached.value_or (-1.0)) + " (" + num (z.db.value_or (-1.0))
+                + " dB of " + num (w ? w->totalDb.value_or (0.0) : 0.0) + "), cut " + num (cut) + " dB, " + std::to_string (moves)
+                + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want " + std::to_string (unsigned (WaterfallStop::CutStep)) + ")");
+    }
+}
+
+//==============================================================================
+// A ZONE MET ON THE STEERING'S TOTAL SAYS SO: the glue alone on maxClean (0.15, 0.30, 0.50), maxDense (0.40) and
+// maxExtreme (0.10), the cut alone on maxDense (0.25), and the saturation on maxDense at 0.25 beside the page's glue and
+// cut (0.05 each) — the steering's last look finds the zone within its tolerance of its share of the total it foresees at
+// the target and moves nothing more, with moves left; the delivered render's total comes out elsewhere, and the zone's
+// share of it misses the asked one by more than the tolerance: TotalMoved, not Passes.
+void metOnTheSteeringsTotal()
+{
+    felitronics::test::group ("a zone met on the total the steering foresaw stops on TotalMoved, not Passes");
+    const auto pcm = fixture();
+    struct Row { std::string_view target; int zone; std::optional<double> glue, saturation, cut; };
+    const Row rows[] {
+        { "maxClean", 0, 0.15, std::nullopt, std::nullopt }, { "maxClean", 0, 0.30, std::nullopt, std::nullopt },
+        { "maxClean", 0, 0.50, std::nullopt, std::nullopt }, { "maxDense", 0, 0.40, std::nullopt, std::nullopt },
+        { "maxExtreme", 0, 0.10, std::nullopt, std::nullopt }, { "maxDense", 2, std::nullopt, std::nullopt, 0.25 },
+        { "maxDense", 1, 0.05, 0.25, 0.05 },
+    };
+    for (const auto& row : rows)
+    {
+        auto made = loaded (pcm, row.target);
+        const Kept* k = made && editShares (*made, 10, row.glue, row.saturation, row.cut) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const MasterWaterfallZone none {};
+        const auto& z = ! w ? none : row.zone == 0 ? w->glue : row.zone == 1 ? w->saturation : w->cut;
+        const double total = w ? w->totalDb.value_or (0.0) : 0.0, asked = z.asked.value_or (-1.0), db = z.db.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        const bool missed = total > 0.0 && std::fabs (asked * total - db) > std::fmax (0.1, 0.03 * total);
+        ok (w && z.stop == WaterfallStop::TotalMoved && missed && moves < 4u,
+            std::string (row.target) + ", " + (row.zone == 0 ? "glue" : row.zone == 1 ? "saturation" : "cut") + " asked " + num (asked)
+                + ": reached " + num (z.reached.value_or (-1.0)) + " (" + num (db) + " dB of " + num (total) + "), " + std::to_string (moves)
+                + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want " + std::to_string (unsigned (WaterfallStop::TotalMoved)) + ")");
+    }
+}
+
+//==============================================================================
+// CONVERGENCE: the steering moves the stages at most three times on the fixture (extraPasses; with a cut wish the start
+// clipper's first pass, which measures the peak its threshold is cut from, is one of them), and the landing's own passes
 // after them are no more than the no-wish landing's and two. A max mode's cleaner landing holds the master without the
 // wishes first — that landing is the no-wish one — so its passes are counted off before the zones' landing is compared.
 void convergence()
@@ -406,7 +581,7 @@ void convergence()
         const std::uint32_t passes = k && k->landing ? k->landing->passes : 999u;
         const std::uint32_t extra = k && k->report->waterfall ? k->report->waterfall->extraPasses : 999u;
         const std::uint32_t phaseA = target == "maxClean" ? alone : 0u;
-        ok (alone > 0 && extra <= 2u && passes >= extra + phaseA && passes - extra - phaseA <= alone + 2u,
+        ok (alone > 0 && extra <= 3u && passes >= extra + phaseA && passes - extra - phaseA <= alone + 2u,
             std::string (target) + ": the no-wish landing " + std::to_string (alone) + " passes, with three shares "
                 + std::to_string (passes) + " in all, " + std::to_string (extra) + " of them the steering's moves"
                 + (phaseA ? ", " + std::to_string (phaseA) + " the landing without the wishes" : std::string()));
@@ -503,6 +678,44 @@ void twoClippers()
     ok (s.apply (command::RevertEdits { 30, cutMask }).rejection == Rejection::None
             && ! start (detail::MasterJob::plan (s, command::Master { 94 }, s.project())),
         "the glue sounding with no cut wish: no start clipper");
+}
+
+//==============================================================================
+// THE NEEDLES' THRESHOLD AFTER THE LAST START CUT: with two clippers ("both"), the limiter's own clipper is set to take
+// [limiter.peakClipper]'s cut off the loudest peak at its input, worked out from that peak as measured. A move of the
+// start clipper's cut moves that peak too, and nothing foresees by how much: the steering measures it again on the pass
+// after its last such move. On maxDense with the page's default shares and on maxClean with 0.2 / 0.3 / 0.2 — both
+// moving the start cut — the delivered render's needles take their cut to 0.01 dB: its peak at the limiter's input less
+// the threshold the clipper was given.
+void needlesAfterStartCut()
+{
+    felitronics::test::group ("the limiter's clipper takes its configured cut after the start clipper's last move");
+    struct Row { std::string_view target; double glue, saturation, cut; };
+    const auto pcm = fixture();
+    for (const Row row : { Row { "maxDense", 0.05, 0.20, 0.05 }, Row { "maxClean", 0.2, 0.3, 0.2 } })
+    {
+        auto made = loaded (pcm, row.target);
+        if (! made || ! editShares (*made, 10, row.glue, row.saturation, row.cut)) { ok (false, "PRECONDITION: a measured session with three shares"); continue; }
+        Session& s = *made;
+        const auto plan = detail::MasterJob::plan (s, command::Master { 90 }, s.project());
+        const double startCut = plan.ready.params.startClipCutDb;
+        // The job is gone once its master is kept: what it held is read on its last step.
+        felitronics::mastering::MasteringChainParams steered {};
+        felitronics::mastering::LoudnessSolution best {};
+        double peakAtZero = std::numeric_limits<double>::quiet_NaN();
+        const bool asked = s.apply (command::Master { 90 }).rejection == Rejection::None;
+        for (unsigned i = 0; asked && i < 4000000 && s.job() != 0; ++i)
+        {
+            (void) s.step (16);
+            if (const auto* job = detail::Inspector::masterJob (s))
+                { steered = job->search.currentParams(); best = job->result(); peakAtZero = job->search.peakClipPeakDb(); }
+        }
+        const bool moved = plan.ready.topology.startClipper && std::isfinite (steered.startClipCutDb) && std::fabs (steered.startClipCutDb - startCut) > 0.1;
+        const double cut = best.measured.limiterMaxReconstructedPeakDb - (peakAtZero + best.preLimiterGainDb) + steered.peakClipCutDb;
+        ok (moved && std::isfinite (cut) && std::fabs (cut - steered.peakClipCutDb) <= 0.01,
+            std::string (row.target) + ": the start cut " + num (startCut) + " → " + num (steered.startClipCutDb)
+                + " dB, the needles took " + num (cut) + " dB of their " + num (steered.peakClipCutDb));
+    }
 }
 
 //==============================================================================
@@ -604,6 +817,44 @@ void queueAtTheFirstAnalysis()
 }
 
 //==============================================================================
+// A QUEUE WAITING FOR THE TAKE IS NOT WORK: a master delivered and a second one queued behind it wait for the first one's
+// PCM to be taken or released, which no step does — so `step` says Done (the pump contract: More while a step has work,
+// Done when none does), with no unit spent and nothing published, however often it is called. The release makes the
+// queued master ready: the next step starts it, and it is delivered.
+void queueWaitingForTheTake()
+{
+    felitronics::test::group ("a queue waiting only for the take: step says Done; the release lets the next step start it");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "spotify");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    const auto first = s.apply (command::Master { 3 });
+    const auto second = s.apply (command::Master { 4 });
+    for (unsigned i = 0; i < 4000000 && s.pendingMaster().master == 0; ++i) (void) s.step (16);
+    Stepped st {};
+    for (unsigned i = 0; i < 4000000; ++i) if ((st = s.step (16)).units == 0) break;
+    ok (first.rejection == Rejection::None && second.rejection == Rejection::None && s.pendingMaster().job == first.job
+            && queuedRows (s) == 1 && s.job() == 0,
+        "PRECONDITION: the first master delivered, the second queued behind it, no job running");
+    bool quiet = true;
+    for (unsigned i = 0; i < 3; ++i)
+    {
+        const std::uint64_t revision = s.revision();
+        st = s.step (16);
+        quiet = quiet && st.state == StepState::Done && st.units == 0 && s.events().empty() && s.revision() == revision;
+    }
+    ok (quiet, std::string ("waiting for the take, step says ") + (st.state == StepState::Done ? "Done" : "More")
+                   + " with " + std::to_string (st.units) + " units, " + std::to_string (s.events().size()) + " events");
+    const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
+    st = s.step (16);
+    const bool started = st.state == StepState::More && st.units > 0;
+    for (unsigned i = 0; i < 4000000 && s.pendingMaster().master == 0; ++i) (void) s.step (16);
+    ok (released && started && s.pendingMaster().job == second.job && queuedRows (s) == 0,
+        std::string ("released: the next step ") + (started ? "starts the queued master" : "does not start it")
+            + ", which is delivered");
+}
+
+//==============================================================================
 // A MASTER WITH NO WISH IS THE CANDIDATE BEFORE THE WATERFALL, TO THE BIT: the digests below are commit 808c058's — the
 // same noWishDigest, built from that commit's tree — on every target it had (maxNuke is new).
 void noWishAsBefore()
@@ -654,20 +905,20 @@ void noWishAsBefore()
 
 //==============================================================================
 // THE PAGE'S DEFAULT SHARES SOUND AS THEY DID: each max mode with the shares the page starts it on (glue, saturation,
-// cut), mastered on the fixture — the digests below were taken on 0797082, before the fixes of the review and of the
-// saturation's steering at large shares. A fix that moves one of them changes the sound people already heard.
+// cut), mastered on the fixture — the digests below were taken when the steering's total became the peak work the zones
+// and the limiter share at the target (after v0.21.0). A change that moves one of them changes the sound people hear.
 // The steering decides through the platform's libm (a known limit of v0.21.0), so a steered master's bits are the
 // platform's: the digests hold on Apple arm64, where they were taken; elsewhere each master must still be delivered, and
 // Linux is held by the release's golden check of 360 masters on gcc.
 void defaultSharesAsBefore()
 {
-    felitronics::test::group ("the max modes with the page's default shares: 0797082's PCM to the bit");
+    felitronics::test::group ("the max modes with the page's default shares: their PCM to the bit");
     struct Row { std::string_view target; double glue, saturation, cut; std::uint64_t digest; };
     static constexpr Row before[] {
-        { "maxClean", 0.02, 0.10, 0.01, 0xe8986131c50be271ull },
-        { "maxDense", 0.05, 0.20, 0.05, 0xbb5c7839b52eff1cull },
-        { "maxExtreme", 0.15, 0.30, 0.05, 0x3bc9bda8f78129fcull },
-        { "maxNuke", 0.10, 0.40, 0.10, 0xc8cac2253d47cd21ull },
+        { "maxClean", 0.02, 0.10, 0.01, 0xde899fc5d14b4cceull },
+        { "maxDense", 0.05, 0.20, 0.05, 0x92746a94b60fe6d1ull },
+        { "maxExtreme", 0.15, 0.30, 0.05, 0x3e99bfba8cecc362ull },
+        { "maxNuke", 0.10, 0.40, 0.10, 0xb433bd4d97bccae5ull },
     };
     const auto pcm = fixture();
     for (const auto& row : before)
@@ -684,6 +935,7 @@ void defaultSharesAsBefore()
         ok (now != 0u && same, std::string (row.target) + " " + num (row.glue) + "/" + num (row.saturation) + "/" + num (row.cut) + ": " + digest);
     }
 }
+
 } // namespace
 
 int main()
@@ -693,13 +945,21 @@ int main()
     waterfallReport();
     zeroZone();
     driveCeiling();
+    nukeDrivePastTen();
     saturationAtLargeShares();
+    wholeSumKeepsRatios();
+    glueUnderStep();
+    saturationUnderStep();
+    cutUnderStep();
+    metOnTheSteeringsTotal();
     convergence();
     cleaner();
     twoClippers();
+    needlesAfterStartCut();
     nuke();
     snapshotAtTheCommand();
     queueAtTheFirstAnalysis();
+    queueWaitingForTheTake();
     noWishAsBefore();
     defaultSharesAsBefore();
     return felitronics::test::report();
