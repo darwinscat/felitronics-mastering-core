@@ -137,13 +137,16 @@ struct Landing
     // [landing.max]: the max modes' search ceiling, the floor no max master lands under, and each mode's limiter budget (dB,
     // active-window P95, a whole number of quarter dB).
     double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
-    double cleanBudgetDb = 0.0, denseBudgetDb = 0.0;
+    double cleanBudgetDb = 0.0, denseBudgetDb = 0.0, extremeBudgetDb = 0.0, nukeBudgetDb = 0.0;
+    // Each max mode's `cleaner` is checked by the schema (written only as false) and read by the master's plan alone.
     double maxBudgetResolutionDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
 struct PeakClipper
 {
+    // `place` (start, limiter or both: where the cut zone's clipper stands) is checked by the schema and read by the
+    // master's plan alone.
     Span manualDomain;
     double littleNeedDb = 0.0;
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
@@ -156,6 +159,13 @@ struct PeakClipper
     double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual cut starts at betweenCutDb
 };
 
+// A knob's coloured window (owner, 07.10): neutral from low to high, shading out to warningLow / warningHigh. A side that
+// does not exist is an edge at the domain's end.
+struct Comfort
+{
+    double low = 0.0, high = 0.0, warningLow = 0.0, warningHigh = 0.0;
+};
+
 struct Limiter
 {
     double ceilingMarginDb = 0.0;
@@ -164,13 +174,16 @@ struct Limiter
     bool dualRelease = false;
     double slowReleaseMs = 0.0;
     PeakClipper peakClipper;
-};
-
-// A knob's coloured window (owner, 07.10): neutral from low to high, shading out to warningLow / warningHigh. A side that
-// does not exist is an edge at the domain's end.
-struct Comfort
-{
-    double low = 0.0, high = 0.0, warningLow = 0.0, warningHigh = 0.0;
+    // The three by hand (08.10): the release and the lookahead as a person sets them — `<name>Domain`, `<name>Range`,
+    // `<name>Step`, `<name>Comfort` — and the oversampling's domain, whose powers of two a person may pick.
+    struct HandKnob
+    {
+        Span domain, range;
+        double step = 0.0;
+        Comfort comfort;
+    };
+    HandKnob releaseKnob, lookaheadKnob;
+    Span oversamplingDomain;
 };
 
 struct LowEndRun
@@ -294,6 +307,9 @@ struct Glue
     Span domain;
     double defaultUpToDb = 0.0;                // `default`
     double whenTickedUpToDb = 0.0;             // `whenTicked`
+    // `ticked`: the character a person's tick gives a glue the machine left at 0 (owner, 08.10) — the threshold stays the
+    // travel's at the amount, the release follows no tempo.
+    struct Ticked { double ratio = 0.0, kneeDb = 0.0, attackMs = 0.0, releaseMs = 0.0; } ticked;
     std::vector<GlueAtTarget> byTarget;        // in the document's order
     GlueRamp ratio, threshOffset, attack, knee, divisor;
     double knobMinDb = 0.0, knobMaxDb = 0.0, knobStepDb = 0.0;
@@ -303,6 +319,15 @@ struct Glue
     Span mixDomain, mixRange;
     double mix = 0.0, mixStep = 0.0;
     Comfort comfort, mixComfort;               // the amount's and the mix's fields
+    // The five by hand (07.10): the compressor's threshold, ratio, knee, attack and release as a person sets them —
+    // `<name>Domain`, `<name>Range`, `<name>Step`, `<name>Comfort`.
+    struct HandKnob
+    {
+        Span domain, range;
+        double step = 0.0;
+        Comfort comfort;
+    };
+    HandKnob thresholdDb, ratioKnob, kneeDb, attackMs, releaseMs;
 };
 
 // felitronics-core's WaveShaper::Shape, in its order and values (Tube … Tape since v0.57.0). The machine's type; a person
@@ -314,6 +339,9 @@ struct Saturation
     Span driveDomain, mixDomain;
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
+    double whenTickedDb = 0.0;                 // `whenTicked`: the drive a person's tick gives an untouched drive of 0
+    // `steerDriveMaxDb` (the waterfall's ceiling of a steered drive, knob dB) is checked by the schema and read by the
+    // master's plan alone.
     Span driveRange;
     double driveStep = 0.0;
     Comfort driveComfort;                      // the drive's field
@@ -546,6 +574,8 @@ struct Progress
     std::int32_t masterExpectedPasses = 0;     // [progress.master] expectedPasses
     std::int32_t masterExpectedPassesMaxClean = 0;   // [progress.master] expectedPassesMaxClean
     std::int32_t masterExpectedPassesMaxDense = 0;   // [progress.master] expectedPassesMaxDense
+    std::int32_t masterExpectedPassesMaxExtreme = 0;   // [progress.master] expectedPassesMaxExtreme
+    std::int32_t masterExpectedPassesMaxNuke = 0;   // [progress.master] expectedPassesMaxNuke
 };
 
 // The blind test's protocol. Its variants — the chains a pair compares — are not here: they are defined with the test.

@@ -7,6 +7,7 @@
 #include "Chain.h"
 #include "MeasurementPlan.h"
 #include "Cost.h"
+#include "Dynamics.h"
 #include "Limiter.h"
 #include "Observations.h"
 #include <felitronics/analysis/BandCrestResult.h>
@@ -145,6 +146,9 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     h.flag (p.bypassEq); h.flag (p.bypassMonoBass); h.flag (p.bypassCompressor);
     h.flag (p.bypassClipper); h.flag (p.bypassLimiter); h.flag (p.bypassDither);
     h.f64 (p.compressorMix);
+    // The start clipper: hashed only where it is in the chain, so a chain without it keeps its fingerprint.
+    if (t.startClipper)
+    { h.flag (true); h.f64 (p.startClipCutDb); h.f64 (p.startClipPeakDb); h.flag (p.bypassStartClipper); }
     return h.value;
 }
 
@@ -170,21 +174,48 @@ MaxStop maxStopOf (const MaxStopInputs& in) noexcept
     return MaxStop::Passes;
 }
 
+MaxStop cleanStopOf (MaxStop alone, bool onFloor, MaxStopInputs delivered) noexcept
+{
+    // The landing with the zones has no budget: above the ceiling or out of passes, that is what ended the master; landed
+    // on the loudness the one without them reached, what ended that one is the verdict.
+    delivered.overBudget = false;
+    delivered.floor = onFloor && delivered.status == mastering::MasteringSolveStatus::Solved;
+    const MaxStop own = maxStopOf (delivered);
+    return onFloor || own != MaxStop::SearchCeiling ? own : alone;
+}
+
 std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     const auto master = engine.find ("progress").find ("master");
     const auto key = mode == LoudnessMode::MaxClean ? "expectedPassesMaxClean"
-                   : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense" : "expectedPasses";
+                   : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense"
+                   : mode == LoudnessMode::MaxExtreme ? "expectedPassesMaxExtreme"
+                   : mode == LoudnessMode::MaxNuke ? "expectedPassesMaxNuke" : "expectedPasses";
     return std::uint32_t (*master.find (key).integer());
 }
 
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
-    return number (engine.find ("landing").find ("max").find (mode == LoudnessMode::MaxClean ? "clean" : "dense").find ("budgetDb"));
+    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense"
+                    : mode == LoudnessMode::MaxExtreme ? "extreme" : "nuke";
+    return number (engine.find ("landing").find ("max").find (name).find ("budgetDb"));
+}
+
+bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept
+{
+    if (mode == LoudnessMode::Manual) return false;
+    const auto name = mode == LoudnessMode::MaxClean ? "clean" : mode == LoudnessMode::MaxDense ? "dense"
+                    : mode == LoudnessMode::MaxExtreme ? "extreme" : "nuke";
+    return engine.find ("landing").find ("max").find (name).find ("cleaner").boolean().value_or (true);
 }
 
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
+{
+    return plan (s, input, project, rules());
+}
+
+MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project, const Rules& ruleset) noexcept
 {
     MasterPlan result;
     if (input.budgetResolutionDb && ! std::isfinite (*input.budgetResolutionDb))
@@ -200,7 +231,6 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     double sourceLufs = std::numeric_limits<double>::quiet_NaN();
     for (const auto& value : s.measurementResults_[std::size_t (Analyzer::Loudness)].numbers)
         if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
-    const auto ruleset = rules();
     const auto target = ruleset.row (project.target);
     // THE DELIVERY FORMAT IS THE TARGET'S (PLAN: rate, bit depth and dither come from the target). Its rate — the
     // source's when the target keeps it (sampleRate 0) — and its depth: 0 names each, the same value restates it,
@@ -422,10 +452,79 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             || ! std::isfinite (result.floorLufs))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
+    // THE WATERFALL: a person's wishes, a master the session decides only.
+    if (input.ready.version == 0)
+    {
+        const auto& d = project.devices;
+        if (d.glue.hand.share) result.request.waterfallGlueShare = *d.glue.hand.share;
+        if (d.saturation.hand.share) result.request.waterfallSaturationShare = *d.saturation.hand.share;
+        if (d.limiter.hand.cutShare) result.request.waterfallCutShare = *d.limiter.hand.cutShare;
+        const double cutMax = number (engine.find ("limiter").find ("peakClipper").find ("manualDomain")[1]);
+        if (std::isfinite (cutMax)) result.request.waterfallCutMaxDb = cutMax;
+        // THE DRIVE'S CEILING (owner, 08.10): [saturation] steerDriveMaxDb on the knob, aligned to the programme's peak as
+        // the placed drive is (k = 10^(knob/20) − 1 scaled by the peak: the scale read off the placed pair); never a
+        // person's drive.
+        const double knob0 = saturationKnob (ruleset, d.saturation), aligned0 = double (result.ready.params.clipper.driveDb);
+        const double ceiling = number (engine.find ("saturation").find ("steerDriveMaxDb"));
+        if (d.saturation.hand.share && ! d.saturation.hand.drive && ! result.ready.params.bypassClipper && knob0 > 0.01
+            && std::isfinite (aligned0) && aligned0 > 0.0 && std::isfinite (ceiling))
+        {
+            const double scale = (core::det::pow10 (aligned0 / 20.0) - 1.0) / (core::det::pow10 (knob0 / 20.0) - 1.0);
+            result.request.waterfallSaturationDriveMaxDb = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (ceiling / 20.0) - 1.0) * scale);
+            result.saturationDriveScale = scale;
+        }
+        // TWO CLIPPERS (owner 08.10: [limiter.peakClipper] place): with a cut wish, where the glue or the saturation
+        // sounds, the cut zone is a clipper at the start of the chain — after the high-pass and the mono bass, ahead of
+        // the glue, on an oversampler of its own at the chain's factor (the limiter's oversampling) — steered from the cut
+        // the wish starts at. The limiter's clipper stays as the wish set it, unsteered, and catches the peaks the glue and
+        // the saturation regrow ("both"), or is off ("start").
+        const auto place = engine.find ("limiter").find ("peakClipper").find ("place").string();
+        if (place && *place != "limiter" && std::isfinite (result.request.waterfallCutShare)
+            && result.request.waterfallCutShare > detail::kZeroShare)
+        {
+            auto& t = result.ready.topology;
+            auto& p = result.ready.params;
+            const bool glue = t.compressor && ! p.bypassCompressor, saturation = t.clipper && ! p.bypassClipper;
+            if (glue || saturation)
+            {
+                t.startClipper = true;
+                p.startClipCutDb = std::isfinite (p.peakClipCutDb) ? p.peakClipCutDb
+                                 : number (engine.find ("limiter").find ("peakClipper").find ("betweenCutDb"));
+                p.startClipPeakDb = std::numeric_limits<double>::quiet_NaN();
+                p.bypassStartClipper = false;
+                if (*place == "start")
+                {
+                    p.limiter.peakClip = false;
+                    p.peakClipCutDb = p.peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();
+                }
+            }
+        }
+        // CLEANER, NOT LOUDER (owner, 08.10): in a max mode the zones buy a cleaner master, not a louder one. The chain
+        // the project writes without the wishes lands first (today's automat on its budget); the zones then take their
+        // shares at that loudness. Both run on one topology: a stage only one of them has is bypassed in the other.
+        // A mode with `cleaner = false` ([landing.max]) lands its zones on its budget instead, in one landing.
+        if (result.request.waterfall() && maxCleaner (engine, result.loudnessMode))
+        {
+            // Without the wishes: the shares go, every other field of a person's stays as the project has it.
+            auto alone = project.devices;
+            alone.glue.hand.share.reset(); alone.saturation.hand.share.reset(); alone.limiter.hand.cutShare.reset();
+            command::MasterReady bare = input.ready;
+            writeChain (s.planInputs (project), alone, bare);
+            auto& t = result.ready.topology;
+            if (bare.topology.compressor && ! t.compressor) { t.compressor = true; result.ready.params.bypassCompressor = true; }
+            else if (t.compressor && ! bare.topology.compressor) bare.params.bypassCompressor = true;
+            if (bare.topology.clipper && ! t.clipper) { t.clipper = true; result.ready.params.bypassClipper = true; }
+            else if (t.clipper && ! bare.topology.clipper) bare.params.bypassClipper = true;
+            if (t.startClipper && ! bare.topology.startClipper) bare.params.bypassStartClipper = true;
+            result.clean = true;
+            result.aloneParams = bare.params;
+        }
+    }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
     result.ready.params.dither.bits = deliveryBits;
     result.request.pcmBits = deliveryBits;
+    if (result.clean) { result.aloneParams.limiter.ceilingDbTp = targetTp - margin; result.aloneParams.dither.bits = deliveryBits; }
     if (! std::isfinite (result.ready.params.inputGainDb)
         || std::fabs (result.ready.params.inputGainDb + normalization) > 60.0
         || ! std::isfinite (result.ready.params.preLimiterGainDb))
@@ -530,7 +629,16 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     floorRequest.targetLufs = plan.floorLufs;
     floorRequest.limiterGr = {};
     floorRequest.landingOnSourceGate = false;
+    floorRequest.waterfallGlueShare = floorRequest.waterfallSaturationShare = floorRequest.waterfallCutShare
+        = std::numeric_limits<double>::quiet_NaN();
     floorPass = false; floorFirstPasses = 0; floorFirstWork = 0;
+    waterfall = plan.request.waterfall(); waterfallSteps = 0; steered = plan.ready.params;
+    waterfallGlueShare = plan.request.waterfallGlueShare;
+    waterfallSaturationShare = plan.request.waterfallSaturationShare;
+    waterfallCutShare = plan.request.waterfallCutShare;
+    saturationDriveScale = plan.saturationDriveScale;
+    saturationDriveMaxDb = plan.request.waterfallSaturationDriveMaxDb;
+    waterfallCutMaxDb = plan.request.waterfallCutMaxDb;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -576,6 +684,18 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     {
         sourcePlanes[c] = s.samples_.get() + std::size_t (c) * std::size_t (s.source_.frames);
         outputPlanes[c] = output.get() + std::size_t (c) * std::size_t (frames);
+    }
+    cleanPhase = plan.clean; cleanDone = false; cleanOnFloor = false; aloneParams = plan.aloneParams; cleanRequest = plan.request;
+    aloneLufs.reset(); aloneLimiterDb.reset(); aloneStop = MaxStop::None;
+    if (cleanPhase)
+    {
+        auto request = plan.request;
+        request.waterfallGlueShare = request.waterfallSaturationShare = request.waterfallCutShare
+            = std::numeric_limits<double>::quiet_NaN();
+        chain.setParams (aloneParams);
+        return search.begin (chain, renderer, aloneParams, sourcePlanes,
+            (long long) s.source_.frames, double (s.source_.sampleRate), outputPlanes,
+            channels, frames, request, {}, convert ? &converter : nullptr);
     }
     chain.setParams (plan.ready.params);
     return search.begin (chain, renderer, plan.ready.params, sourcePlanes,
@@ -693,13 +813,39 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
+        if (! floorPass && search.waterfallOn())
+        { steered = search.currentParams(); waterfallSteps = std::uint32_t (search.waterfallSteps()); }
+        // THE LANDING WITHOUT THE WISHES, DONE: its file's loudness is the target of the landing with the zones, which
+        // goes on from its gain with no budget and twelve passes of its own; its passes stay in the log before the new ones.
+        if (cleanPhase)
+        {
+            cleanPhase = false;
+            const auto& alone = search.result();
+            if (result == StepResult::Done && alone.deliverable && std::isfinite (alone.achievedLufs))
+            {
+                aloneLufs = alone.achievedLufs;
+                if (alone.limiterActive.stats.valid && std::isfinite (alone.limiterActive.stats.p95Db))
+                    aloneLimiterDb = alone.limiterActive.stats.p95Db;
+                aloneStop = maxStopOf ({ alone.peaksAboveCeiling, std::isfinite (search.overBudgetDb()), false, alone.status,
+                                         alone.binding });
+                cleanOnFloor = std::isfinite (floorLufs) && alone.achievedLufs < floorLufs - floorRequest.toleranceLu;
+                floorFirstPasses = std::uint32_t (alone.logCount);
+                floorFirstWork = alone.workUnits;
+                auto& rows = session->masterRows_[rowIndex];
+                if (! LandingOps::passRows (alone,
+                        { rows.passes.get(), rows.passes ? std::size_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) : 0u })
+                    || ! beginClean()) { stage = Stage::Failed; return StepResult::Failed; }
+                cleanDone = true;
+                return StepResult::More;
+            }
+        }
         // A MAX MODE NEVER DELIVERS A FILE QUIETER THAN [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"),
         // whichever target it sits on: a first landing whose file — by its BS.1770 reading, the number a person reads —
         // stands under that floor by more than the landing's own tolerance ([landing] toleranceLu: a file within it of a
         // level is on that level, as every landing counts it) is landed again on the floor, by that reading, with no
         // budget. Whatever held the first landing there (the budget, the passes) does not matter; what the floor pass
         // delivers is said as what really ended it (settleLanding).
-        if (mode != LoudnessMode::Manual && ! floorPass && result == StepResult::Done && search.result().deliverable)
+        if (mode != LoudnessMode::Manual && ! floorPass && ! cleanDone && result == StepResult::Done && search.result().deliverable)
         {
             const double file = search.result().achievedLufs;
             if (std::isfinite (floorLufs) && std::isfinite (file) && file < floorLufs - floorRequest.toleranceLu)
@@ -910,15 +1056,18 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             costResult.limiterActiveShare = { MeasurementReason::None,
                 solution.limiterActive.stats.activeFraction, solution.limiterActive.stats.frames };
         else costResult.limiterActiveShare.reason = MeasurementReason::Unsupported;
-        // WHAT THE GLUE AND THE SATURATION DID, each on its own stage (owner decisions 3.8, 3.9): the compressor's gain
-        // reduction — its P95 over the programme's 4 ms windows and its largest sample — and the soft clipper's cut of
-        // peaks against its own gain on a quiet sound. A stage out of the chain has no number.
+        // WHAT THE GLUE AND THE SATURATION DID, each on its own stage (owner decisions 3.8, 3.9), each after its own mix:
+        // what the glue's output lost against its input — the compressor's gain reduction, its P95 over the programme's
+        // 4 ms windows and its largest sample, carried through the parallel blend at the mix the stage applied (owner,
+        // 08.10: the song's take, not the compressed path's) — and the soft clipper's cut of peaks against its own gain on
+        // a quiet sound. A stage out of the chain has no number.
         const bool compressing = ready.topology.compressor && ! ready.params.bypassCompressor;
         const auto& glue = solution.measured.compressor;
         if (compressing && glue.valid && std::isfinite (glue.maxDb) && solution.grQuantile (mastering::GrStage::Compressor, .95, quantile))
         {
-            costResult.glueP95Db = { MeasurementReason::None, quantile, glue.frames };
-            costResult.glueMaxDb = { MeasurementReason::None, glue.maxDb, glue.frames };
+            const double mix = chain.resolved().compressorMix;
+            costResult.glueP95Db = { MeasurementReason::None, detail::glueTakenDb (quantile, mix), glue.frames };
+            costResult.glueMaxDb = { MeasurementReason::None, detail::glueTakenDb (glue.maxDb, mix), glue.frames };
         }
         else costResult.glueP95Db.reason = costResult.glueMaxDb.reason = compressing ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
         const bool shaping = ready.topology.clipper && ! ready.params.bypassClipper;
@@ -930,6 +1079,68 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                 20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudUsualRatio), clipPeaks.loudQuanta };
         }
         else costResult.saturationCutMaxDb.reason = costResult.saturationCutUsualDb.reason = shaping ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
+        // THE WATERFALL: each zone's take on the delivered render — the glue's P95 through its mix, the saturation's
+        // usual cut, the needles' clipper's P95 over what it clipped, the limiter's P95 on its active windows — its share
+        // of their total, beside the share asked (the limiter's: the rest), and the mixes and the cut that took it.
+        if (waterfall)
+        {
+            const auto take = [] (const MasterCostValue& v) noexcept { return v.reason == MeasurementReason::None && v.value ? std::fmax (0.0, *v.value) : 0.0; };
+            const double glueDb = take (costResult.glueP95Db), saturationDb = take (costResult.saturationCutUsualDb);
+            // Two clippers: the cut zone is the start clipper's take, and the limiter's own clipper's is the regrown peaks,
+            // a part of the limiter's rest.
+            const bool startCut = std::isfinite (startTakeDb);
+            const double needlesDb = std::fmax (0.0, solution.measured.peakClipReductionP95Db);
+            const double cutDb = startCut ? startTakeDb : needlesDb;
+            const double regrownDb = startCut ? needlesDb : 0.0;
+            const double limiterDb = take (costResult.limiterP95Db);
+            const double total = glueDb + saturationDb + cutDb + limiterDb + regrownDb;
+            double sum = 0.0;
+            for (const double share : { waterfallGlueShare, waterfallSaturationShare, waterfallCutShare })
+                if (std::isfinite (share)) sum += std::clamp (share, 0.0, 1.0);
+            const double scale = sum > 1.0 ? 1.0 / sum : 1.0;
+            const auto asked = [scale] (double share) noexcept -> std::optional<double>
+                { return std::isfinite (share) ? std::optional<double> (std::clamp (share, 0.0, 1.0) * scale) : std::nullopt; };
+            const auto reached = [total] (double db) noexcept -> std::optional<double>
+                { return total > 0.0 ? std::optional<double> (db / total) : std::nullopt; };
+            const auto zone = [&] (double share, double db, bool sounding, std::optional<double> setting, bool cut) noexcept
+            {
+                MasterWaterfallZone z;
+                z.asked = asked (share); z.reached = reached (db); z.db = db;
+                if (sounding) z.setting = setting;
+                if (! z.asked) z.stop = WaterfallStop::NoWish;
+                // A zone asked 0 % whose stage is out of the chain reached it.
+                else if (! sounding || ! setting) z.stop = *z.asked <= detail::kZeroShare && db <= 0.05 ? WaterfallStop::Reached : WaterfallStop::NotSounding;
+                // Met as the landing counts it: within 0.1 dB of its want, or 3 % of the total where that is more.
+                else if (! z.reached || std::fabs (*z.asked * total - db) <= std::fmax (0.1, 0.03 * total)) z.stop = WaterfallStop::Reached;
+                else if (*z.reached < *z.asked)
+                    z.stop = cut ? (*setting >= waterfallCutMaxDb - 0.01 ? WaterfallStop::CutAtEnd : WaterfallStop::Passes)
+                                 : (*setting >= 0.999 ? WaterfallStop::MixAtOne : WaterfallStop::Passes);
+                else z.stop = cut ? (*setting <= 0.01 ? WaterfallStop::CutAtZero : WaterfallStop::Passes)
+                                  : (*setting <= 0.001 ? WaterfallStop::MixAtZero : WaterfallStop::Passes);
+                return z;
+            };
+            const bool clipping = startCut ? std::isfinite (steered.startClipCutDb)
+                                           : ready.params.limiter.peakClip && std::isfinite (steered.peakClipCutDb);
+            const double cutSetting = startCut ? steered.startClipCutDb : steered.peakClipCutDb;
+            MasterWaterfall w;
+            w.glue = zone (waterfallGlueShare, glueDb, compressing, steered.compressorMix, false);
+            w.saturation = zone (waterfallSaturationShare, saturationDb, shaping, double (steered.clipper.mix), false);
+            // The steered drive, back on the knob's dB; the mix at 1 with the drive at its ceiling stops there.
+            if (shaping && std::isfinite (saturationDriveScale) && saturationDriveScale > 0.0)
+            {
+                w.saturation.drive = 20.0 * core::det::log10 (1.0 + (core::det::pow10 (double (steered.clipper.driveDb) / 20.0) - 1.0) / saturationDriveScale);
+                if (w.saturation.stop == WaterfallStop::MixAtOne)
+                    w.saturation.stop = double (steered.clipper.driveDb) >= saturationDriveMaxDb - 0.05 ? WaterfallStop::DriveAtCeiling : WaterfallStop::Passes;
+            }
+            w.cut = zone (waterfallCutShare, cutDb, clipping, clipping ? std::optional<double> (cutSetting) : std::nullopt, true);
+            w.limiter.asked = std::fmax (0.0, 1.0 - sum * scale); w.limiter.reached = reached (limiterDb + regrownDb);
+            if (startCut) w.regrownDb = regrownDb;
+            w.limiter.db = limiterDb; w.limiter.stop = WaterfallStop::Rest;
+            w.totalDb = total;
+            w.extraPasses = waterfallSteps;
+            if (cleanDone) { w.limiterAloneDb = aloneLimiterDb; w.aloneLufs = aloneLufs; }
+            report.waterfall = w;
+        }
         costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
         stage = Stage::CostWave;
         return StepResult::More;
@@ -1089,9 +1300,15 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
 {
     using mastering::StepResult;
     const auto& solved = search.result();
+    // The start clipper's take on the delivered render — the chain's last (MasteringChain::startClipReductionP95Db).
+    startTakeDb = chain.startClipperOn() ? std::fmax (0.0, chain.startClipReductionP95Db())
+                                         : std::numeric_limits<double>::quiet_NaN();
     clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
         && search.clipperPeaks (clipPeaks);
-    report.targetLufs = targetLufs;
+    // The target of the landing that delivered: a max mode's landing with the zones stood on the loudness the one without
+    // them reached, or on the floor it was pulled up to.
+    const double landedTarget = cleanDone ? (cleanOnFloor ? floorLufs : *aloneLufs) : targetLufs;
+    report.targetLufs = landedTarget;
     report.ceilingDbTp = targetTp;
     report.deliveryMode = DeliveryMode::Mastered;
     report.deliveryDithered = ready.topology.dither && ! ready.params.bypassDither;
@@ -1104,7 +1321,7 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         report.reason = MeasurementReason::None;
         report.achievedLufs = solved.measured.integratedLufs;
         report.truePeakDbTp = solved.measured.truePeakDbTp;
-        report.missLu = solved.measured.integratedLufs - targetLufs;
+        report.missLu = solved.measured.integratedLufs - landedTarget;
         report.gainFromSourceDb = solved.measured.integratedLufs - sourceLufs;
         if (std::isfinite (solved.measured.plrDb))
         { report.plrDb = solved.measured.plrDb; report.plrReason = MeasurementReason::None; }
@@ -1160,6 +1377,10 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
                                       floorPass && solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
                                       solved.binding });
+    // The landing with the zones stood on the loudness the one without them reached: what ended that one is the verdict
+    // where it landed there (cleanStopOf). Pulled up to the floor, it is said as the floor pass would say it.
+    if (cleanDone && mode != LoudnessMode::Manual && solved.deliverable)
+        report.maxStop = cleanStopOf (aloneStop, cleanOnFloor, { solved.peaksAboveCeiling, false, false, solved.status, solved.binding });
     if (result == StepResult::Failed || ! solved.deliverable)
     {
         report.crest.status = MeasurementStatus::Unavailable;
@@ -1193,9 +1414,30 @@ bool MasterJob::beginFloor() noexcept
 {
     auto request = floorRequest;
     request.initialGainDb = search.result().preLimiterGainDb;
-    chain.setParams (ready.params);
+    auto params = ready.params;
+    steer (params);
+    chain.setParams (params);
     const bool convert = deliveryRate != sourceRate;
-    return search.begin (chain, renderer, ready.params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
+    return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
+                         channels, frames, request, {}, convert ? &converter : nullptr);
+}
+
+// THE LANDING WITH THE ZONES, at the loudness the one without them reached (MasterPlan::clean): the request with the
+// wishes, on that file's loudness, no budget, from the first landing's gain.
+bool MasterJob::beginClean() noexcept
+{
+    auto request = cleanRequest;
+    request.targetLufs = *aloneLufs;
+    request.limiterGr = {};
+    request.landingOnSourceGate = false;
+    // The first landing's file under [landing.max] floorLufs: the master without the wishes is pulled up to the floor,
+    // so the one with them stands there. Each landing has its own twelve passes (a landing measures at most twelve).
+    if (cleanOnFloor) request.targetLufs = floorLufs;
+    request.initialGainDb = search.result().preLimiterGainDb;
+    auto params = ready.params;
+    chain.setParams (params);
+    const bool convert = deliveryRate != sourceRate;
+    return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
                          channels, frames, request, {}, convert ? &converter : nullptr);
 }
 
@@ -1205,11 +1447,25 @@ mastering::MasteringChainParams MasterJob::winningParams() const noexcept
 {
     if (deliveryMode != DeliveryMode::Mastered) return ready.params;
     auto winning = ready.params;
+    steer (winning);
     winning.inputGainDb += search.result().normalizationGainDb;
     winning.preLimiterGainDb = search.result().preLimiterGainDb;
     winning.limiter.ceilingDbTp = search.result().ceilingDbTp;
     winning.peakClipPeakDb = search.peakClipPeakDb();
     return winning;
+}
+
+// The waterfall's moves over the ready parameters: the glue's and the saturation's mix and the clipper's cut as the first
+// landing left them. Nothing without a wish.
+void MasterJob::steer (mastering::MasteringChainParams& params) const noexcept
+{
+    if (! waterfall) return;
+    params.compressorMix = steered.compressorMix;
+    params.clipper.mix = steered.clipper.mix;
+    params.clipper.driveDb = steered.clipper.driveDb;
+    params.peakClipCutDb = steered.peakClipCutDb;
+    params.startClipCutDb = steered.startClipCutDb;
+    params.startClipPeakDb = steered.startClipPeakDb;
 }
 
 // THE LOUDNESS RANGE, INPUT AGAINST MASTER: the source's programme report beside the report's own; the change in LU and

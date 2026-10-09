@@ -492,6 +492,19 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldGlueMix, "field", "glueMix" },
     { Term::SaturationTypeAsym, "saturationType", "asym" },
     { Term::SaturationTypeCubic, "saturationType", "cubic" },
+    { Term::FieldGlueThresholdDb, "field", "glueThresholdDb" },
+    { Term::FieldGlueRatio, "field", "glueRatio" },
+    { Term::FieldGlueKneeDb, "field", "glueKneeDb" },
+    { Term::FieldGlueAttackMs, "field", "glueAttackMs" },
+    { Term::FieldGlueReleaseMs, "field", "glueReleaseMs" },
+    { Term::FieldLimiterReleaseMs, "field", "limiterReleaseMs" },
+    { Term::FieldLimiterLookaheadMs, "field", "limiterLookaheadMs" },
+    { Term::FieldLimiterOversampling, "field", "limiterOversampling" },
+    { Term::LoudnessModeMaxExtreme, "loudnessMode", "maxExtreme" },
+    { Term::LoudnessModeMaxNuke, "loudnessMode", "maxNuke" },
+    { Term::FieldGlueShare, "field", "glueShare" },
+    { Term::FieldSaturationShare, "field", "saturationShare" },
+    { Term::FieldLimiterCutShare, "field", "limiterCutShare" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -612,8 +625,14 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     if (field == Term::FieldTargetTp) return Unit::DbTp;
     if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq) return Unit::Hz;
     if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope
-        || field == Term::FieldTargetLoudnessMode || field == Term::FieldGlueMix)
+        || field == Term::FieldTargetLoudnessMode || field == Term::FieldGlueMix || field == Term::FieldGlueRatio
+        || field == Term::FieldLimiterOversampling || field == Term::FieldGlueShare || field == Term::FieldSaturationShare
+        || field == Term::FieldLimiterCutShare)
         return Unit::None;
+    if (field == Term::FieldGlueThresholdDb) return Unit::DbFs;
+    if (field == Term::FieldGlueAttackMs || field == Term::FieldGlueReleaseMs || field == Term::FieldLimiterReleaseMs
+        || field == Term::FieldLimiterLookaheadMs)
+        return Unit::Ms;
     return Unit::Db;
 }
 
@@ -629,11 +648,15 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     {
         case Device::Hpf: return at ({ Term {}, Term::FieldHpfFq, Term::FieldHpfSlope });
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
-        case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb, Term::FieldGlueMix });
+        case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb, Term::FieldGlueMix, Term::FieldGlueThresholdDb,
+                                        Term::FieldGlueRatio, Term::FieldGlueKneeDb, Term::FieldGlueAttackMs,
+                                        Term::FieldGlueReleaseMs, Term::FieldGlueShare });
         case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix, Term {},
-                                              Term::FieldSaturationType });
+                                              Term::FieldSaturationType, Term::FieldSaturationShare });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
-        case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
+        case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb, Term::FieldLimiterReleaseMs,
+                                           Term::FieldLimiterLookaheadMs, Term::FieldLimiterOversampling,
+                                           Term::FieldLimiterCutShare });
         case Device::Dither: return at ({ Term {} });
         case Device::Low: return at ({ Term {}, Term::FieldLowDb });
         case Device::Bands: return at ({ Term::FieldBandsBody, Term::FieldBandsMud, Term::FieldBandsForward,

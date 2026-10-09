@@ -4,6 +4,7 @@ step 5 work units
 place phase 1
 step 5 work units
 place phase 2
+command {"kind":"setTarget","commandId":"6","target":"allStreaming"}
 command {"kind":"setManual","commandId":"2","on":true}
 command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":36,"on":false}}
 export project saved

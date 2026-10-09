@@ -382,6 +382,9 @@ int main()
 {
     const auto handle = create();
     load (handle, 1);
+    // The fixture names its target, All streaming — the −14 LUFS / −1 dBTP its direct oracle solves — rather than lean on
+    // the one a new session starts on.
+    ok (setTarget (handle, 5, "allStreaming"), "the C bridge fixture names All streaming");
     auto* session = contractSession (handle);
     fc_master_config topology {}; fc_master_params params {};
     ready (topology, params);

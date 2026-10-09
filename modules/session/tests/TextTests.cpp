@@ -1047,19 +1047,19 @@ void everyRejectionIsAFact()
     ok (malformed.rejection == session::Rejection::Contract && malformed.field == 0 && ! malformed.value,
         "a target field both set and cleared is malformed, before its number is read");
     // The loudness mode (v0.15.0) is the target's third field: set and cleared at once is malformed, a mode past the
-    // three is not one of them, and the refusal names the field.
+    // five is not one of them, and the refusal names the field.
     session::command::EditTarget modeTwice { 12, {} };
     modeTwice.fields.loudnessMode = session::LoudnessMode::MaxClean; modeTwice.clear.loudnessMode = true;
     const session::Answer modeMalformed = s.apply (modeTwice);
     session::command::EditTarget modeOdd { 13, {} };
-    modeOdd.fields.loudnessMode = session::LoudnessMode (3);
+    modeOdd.fields.loudnessMode = session::LoudnessMode (5);
     const session::Answer modeRefused = s.apply (modeOdd);
     const auto modeFact = Text::rejected (modeRefused, modeOdd);
     ok (modeMalformed.rejection == session::Rejection::Contract && modeMalformed.field == 2
             && modeRefused.rejection == session::Rejection::NotOneOf && modeRefused.field == 2
             && modeFact && Text::complete (*modeFact) && Text::text (*modeFact, Lang::En).starts_with ("Loudness mode")
             && Text::text (*modeFact, Lang::Ru).starts_with ("Режим громкости"),
-        "the loudness mode set and cleared is malformed, a fourth mode is not one of the three, named as its field");
+        "the loudness mode set and cleared is malformed, a sixth mode is not one of the five, named as its field");
     session::command::EditTarget modeSet { 14, {} };
     modeSet.fields.loudnessMode = session::LoudnessMode::MaxDense;
     session::command::EditTarget modeClear { 15, {} };

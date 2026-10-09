@@ -306,10 +306,11 @@ void masterAtTheCeilingWithADamage()
     (void) s.setCapacity ({});
 }
 
-// THE PROGRAMME REPORT HAS ENDED WHENEVER A MASTER IS TAKEN: the master's loudness range reads the input's from it, so a
-// master that could be asked before it would leave its range's change Pending for good. The table never lets one: the
-// first measurement — which a master waits for — ends after the programme report, on a fresh load, after a measurement
-// stopped between the loudness and the report and continued, and after the same source loaded again.
+// THE PROGRAMME REPORT HAS ENDED WHENEVER A MASTER STARTS: the master's loudness range reads the input's from it, so a
+// master that started before it would leave its range's change Pending for good. A master asked earlier is queued — never
+// refused for its timing — and its turn comes after the first measurement, which ends after the programme report: on a
+// fresh load, after a measurement stopped between the loudness and the report and continued, and after the same source
+// loaded again.
 void programmeBeforeAnyMaster()
 {
     const auto pcm = struck (48000, 1.0);
@@ -333,16 +334,18 @@ void programmeBeforeAnyMaster()
             if (path == 1) (void) s.apply (command::ContinueMeasurement { 3 });
             else (void) s.apply (command::Load { 3, { planes, 2, frames, 48000 }, { "programme.wav", 48000, true, 24 } });
         }
-        unsigned taken = 0, early = 0;
-        for (unsigned i = 0; i < 200000; ++i)
+        const auto asked = s.apply (readyMaster (s, 9));
+        const bool queued = asked.rejection == Rejection::None && asked.job != 0 && s.job() == 0
+            && status (Analyzer::Programme) == MeasurementStatus::Pending;
+        bool started = false, early = false;
+        for (unsigned i = 0; i < 400000 && ! started; ++i)
         {
-            if (s.check (readyMaster (s, 9)).rejection == Rejection::None)
-            { ++taken; early += status (Analyzer::Programme) == MeasurementStatus::Pending ? 1u : 0u; }
-            if (s.step (1).state == StepState::Done) break;
+            (void) s.step (1);
+            if (s.job() == asked.job) { started = true; early = status (Analyzer::Programme) != MeasurementStatus::Ready; }
         }
-        ok (between && taken > 0 && early == 0,
-            "path " + std::to_string (path) + ": a master is taken " + std::to_string (taken) + " times and never before the "
-            "programme report has ended");
+        ok (between && queued && started && ! early,
+            "path " + std::to_string (path) + ": a master asked before the programme report is queued, and starts only once "
+            "the report has ended");
     }
 }
 
@@ -460,10 +463,12 @@ void manualBudgetResolution()
     }
     GradeRun r; r.session = measuredSession (pcm, rate);
     if (! r.session) { ok (false, "a session for the manual budget-resolution regression"); return; }
-    command::EditTarget edit { 2, { -10.0, -1.0 } };
-    if (act (r, edit).rejection != Rejection::None)
+    // The fixture names its target: a manual loudness goal on All streaming, not whatever a new session starts on.
+    command::EditTarget edit { 3, { -10.0, -1.0 } };
+    if (act (r, command::SetTarget { 2, "allStreaming" }).rejection != Rejection::None
+        || act (r, edit).rejection != Rejection::None)
     { ok (false, "the manual target for the budget-resolution regression"); return; }
-    auto request = readyMaster (*r.session, 3);
+    auto request = readyMaster (*r.session, 4);
     request.budgetResolutionDb = .05;
     if (act (r, request).rejection != Rejection::None)
     { ok (false, "the manual master accepts its budget resolution"); return; }
@@ -766,11 +771,14 @@ void maxMasterLanding()
 {
     const auto engine = detail::rules().engine;
     ok (detail::maxBudgetDb (engine, LoudnessMode::MaxClean) == 0.5 && detail::maxBudgetDb (engine, LoudnessMode::MaxDense) == 1.75
-            && std::isnan (detail::maxBudgetDb (engine, LoudnessMode::Manual)),
-        "the max modes' budgets read from the config: clean 0.5 dB, dense 1.75 dB, none for the manual mode");
-    for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
+            && detail::maxBudgetDb (engine, LoudnessMode::MaxExtreme) == 3.0 && detail::maxBudgetDb (engine, LoudnessMode::MaxNuke) == 7.0
+            && std::isnan (detail::maxBudgetDb (engine, LoudnessMode::Manual))
+            && unsigned (LoudnessMode::MaxExtreme) == 3u && unsigned (LoudnessMode::MaxNuke) == 4u,
+        "the max modes' budgets read from the config: clean 0.5 dB, dense 1.75 dB, extreme 3 dB (enum value 3), nuke 7 dB (enum value 4), none for the manual mode");
+    for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense, LoudnessMode::MaxExtreme, LoudnessMode::MaxNuke })
     {
-        const std::string name = mode == LoudnessMode::MaxClean ? "maxClean" : "maxDense";
+        const std::string name = mode == LoudnessMode::MaxClean ? "maxClean" : mode == LoudnessMode::MaxDense ? "maxDense"
+                               : mode == LoudnessMode::MaxExtreme ? "maxExtreme" : "maxNuke";
         auto r = gradeSession (3.0);
         if (! r.session) { ok (false, name + ": a session"); continue; }
         auto& s = *r.session;
@@ -785,7 +793,8 @@ void maxMasterLanding()
         const auto stop = report ? report->maxStop : MaxStop::None;
         const bool landingStop = stop == MaxStop::Budget || stop == MaxStop::SearchCeiling || stop == MaxStop::Passes
             || stop == MaxStop::TruePeak || stop == MaxStop::OverBudget;
-        const double budget = mode == LoudnessMode::MaxClean ? 0.5 : 1.75;
+        const double budget = mode == LoudnessMode::MaxClean ? 0.5 : mode == LoudnessMode::MaxDense ? 1.75
+                            : mode == LoudnessMode::MaxExtreme ? 3.0 : 7.0;
         const bool kept = report && report->cost && report->cost->limiterP95Db.value
             && (stop != MaxStop::Budget || *report->cost->limiterP95Db.value <= budget + 1e-9);
         ok (master != 0 && report && report->loudnessMode == mode && landingStop && report->guardSteps == 0u && kept
@@ -800,6 +809,39 @@ void maxMasterLanding()
                 && last->payload.damage.status == MeasurementStatus::Ready
                 && s.masters().back().report->damage.status == MeasurementStatus::Ready,
             name + ": its damage graded as any master's, when the shell asks");
+    }
+}
+
+// [landing.max] <mode> cleaner: every max mode of the shipped config leaves it out, so a wish of theirs lands its zones
+// at the loudness the master without them reached (MasterPlan::clean); a mode written cleaner = false (WaterfallTests
+// plants it) lands its zones on its budget in one landing.
+void maxCleanerSwitch()
+{
+    const auto engine = detail::rules().engine;
+    ok (detail::maxCleaner (engine, LoudnessMode::MaxClean) && detail::maxCleaner (engine, LoudnessMode::MaxDense)
+            && detail::maxCleaner (engine, LoudnessMode::MaxExtreme) && detail::maxCleaner (engine, LoudnessMode::MaxNuke)
+            && ! detail::maxCleaner (engine, LoudnessMode::Manual),
+        "[landing.max] cleaner: every max mode lands cleaner (absent: true), the manual mode never");
+    for (const LoudnessMode mode : { LoudnessMode::MaxExtreme, LoudnessMode::MaxNuke })
+    {
+        const std::string name = mode == LoudnessMode::MaxExtreme ? "maxExtreme" : "maxNuke";
+        auto r = gradeSession (3.0);
+        if (! r.session) { ok (false, name + ": a session"); continue; }
+        auto& s = *r.session;
+        command::EditTarget edit { 2, {} };
+        edit.fields.loudnessMode = mode;
+        GlueFields<Touched> glue; glue.share = 0.1;
+        SaturationFields<Touched> saturation; saturation.share = 0.4;
+        LimiterFields<Touched> limiter; limiter.cutShare = 0.1;
+        const bool edited = act (r, edit).rejection == Rejection::None
+            && act (r, command::EditDevice { 3, glue }).rejection == Rejection::None
+            && act (r, command::EditDevice { 4, saturation }).rejection == Rejection::None
+            && act (r, command::EditDevice { 5, limiter }).rejection == Rejection::None;
+        const auto planned = detail::MasterJob::plan (s, command::Master { 6 }, s.project());
+        const bool cleaner = true;
+        ok (edited && planned.rejection == Rejection::None && planned.loudnessMode == mode && planned.request.waterfall()
+                && planned.clean == cleaner && planned.request.limiterGr.limitDb == detail::maxBudgetDb (engine, mode),
+            name + ": a wish of shares " + (cleaner ? "lands first without the wishes (clean)" : "lands on the budget at once (not clean)"));
     }
 }
 
@@ -1104,6 +1146,7 @@ int main()
     damageGrades();
     lateMasterCrestLifecycle();
     maxMasterLanding();
+    maxCleanerSwitch();
     maxFloor(); maxFloorRecord();
     maxStopRules();
     damageWithoutAnId();
@@ -1277,8 +1320,9 @@ int main()
         (void) c.apply (command::Load { 1, { planes, 2, left.size(), rate }, { "test.wav", rate, true, 24 } });
         for (unsigned i = 0; i < 20000 && (c.state() == State::Loaded || ! c.snapshot().view().mandatoryMeasurementsReady); ++i)
             (void) c.step (16);
-        const auto edited = c.apply (command::EditTarget { 2, { -6.0, -6.0 } });
-        auto ceilingReady = ready; ceilingReady.id = 3; ceilingReady.source = c.source().hash; ceilingReady.revision = c.revision();
+        const auto named = c.apply (command::SetTarget { 2, "allStreaming" });
+        const auto edited = c.apply (command::EditTarget { 3, { -6.0, -6.0 } });
+        auto ceilingReady = ready; ceilingReady.id = 4; ceilingReady.source = c.source().hash; ceilingReady.revision = c.revision();
         const auto ceilingStart = c.apply (ceilingReady);
         for (unsigned i = 0; i < 40000 && c.job() != 0; ++i) (void) c.step (16);
         const auto masters = c.masters();
@@ -1286,7 +1330,7 @@ int main()
         const LandingSummary l = landed ? *masters.back().landing : LandingSummary {};
         std::printf ("    −6 LUFS under −6 dBTP: status %d binding %d, %.3f LUFS, %u passes\n", landed ? (int) l.status : -1,
                      landed ? (int) l.binding : -1, landed && l.achievedLufs ? *l.achievedLufs : 0.0, landed ? l.passes : 0u);
-        ok (edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
+        ok (named.rejection == Rejection::None && edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
             && l.status == LandingStatus::TargetUnreachable && l.limiterWall
             && l.binding == LandingConstraint::None && ! budgetProven (l),
             "−6 LUFS under −6 dBTP reaches the limiter wall without naming the budget");

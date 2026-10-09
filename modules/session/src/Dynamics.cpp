@@ -121,6 +121,16 @@ GlueCurve glueFor (const Rules& rules, double upToDb) noexcept
     return glueAt (rules, hi);
 }
 
+double glueReleaseMs (const Rules& rules, const GlueCurve& curve, double bpm) noexcept
+{
+    return clampTo (rules.engine.find ("compressor").find ("limits"), "release", 60000.0 / bpm / curve.divisor);
+}
+
+double glueBpmWhenUnsure (const Rules& rules) noexcept
+{
+    return number (rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure"));
+}
+
 InputLevels inputLevels (const PlanInputs& in) noexcept
 {
     InputLevels out;
@@ -157,26 +167,59 @@ TempoChoice tempoChoice (const Rules& rules, const MeasurementResult& result) no
     return { true, false, fallback, reason };
 }
 
-double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept
+bool glueTicked (const Layers<GlueFields>& glue) noexcept
 {
-    const auto settings = settingsOf (rules, glue);
-    const bool tickedUntouched = glue.hand.on && *glue.hand.on && ! glue.hand.upToDb && ! (glue.machine.upToDb > 0.0);
-    return tickedUntouched ? number (rules.engine.find ("glue").find ("whenTicked")) : settings.upToDb;
+    // The five by hand take no part: the amount they are laid over never moves with them, so a field left alone keeps its
+    // value whatever another field holds.
+    // A wished share (the waterfall) ticks a glue no person turned on or off.
+    const auto& h = glue.hand;
+    return (h.on ? *h.on : h.share.has_value()) && ! h.upToDb && ! (glue.machine.upToDb > 0.0);
 }
 
-GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
+double glueKnob (const Rules& rules, const Layers<GlueFields>& glue) noexcept
+{
+    // A person's tick on a knob the machine left at 0 gives way to whenTicked.
+    return glueTicked (glue) ? number (rules.engine.find ("glue").find ("whenTicked")) : settingsOf (rules, glue).upToDb;
+}
+
+namespace
+{
+// The tick's character ([glue] ticked, owner 08.10) over the travel's numbers: the ratio, knee, attack and a fixed
+// release, which follows no tempo — so the finding names none. The threshold stays the travel's at the amount.
+void tickedCharacter (const Rules& rules, GlueFinding& f) noexcept
+{
+    const auto ticked = rules.engine.find ("glue").find ("ticked");
+    f.ratio = number (ticked.find ("ratio"));
+    f.kneeDb = number (ticked.find ("kneeDb"));
+    f.attackMs = number (ticked.find ("attackMs"));
+    f.releaseAskedMs = number (ticked.find ("releaseMs"));
+    f.releaseMs = f.releaseAskedMs;
+    f.releaseClamped = false;
+    f.bpm.reset();
+    f.tempoMeasured = false;
+    f.tempoUnsureBpm.reset();
+}
+} // namespace
+
+bool saturationTicked (const Layers<SaturationFields>& saturation) noexcept
+{
+    const auto& h = saturation.hand;
+    return (h.on ? *h.on : h.share.has_value()) && ! h.drive && ! (saturation.machine.drive > 0.0);
+}
+
+double saturationKnob (const Rules& rules, const Layers<SaturationFields>& saturation) noexcept
+{
+    // A person's tick on a drive the machine left at 0, the drive untouched, gives way to [saturation] whenTicked.
+    return saturationTicked (saturation) ? number (rules.engine.find ("saturation").find ("whenTicked"))
+                                         : settingsOf (rules, saturation).drive;
+}
+
+GlueFinding glueLaw (const PlanInputs& in, double upToDb, bool waitsForTempo) noexcept
 {
     GlueFinding f;
-    const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
-    f.upToDb = glueKnob (in.rules, devices.glue);
-    f.mix = settingsOf (in.rules, devices.glue).mix;
-    const bool ticked = offeredByShell && settingsOf (in.rules, devices.glue).on && f.upToDb > 0.0;
+    f.upToDb = upToDb;
     const auto levels = inputLevels (in);
-    if (ticked && ! levels.p95Db) { f.state = GlueState::Unavailable; return f; }
-    // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
-    // compressor gets, or would get, from it. Out of the chain they reach no compressor (writeDynamics reads Active).
-    f.state = ticked ? GlueState::Active : GlueState::Out;
-    const auto curve = glueFor (in.rules, f.upToDb);
+    const auto curve = glueFor (in.rules, upToDb);
     f.ratio = curve.ratio;
     f.kneeDb = curve.kneeDb;
     f.attackMs = curve.attackMs;
@@ -196,13 +239,13 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
             choice = c;
             if (! c.measured) unsure = tempoHeard (*tempo);
         }
-    if (! choice && f.state == GlueState::Out)
+    if (! choice && ! waitsForTempo)
         choice = TempoChoice { true, false, number (in.rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure")),
                                MeasurementReason::Pending };
     if (choice)
     {
         const double wanted = 60000.0 / choice->bpm / curve.divisor;
-        const double release = clampTo (in.rules.engine.find ("compressor").find ("limits"), "release", wanted);
+        const double release = glueReleaseMs (in.rules, curve, choice->bpm);
         f.bpm = choice->bpm;
         f.releaseAskedMs = wanted;
         f.releaseMs = release;
@@ -213,18 +256,67 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     return f;
 }
 
+GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
+{
+    GlueFinding f;
+    const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
+    const double upToDb = glueKnob (in.rules, devices.glue);
+    const double mix = settingsOf (in.rules, devices.glue).mix;
+    const bool wished = ! devices.glue.hand.on && devices.glue.hand.share.has_value();
+    // THE WATERFALL: a wished share of 0 takes the glue out of the chain — a zone at 0 % does not sound.
+    const bool zeroShare = devices.glue.hand.share.has_value() && ! (*devices.glue.hand.share > kZeroShare);
+    const bool ticked = offeredByShell && (settingsOf (in.rules, devices.glue).on || wished) && upToDb > 0.0 && ! zeroShare;
+    const auto levels = inputLevels (in);
+    if (ticked && ! levels.p95Db) { f.upToDb = upToDb; f.mix = mix; f.state = GlueState::Unavailable; return f; }
+    // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
+    // compressor gets, or would get, from it. Out of the chain they reach no compressor (writeDynamics reads Active).
+    const auto state = ticked ? GlueState::Active : GlueState::Out;
+    f = glueLaw (in, upToDb, state != GlueState::Out);
+    if (glueTicked (devices.glue)) tickedCharacter (in.rules, f);
+    f.state = state;
+    f.mix = mix;
+    // THE FIVE BY HAND: a person's field wins for that field alone, taken as written — the limits clamp the travel only.
+    const auto& hand = devices.glue.hand;
+    if (hand.ratio) f.ratio = *hand.ratio;
+    if (hand.kneeDb) f.kneeDb = *hand.kneeDb;
+    if (hand.attackMs) f.attackMs = *hand.attackMs;
+    if (hand.thresholdDb) f.thresholdDb = *hand.thresholdDb;
+    if (hand.releaseMs)
+    {
+        // A person's release follows no tempo: the finding names none, so no line says what the release was set for.
+        f.releaseAskedMs = *hand.releaseMs;
+        f.releaseMs = *hand.releaseMs;
+        f.releaseClamped = false;
+        f.bpm.reset();
+        f.tempoMeasured = false;
+        f.tempoUnsureBpm.reset();
+    }
+    return f;
+}
+
+GlueFinding glueMachine (const PlanInputs& in, const Devices& devices) noexcept
+{
+    auto f = glueLaw (in, glueKnob (in.rules, devices.glue), false);
+    if (glueTicked (devices.glue)) tickedCharacter (in.rules, f);
+    return f;
+}
+
 SaturationFinding saturationFinding (const PlanInputs& in, const Devices& devices) noexcept
 {
     SaturationFinding f;
     const auto settings = settingsOf (in.rules, devices.saturation);
-    f.knobDb = settings.drive;
+    const double drive = saturationKnob (in.rules, devices.saturation);
+    f.knobDb = drive;
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Saturation))) != 0;
     const auto levels = inputLevels (in);
-    if (! offeredByShell || ! settings.on || ! (settings.drive > 0.0) || ! levels.truePeakDb) return f;
+    const bool wished = ! devices.saturation.hand.on && devices.saturation.hand.share.has_value();
+    // A wished share of 0 (the waterfall) takes the saturation out of the chain, as the glue's.
+    const bool zeroShare = devices.saturation.hand.share.has_value() && ! (*devices.saturation.hand.share > kZeroShare);
+    if (! offeredByShell || ! (settings.on || wished) || ! (drive > 0.0) || ! levels.truePeakDb || zeroShare) return f;
     f.active = true;
     f.peakDbTp = levels.truePeakDb;
     // The shaper's gain aligned: the knob is the drive at 0 dBTP, k = 10^(drive/20) − 1 scaled by the peak.
-    f.driveDb = 20 * core::det::log10 (1 + (core::det::pow10 (settings.drive / 20) - 1) * core::det::pow10 (-*levels.truePeakDb / 20));
+    f.driveDb = 20 * core::det::log10 (1 + (core::det::pow10 (drive / 20) - 1) * core::det::pow10 (-*levels.truePeakDb / 20));
     return f;
 }
 
@@ -280,5 +372,12 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
     // The type as it sounds: a person's pick over the machine's, which is the config's [saturation] shape.
     params.clipper = clipperParams (in.rules, settings.type, shaped.driveDb.value_or (0.0), settings.mix);
     params.bypassClipper = ! shaped.active;
+}
+
+double glueTakenDb (double reductionDb, double mix) noexcept
+{
+    if (core::exactlyEqual (mix, 1.0)) return reductionDb;
+    const double kept = (1.0 - mix) + mix * core::det::pow10 (-reductionDb / 20.0);
+    return 0.0 - 20.0 * core::det::log10 (kept);
 }
 } // namespace felitronics::session::detail

@@ -108,7 +108,8 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     {
         const auto name = v.string().value_or (std::string_view {});
         out.loudnessMode = name == "maxClean" ? LoudnessMode::MaxClean : name == "maxDense" ? LoudnessMode::MaxDense
-                                                                                             : LoudnessMode::Manual;
+                         : name == "maxExtreme" ? LoudnessMode::MaxExtreme : name == "maxNuke" ? LoudnessMode::MaxNuke
+                                                                                                 : LoudnessMode::Manual;
     }
     if (const View v = rowView.find ("lowDb"))
     {
@@ -169,6 +170,11 @@ Rules readRules (View targets, View engine, View geometry) noexcept
     r.domain (glue.find ("domain"), out.glue);
     r.knob (glue.find ("mixRange"), glue.find ("mixStep"), glue.find ("mixDomain"), out.glueMix);
     r.read (glue.find ("mix"), out.glueMixDefault);
+    r.knob (glue.find ("thresholdDbRange"), glue.find ("thresholdDbStep"), glue.find ("thresholdDbDomain"), out.glueThreshold);
+    r.knob (glue.find ("ratioRange"), glue.find ("ratioStep"), glue.find ("ratioDomain"), out.glueRatio);
+    r.knob (glue.find ("kneeDbRange"), glue.find ("kneeDbStep"), glue.find ("kneeDbDomain"), out.glueKnee);
+    r.knob (glue.find ("attackMsRange"), glue.find ("attackMsStep"), glue.find ("attackMsDomain"), out.glueAttack);
+    r.knob (glue.find ("releaseMsRange"), glue.find ("releaseMsStep"), glue.find ("releaseMsDomain"), out.glueRelease);
 
     const View sat = engine.find ("saturation");
     r.knob (sat.find ("driveRange"), sat.find ("driveStep"), sat.find ("driveDomain"), out.drive);
@@ -194,6 +200,13 @@ Rules readRules (View targets, View engine, View geometry) noexcept
     r.read (clipper.find ("manualStepDb"), out.needles.step);
     r.read (clipper.find ("betweenCutDb"), out.needlesDefault);
     r.domain (clipper.find ("manualDomain"), out.needles);
+    const View limiter = engine.find ("limiter");
+    r.knob (limiter.find ("releaseMsRange"), limiter.find ("releaseMsStep"), limiter.find ("releaseMsDomain"), out.limiterRelease);
+    r.knob (limiter.find ("lookaheadMsRange"), limiter.find ("lookaheadMsStep"), limiter.find ("lookaheadMsDomain"),
+            out.limiterLookahead);
+    r.read (limiter.find ("releaseMs"), out.limiterReleaseDefault);
+    r.read (limiter.find ("lookaheadMs"), out.limiterLookaheadDefault);
+    r.read (engine.find ("chain").find ("oversampleFactor"), out.oversamplingDefault);
 
     const View stages = engine.find ("stages");
     r.read (stages.find ("eq"), out.eq);
@@ -227,6 +240,12 @@ bool Rules::slope (std::int32_t dbPerOct) const noexcept
     const View bounds = hpf.find ("slopeDomain");
     return dbPerOct >= int32 (bounds[0]) && dbPerOct <= int32 (bounds[1])
         && dbPerOct % int32 (hpf.find ("slopeMultiple")) == 0;
+}
+
+bool Rules::oversampling (std::int32_t factor) const noexcept
+{
+    const View bounds = engine.find ("limiter").find ("oversamplingDomain");
+    return factor >= int32 (bounds[0]) && factor <= int32 (bounds[1]) && factor > 0 && (factor & (factor - 1)) == 0;
 }
 
 bool Knob::accepts (double value, std::uint32_t sourceRate) const noexcept

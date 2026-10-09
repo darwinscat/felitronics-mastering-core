@@ -52,8 +52,9 @@ template <class T> using Mark = bool;
 enum class Needles : std::uint8_t { Auto, Manual, Off };
 
 // HOW A LANDING TAKES ITS LOUDNESS: the target's number (Manual), or a max mode — as loud as its promise allows
-// ([landing.max] in engine.toml): MaxClean, the damage not heard; MaxDense, heard but not annoying.
-enum class LoudnessMode : std::uint8_t { Manual, MaxClean, MaxDense };
+// ([landing.max] in engine.toml): MaxClean, the damage not heard; MaxDense, heard but not annoying; MaxExtreme, the
+// loudest, its damage accepted; MaxNuke, past extreme: a larger limiter budget still.
+enum class LoudnessMode : std::uint8_t { Manual, MaxClean, MaxDense, MaxExtreme, MaxNuke };
 
 // THE TARGET'S NUMBERS a person may edit in place ([edit] in targets.toml): the loudness, LUFS, and the true-peak ceiling,
 // dBTP — and the loudness mode (the target row's when untouched). The other numbers of a target come with its name.
@@ -91,6 +92,17 @@ template <template <class> class F> struct GlueFields
     F<bool> on {};
     F<double> upToDb {};
     F<double> mix {};
+    // The five by hand (07.10): the compressor's threshold (dBFS on the input brought to [input] referenceLufs), ratio,
+    // knee (dB), attack and release (ms). The machine's layer holds the travel's values at its own amount; what sounds
+    // is a person's field where set, else the travel at the amount as it sounds.
+    F<double> thresholdDb {};
+    F<double> ratio {};
+    F<double> kneeDb {};
+    F<double> attackMs {};
+    F<double> releaseMs {};
+    // THE WATERFALL: a person's wish, 0…1, of the share of the peak work at the landing the glue takes — the master
+    // steers its mix towards it. A person's field alone: the machine's 0 is never read.
+    F<double> share {};
 };
 
 // The saturation's type: the shaper's curve, in felitronics-core's WaveShaper::Shape order and values. The machine's layer
@@ -107,6 +119,7 @@ template <template <class> class F> struct SaturationFields
     F<double> drive {};
     F<double> mix {};
     F<SaturationType> type {};   // field 4 (3, the output, left in v0.6.0: the landing undid any trim)
+    F<double> share {};          // the waterfall: the wished share of the peak work, steered through the mix
 };
 
 // [tilt]: the tilt, dB.
@@ -121,6 +134,16 @@ template <template <class> class F> struct LimiterFields
 {
     F<Needles> needles {};
     F<double> needlesDb {};
+    // The three by hand (08.10): the limiter's release (ms), its lookahead (ms) and the oversampling its detector and gain
+    // run at (a factor, one of [limiter] oversamplingDomain's powers of two). The machine's layer holds [limiter]
+    // releaseMs and lookaheadMs and [chain] oversampleFactor; a person's field wins for that field alone. The oversampling
+    // is the chain's: the saturation stage, when it sounds, runs at the same factor.
+    F<double> releaseMs {};
+    F<double> lookaheadMs {};
+    F<std::int32_t> oversampling {};
+    // The waterfall: the wished share of the peak work the needles' clipper takes, steered through its cut within
+    // [limiter.peakClipper] manualDomain; the limiter takes the rest.
+    F<double> cutShare {};
 };
 
 // [dither]: on a delivery of 16 bits.
@@ -186,7 +209,7 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 26;
+inline constexpr std::size_t kDeviceFields = 37;
 
 struct Project
 {

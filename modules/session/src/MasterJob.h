@@ -21,11 +21,16 @@ namespace felitronics::session
 class Session;
 namespace detail
 {
+struct Rules;
 // [landing] limiterBudget: the P95 of the limiter's gain reduction a landing at `targetLufs` may take, dB — the
 // target's own number or a person's edit of it, by one rule. NaN where the config does not say it.
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
+// [landing.max] <mode> cleaner: whether a max mode with a wish lands its zones at the loudness of the master without
+// them (true, also when absent) or on the mode's budget (false). False for the manual mode. The key's one reader: the
+// schema only checks it (written, it is false), Config holds no copy of it.
+[[nodiscard]] bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // [progress.master]: the renders a master's bar expects in its loudness mode — expectedPasses by hand,
 // expectedPassesMaxClean / expectedPassesMaxDense for the max modes; a waiting master's and a rendering one's alike.
 [[nodiscard]] std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept;
@@ -41,14 +46,23 @@ struct MaxStopInputs
     mastering::MasteringConstraint binding = mastering::MasteringConstraint::None;
 };
 [[nodiscard]] MaxStop maxStopOf (const MaxStopInputs& in) noexcept;
+// What ended a max mode delivered by its landing with the zones (cleaner, not louder), from what ended the landing without
+// them (`alone`) and the delivered landing's own inputs (`floor` ignored): pulled up to the floor, as the floor pass says it.
+[[nodiscard]] MaxStop cleanStopOf (MaxStop alone, bool onFloor, MaxStopInputs delivered) noexcept;
 
 struct MasterPlan
 {
     Rejection rejection = Rejection::Contract;
     command::MasterReady ready {};
     mastering::LoudnessRequest request {};
+    // CLEANER, NOT LOUDER (owner, 08.10): a max mode with a wish lands first with the chain the project writes without
+    // the wishes (aloneParams, on the same topology), then at that loudness with the zones.
+    bool clean = false;
+    mastering::MasteringChainParams aloneParams {};
     std::uint32_t deliveryRate = 0;
     int frames = 0, traceBuckets = 0;
+    // The waterfall: the clipper's drive scale (aligned against knob), NaN where the drive is not steered.
+    double saturationDriveScale = std::numeric_limits<double>::quiet_NaN();
     std::size_t crestCapacity = 0, costCapacity = 0, costScratchCapacity = 0;
     std::size_t waveformCapacity = 0;
     std::size_t axesCapacity = 0;
@@ -121,6 +135,9 @@ struct MasterJob final
     // heap for, or the rejection it gets; nothing is allocated. A version-1 input carries its chain ready; a version-0
     // one takes it from the project's devices (src/Chain.h), on the measurements as they stand.
     static MasterPlan plan (const Session& session, const command::Master& input, const Project& project) noexcept;
+    // The same plan on `rules` instead of the config compiled in: the numbers the plan reads in place come from `rules`
+    // (a test hands it a planted document); the devices' chain is still written on the compiled rules.
+    static MasterPlan plan (const Session& session, const command::Master& input, const Project& project, const Rules& rules) noexcept;
     static std::uint64_t fingerprint (const command::MasterReady& ready) noexcept;
     bool begin (const Session& session, const MasterPlan& plan);
     mastering::StepResult step (long long budget) noexcept;
@@ -209,7 +226,26 @@ struct MasterJob final
     int startedRenders() const noexcept { return int (floorFirstPasses) + search.startedRenders(); }
     double renderProgress() const noexcept { return double (floorFirstPasses) + std::max (0.0, search.renderProgress()); }
     mastering::LoudnessRequest floorRequest {};
+    // The landing without the wishes first (MasterPlan::clean): running it, done with it, the parameters it ran with,
+    // the request the second landing starts from, and what the first one came to — its file's loudness, its limiter's
+    // take (P95 on the active windows) and what ended it.
+    bool cleanPhase = false, cleanDone = false, cleanOnFloor = false;
+    // The start clipper's take on the delivered render (a P95 over what it clipped); NaN without it in the chain.
+    double startTakeDb = std::numeric_limits<double>::quiet_NaN();
+    mastering::MasteringChainParams aloneParams {};
+    mastering::LoudnessRequest cleanRequest {};
+    std::optional<double> aloneLufs, aloneLimiterDb;
+    MaxStop aloneStop = MaxStop::None;
+    // The waterfall: the wishes the landing was given, and the stages as its first landing steered them — the
+    // parameters the delivery, the floor pass and the report take the mixes and the cut from.
+    bool waterfall = false;
+    double waterfallGlueShare = 0.0, waterfallSaturationShare = 0.0, waterfallCutShare = 0.0, waterfallCutMaxDb = 0.0;
+    std::uint32_t waterfallSteps = 0;
+    mastering::MasteringChainParams steered {};
+    double saturationDriveScale = std::numeric_limits<double>::quiet_NaN(), saturationDriveMaxDb = std::numeric_limits<double>::quiet_NaN();
+    void steer (mastering::MasteringChainParams& params) const noexcept;
     [[nodiscard]] bool beginFloor() noexcept;
+    [[nodiscard]] bool beginClean() noexcept;
     [[nodiscard]] bool beginDeliveryRender() noexcept;
     mastering::StepResult settleLanding (mastering::StepResult result) noexcept;
 };

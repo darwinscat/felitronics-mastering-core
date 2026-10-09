@@ -7,6 +7,7 @@
 #include "BuildGuards.h"
 
 #include "Devices.h"
+#include "Dynamics.h"
 #include "Grid.h"
 #include "Rules.h"
 #include "BuildContract.h"
@@ -56,6 +57,14 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     glue.on = rules.compressor && target.glue.has_value();
     glue.upToDb = number (target.glue ? *target.glue : rules.glueDefault);
     glue.mix = number (rules.glueMixDefault);
+    // The five: the travel's values at the machine's amount; the threshold at its domain's top and the release at
+    // [compressor.tempo] bpmWhenUnsure until the planner has a P95 and a tempo to put them on.
+    const auto curve = glueFor (rules, glue.upToDb);
+    glue.thresholdDb = number (rules.glueThreshold.maximum);
+    glue.ratio = kept (curve.ratio);
+    glue.kneeDb = kept (curve.kneeDb);
+    glue.attackMs = kept (curve.attackMs);
+    glue.releaseMs = kept (glueReleaseMs (rules, curve, glueBpmWhenUnsure (rules)));
 
     auto& sat = devices.saturation.machine;
     sat.on = rules.clipper;
@@ -74,6 +83,11 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     auto& limiter = devices.limiter.machine;
     limiter.needles = target.noClipper ? Needles::Off : Needles::Auto;
     limiter.needlesDb = number (rules.needlesDefault);
+    // The three by hand (08.10): the machine's are the constants the chain had — [limiter] releaseMs and lookaheadMs,
+    // [chain] oversampleFactor.
+    limiter.releaseMs = number (rules.limiterReleaseDefault);
+    limiter.lookaheadMs = number (rules.limiterLookaheadDefault);
+    limiter.oversampling = rules.oversamplingDefault;
 
     devices.dither.machine.on = rules.dither && offered (rules, row, channels, Device::Dither);
 

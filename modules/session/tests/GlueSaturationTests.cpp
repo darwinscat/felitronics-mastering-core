@@ -24,6 +24,7 @@
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -188,7 +189,13 @@ struct Staged
     bool counted = false;
     mastering::ClipperPeaks peaks {};
     double grMax = 0.0, grP95 = 0.0;
+    // The same two numbers of what the song got: the drop the stage's output takes against its input, sample by sample
+    // — the dry signal at 1 - mix under the compressed one at mix, the compressor's gain on the compressed one.
+    double blendMax = 0.0, blendP95 = 0.0;
 };
+// The drop a parallel stage at `mix` gives where its compressed path is reduced by `grDb`, dB, positive — written here
+// with the platform's libm, apart from the core's.
+double blendDb (double grDb, double mix) { return -20.0 * std::log10 ((1.0 - mix) + mix * std::pow (10.0, -grDb / 20.0)); }
 mastering::MasteringChainConfig twoStages (bool limiter = false)
 {
     mastering::MasteringChainConfig topology;
@@ -227,17 +234,28 @@ Staged stage (const Mix& mix, mastering::MasteringChainParams params, double gai
     }
     out.gr.resize (std::size_t (written));
     out.counted = chain.clipperPeaks (loudShare, out.peaks);
-    // The gain reduction as the report states it: the largest sample, and the P95 of the 4 ms windows' means.
-    std::vector<double> windows;
+    // The gain reduction as the stage applied it: the largest sample, and the P95 of the 4 ms windows' means; then the
+    // same of the drop through the mix the stage ran (the chain narrows it to a float).
+    const double mixed = double (float (params.compressorMix));
+    std::vector<double> windows, blended;
     const std::size_t window = 192;
     for (std::size_t at = 0; at < out.gr.size(); at += window)
     {
-        double sum = 0; const std::size_t end = std::min (out.gr.size(), at + window);
-        for (std::size_t i = at; i < end; ++i) { sum += std::fabs (double (out.gr[i])); out.grMax = std::max (out.grMax, std::fabs (double (out.gr[i]))); }
-        windows.push_back (sum / double (end - at));
+        double sum = 0, drop = 0; const std::size_t end = std::min (out.gr.size(), at + window);
+        for (std::size_t i = at; i < end; ++i)
+        {
+            const double gr = std::fabs (double (out.gr[i])), b = blendDb (gr, mixed);
+            sum += gr; drop += b;
+            out.grMax = std::max (out.grMax, gr); out.blendMax = std::max (out.blendMax, b);
+        }
+        windows.push_back (sum / double (end - at)); blended.push_back (drop / double (end - at));
     }
-    std::sort (windows.begin(), windows.end());
-    if (! windows.empty()) out.grP95 = windows[std::min (windows.size() - 1, std::size_t (std::ceil (0.95 * double (windows.size()))) - 1)];
+    const auto p95 = [] (std::vector<double>& v)
+    {
+        std::sort (v.begin(), v.end());
+        return v.empty() ? 0.0 : v[std::min (v.size() - 1, std::size_t (std::ceil (0.95 * double (v.size()))) - 1)];
+    };
+    out.grP95 = p95 (windows); out.blendP95 = p95 (blended);
     return out;
 }
 double cutDb (double quietGain, double ratio) { return 20.0 * felitronics::core::det::log10 (quietGain / ratio); }
@@ -330,8 +348,10 @@ void theMachine()
     }
     ok (glue, "glue: ticked at 2.6 dB on cd, off at 0 everywhere else — and nowhere above the slider's 3 dB");
     ok (saturation, "saturation: off at 0 dB on every target — a taste of the manual mode");
-    ok (same (engine.glue.knobMaxDb, 3.0) && same (engine.glue.domain.max, 6.0) && same (engine.glue.whenTickedUpToDb, 0.5),
-        "the slider runs to 3, the core takes 6, a tick starts at 0.5");
+    ok (same (engine.glue.knobMaxDb, 3.0) && same (engine.glue.domain.max, 6.0) && same (engine.glue.whenTickedUpToDb, 2.6)
+        && same (engine.glue.ticked.ratio, 2.0) && same (engine.glue.ticked.kneeDb, 6.0) && same (engine.glue.ticked.attackMs, 30.0)
+        && same (engine.glue.ticked.releaseMs, 300.0) && same (engine.saturation.whenTickedDb, 6.0),
+        "the slider runs to 3, the core takes 6, a tick starts at 2.6 with ratio 2, knee 6 dB, attack 30 ms, release 300 ms; a saturation's at 6 dB");
     const Faked quiet ("cd", -56.0, -40.0, -50.0);
     Devices d; DevicePlans plans; detail::PlanFindings found;
     detail::propose (quiet.in, d, plans, found);
@@ -340,16 +360,16 @@ void theMachine()
 
 void aPersonsKnob()
 {
-    felitronics::test::group ("a person's glue: a tick starts at 0.5 dB; 0…6 as written; kept with the panel hidden, saved and imported");
+    felitronics::test::group ("a person's glue: a tick starts at 2.6 dB; 0…6 as written; kept with the panel hidden, saved and imported");
     const Mix mix;
     auto sp = measured (mix, "allStreaming"); auto& s = *sp;
     ok (! s.project().manual && s.snapshot().view().plan.glue.state == GlueState::Out, "PRECONDITION: the panel hidden, the glue out");
     GlueFields<Touched> tick; tick.on = true;
     ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "the glue is ticked with the panel hidden");
     auto v = s.snapshot();
-    ok (v.view().plan.glue.state == GlueState::Active && same (v.view().plan.glue.upToDb, 0.5) && ! s.project().devices.glue.hand.upToDb
+    ok (v.view().plan.glue.state == GlueState::Active && same (v.view().plan.glue.upToDb, 2.6) && ! s.project().devices.glue.hand.upToDb
         && v.view().plan.devices.glue.on && v.view().plan.devices.glue.tick == TickFrom::Hand,
-        "a tick without a knob compresses at [glue] whenTicked, 0.5 dB — and the project keeps the knob untouched");
+        "a tick without a knob compresses at [glue] whenTicked, 2.6 dB — and the project keeps the knob untouched");
     bool taken = true;
     for (const double n : { 0.0, 0.5, 1.25, 2.6, 3.0, 1.2345, 4.5, 6.0 })
     {
@@ -486,6 +506,29 @@ void theTempo()
             && detail::tempoChoice (r, Faked ("allStreaming", -18.0, -3.0, -12.0, Tempo::Unavailable).results[std::size_t (Analyzer::Tempo)]).reason
                    == MeasurementReason::TooShort,
             "a tempo followed, and none heard: no number to name — the fallback line and the measurement's own reason");
+    }
+    // A release set by hand follows no tempo: the compressor gets the person's number, and no line says the release was
+    // set for a tempo — not the fallback's, not an unsure tempo's — nor that it was held at a limit. Without the hand
+    // release the same glue keeps its tempo line.
+    for (const Tempo t : { Tempo::Unavailable, Tempo::Medium })
+    {
+        const Faked f ("allStreaming", -18.0, -3.0, -12.0, t, 140.3);
+        auto devices = f.glued (2.0);
+        devices.glue.hand.releaseMs = 333.0;
+        const auto hand = detail::glueFinding (f.in, devices);
+        const auto untouched = detail::glueFinding (f.in, f.glued (2.0));
+        mastering::MasteringChainParams params;
+        detail::writeDynamics (f.in, devices, params);
+        const auto line = PlanText::glueTempo (hand);
+        const auto kept = PlanText::glueTempo (untouched);
+        const std::string label = t == Tempo::Medium ? "a tempo heard at medium" : "no tempo measured";
+        ok (hand.state == GlueState::Active && hand.releaseMs && same (*hand.releaseMs, 333.0) && ! params.bypassCompressor
+            && same (params.compressor.releaseMs, 333.0) && ! hand.bpm && ! hand.tempoMeasured && ! hand.tempoUnsureBpm
+            && ! line && ! PlanText::glueRelease (hand),
+            label + ", a release of 333 ms by hand: the compressor gets 333 ms and no tempo is said"
+            + (line ? " — not " + text::Text::text (*line, text::Lang::En) : std::string {}));
+        ok (kept && kept->id == (t == Tempo::Medium ? text::FactId::GlueTempoUnsure : text::FactId::GlueTempoFallback),
+            label + ", no release by hand: the tempo line stays");
     }
     const auto pending = release (Tempo::Pending, 100.0), cancelled = release (Tempo::Cancelled, 100.0);
     ok (pending.state == GlueState::Active && pending.ratio && ! pending.releaseMs && ! pending.bpm && cancelled.state == GlueState::Active && ! cancelled.releaseMs,
@@ -789,10 +832,12 @@ void theReport()
     // The same two stages alone, the input brought up by the one gain: what the master's own stages did, to the bit.
     auto alone = request.ready.params;
     const auto staged = stage (mix, alone, gainDb, loudShare());
+    ok (same (request.ready.params.compressorMix, 0.4), "PRECONDITION: the tick's glue at its mix, 40 %");
     ok (cost.glueP95Db.value && cost.glueMaxDb.value && cost.glueP95Db.reason == MeasurementReason::None
-        && same (*cost.glueMaxDb.value, staged.grMax) && near (*cost.glueP95Db.value, staged.grP95, 0.1) && *cost.glueMaxDb.value >= *cost.glueP95Db.value,
+        && near (*cost.glueMaxDb.value, staged.blendMax, 1e-9) && near (*cost.glueP95Db.value, staged.blendP95, 0.1) && *cost.glueMaxDb.value >= *cost.glueP95Db.value,
         "the glue: " + std::to_string (*cost.glueP95Db.value) + " dB at its P95, " + std::to_string (*cost.glueMaxDb.value)
-        + " dB at most — the compressor's own trace (alone: " + std::to_string (staged.grP95) + " / " + std::to_string (staged.grMax) + ")");
+        + " dB at most — what the stage's output lost against its input, through its mix (alone: " + std::to_string (staged.blendP95) + " / "
+        + std::to_string (staged.blendMax) + "; the compressed path " + std::to_string (staged.grP95) + " / " + std::to_string (staged.grMax) + ")");
     ok (cost.saturationCutMaxDb.value && cost.saturationCutUsualDb.value
         && same (*cost.saturationCutMaxDb.value, cutDb (staged.peaks.quietGain, staged.peaks.loudLeastRatio))
         && same (*cost.saturationCutUsualDb.value, cutDb (staged.peaks.quietGain, staged.peaks.loudUsualRatio))
@@ -830,6 +875,101 @@ void theReport()
     ok (bareCost && ! bareCost->glueP95Db.value && bareCost->glueP95Db.reason == MeasurementReason::NoSignal && ! bareCost->saturationCutMaxDb.value
         && bareCost->saturationCutUsualDb.reason == MeasurementReason::NoSignal && silent,
         "with both stages out of the chain the report has no number for them — NoSignal — and no line");
+}
+// WHAT THE SONG GOT FROM THE GLUE (owner, 08.10): the report's glue line counts the glue's mix. Its two numbers are the
+// drop of the stage's OUTPUT — the dry signal at 1 - mix under the compressed one at mix — against its input, on the same
+// places and with the same statistics as the compressed path's: the P95 of the 4 ms windows and the largest sample. The
+// glue alone, with no lookahead, shows the drop is that, sample by sample; at mix 1 the numbers are the compressed path's.
+void theBlend()
+{
+    felitronics::test::group ("the glue's line counts its mix: the drop of the stage's output against its input — at 40 % about 0.4 of mix 1's, at 1 the same");
+    const Mix mix;
+    struct Took
+    {
+        bool taken = false;
+        double p95 = 0.0, max = 0.0;
+        Staged staged;
+        mastering::MasteringChainParams params;
+        double gainDb = 0.0;
+    };
+    const auto master = [&] (double share)
+    {
+        Took t;
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        GlueFields<Touched> knob; knob.on = true; knob.upToDb = 3.0; knob.mix = share;
+        if (s.apply (command::EditDevice { 3, knob }).rejection != Rejection::None) return t;
+        command::Master request { 4 };
+        request.ready.version = 1;
+        request.ready.topology = twoStages (true);
+        {
+            const auto snapshot = s.snapshot();
+            detail::writeDynamics (inputsOf (s, snapshot), s.project().devices, request.ready.params);
+            t.gainDb = *snapshot.view().plan.inputGainDb;
+        }
+        request.source = s.source().hash; request.revision = s.revision();
+        if (! same (request.ready.params.compressorMix, share) || s.apply (request).rejection != Rejection::None) return t;
+        (void) finish (s);
+        if (s.masters().size() != 1 || ! s.masters()[0].report || ! s.masters()[0].report->cost) return t;
+        const auto& cost = *s.masters()[0].report->cost;
+        if (! cost.glueP95Db.value || ! cost.glueMaxDb.value) return t;
+        t.p95 = *cost.glueP95Db.value; t.max = *cost.glueMaxDb.value;
+        t.params = request.ready.params;
+        t.staged = stage (mix, t.params, t.gainDb, loudShare());
+        t.taken = true;
+        return t;
+    };
+    const auto full = master (1.0), parallel = master (0.4), dry = master (0.0);
+    ok (full.taken && parallel.taken && dry.taken, "PRECONDITION: glue up to 3 dB mastered at mix 1, 0.4 and 0, each with its glue's two numbers");
+    ok (same (full.staged.grMax, parallel.staged.grMax) && same (full.staged.grP95, parallel.staged.grP95) && full.staged.grMax > 2.0,
+        "the compressed path is the same at every mix: " + std::to_string (full.staged.grP95) + " dB at its P95, " + std::to_string (full.staged.grMax)
+        + " at most — the mix moves no detector");
+    ok (same (full.max, full.staged.grMax) && near (full.p95, full.staged.grP95, 0.1),
+        "at mix 1 the line's numbers are the compressed path's, as before: " + std::to_string (full.p95) + " / " + std::to_string (full.max) + " dB");
+    const double shareP95 = parallel.p95 / full.p95, shareMax = parallel.max / full.max;
+    std::printf ("    mix 1: %.3f / %.3f dB; mix 0.4: %.3f / %.3f dB (%.3f and %.3f of it); the drop alone at 0.4: %.3f / %.3f dB\n",
+        full.p95, full.max, parallel.p95, parallel.max, shareP95, shareMax, parallel.staged.blendP95, parallel.staged.blendMax);
+    ok (shareP95 > 0.3 && shareP95 <= 0.4 && shareMax > 0.3 && shareMax <= 0.4,
+        "at mix 0.4 about 0.4 of mix 1's — " + std::to_string (shareP95) + " at the P95, " + std::to_string (shareMax) + " at most (a little under, the loss being in dB)");
+    ok (near (parallel.max, parallel.staged.blendMax, 1e-9) && near (parallel.p95, parallel.staged.blendP95, 0.1),
+        "and they are the drop of the stage's output, through the mix, on the same windows: " + std::to_string (parallel.p95) + " / "
+        + std::to_string (parallel.max) + " dB against " + std::to_string (parallel.staged.blendP95) + " / " + std::to_string (parallel.staged.blendMax));
+    ok (same (dry.max, 0.0) && same (dry.p95, 0.0) && ! std::signbit (dry.max) && ! std::signbit (dry.p95) && dry.staged.grMax > 2.0,
+        "at mix 0 the glue took nothing — 0 dB, not −0 — while its compressor works on a signal nobody hears");
+
+    // The premise, on the stage itself: the glue alone (no clipper, no limiter, no lookahead), its output against its
+    // input sample by sample where the input is loud enough to divide by, beside the drop its tap gives through the mix.
+    auto topology = twoStages();
+    topology.clipper = false;
+    auto params = parallel.params;
+    params.inputGainDb += parallel.gainDb;
+    mastering::MasteringChain chain;
+    chain.setParams (params);
+    felitronics::test::run (chain.prepare (double (Mix::rate), 2, topology));
+    const int latency = chain.latencySamples(), block = 1024, total = int (mix.frames) + latency;
+    std::vector<float> left (std::size_t (total), 0.0f), right (std::size_t (total), 0.0f), gr (std::size_t (total + block));
+    std::copy (mix.left.begin(), mix.left.end(), left.begin()); std::copy (mix.right.begin(), mix.right.end(), right.begin());
+    int written = 0;
+    for (int at = 0; at < total; at += block)
+    {
+        float* io[] { left.data() + at, right.data() + at };
+        mastering::MasteringChainTaps taps;
+        taps.compressorGrDb = gr.data() + written; taps.frameCapacity = int (gr.size()) - written;
+        felitronics::test::run (chain.process (io, 2, std::min (block, total - at), taps));
+        written += taps.framesWritten;
+    }
+    const double gain = std::pow (10.0, params.inputGainDb / 20.0), m = double (float (params.compressorMix));
+    double worst = 0.0, deepest = 0.0;
+    std::size_t compared = 0;
+    for (unsigned j = 0; j < mix.frames && int (j) < written; ++j)
+        for (const auto& [in, out] : { std::pair { mix.left[j], left[j + unsigned (latency)] }, std::pair { mix.right[j], right[j + unsigned (latency)] } })
+        {
+            if (std::fabs (in) < 1e-3f) continue;
+            const double drop = -20.0 * std::log10 (double (out) / (double (in) * gain)), expected = blendDb (std::fabs (double (gr[j])), m);
+            worst = std::max (worst, std::fabs (drop - expected)); deepest = std::max (deepest, drop); ++compared;
+        }
+    ok (compared > mix.frames && deepest > 0.5 && worst < 1e-3,
+        "the stage's output is its input times (1 - mix) + mix x the compressed path's gain: over " + std::to_string (compared)
+        + " samples, the deepest drop " + std::to_string (deepest) + " dB, within " + std::to_string (worst) + " dB of it");
 }
 void theType()
 {
@@ -1115,10 +1255,313 @@ void theMix()
     // as wasm.
 }
 
+// THE FIVE BY HAND (owner, 07.10): the threshold, ratio, knee, attack and release a person may set. A field set by hand
+// wins for that field alone; every field left alone keeps the law at the amount as it sounds, whatever another field
+// holds; the snapshot's machine layer is those applied values, not the ones placed with the machine's own amount; a revert
+// returns a field to them; a value outside its domain is refused, the field kept.
+using Five = std::array<std::optional<double>, 5>;
+Five plannedFive (const Snapshot& v)
+{
+    const auto& g = v.view().plan.glue;
+    return { g.thresholdDb, g.ratio, g.kneeDb, g.attackMs, g.releaseMs };
+}
+Five machineFive (const Snapshot& v)
+{
+    const auto& g = v.view().project.devices.glue.machine;
+    return { g.thresholdDb, g.ratio, g.kneeDb, g.attackMs, g.releaseMs };
+}
+// Every field but `skip` present in both and the same number.
+bool sameFive (const Five& a, const Five& b, std::size_t skip = 5)
+{
+    bool e = true;
+    for (std::size_t i = 0; i < 5; ++i)
+        if (i != skip) e = e && a[i] && b[i] && same (*a[i], *b[i]);
+    return e;
+}
+template <class Fields, class V> void setFive (Fields& f, std::size_t i, V v)
+{
+    switch (i)
+    {
+        case 0: f.thresholdDb = v; break;
+        case 1: f.ratio = v; break;
+        case 2: f.kneeDb = v; break;
+        case 3: f.attackMs = v; break;
+        default: f.releaseMs = v; break;
+    }
+}
+bool noHandFive (const Session& s)
+{
+    const auto& h = s.project().devices.glue.hand;
+    return ! h.thresholdDb && ! h.ratio && ! h.kneeDb && ! h.attackMs && ! h.releaseMs;
+}
+void settle (Session& s)
+{
+    for (unsigned i = 0; i < 4000000 && (s.measurementJob() || s.needlesJob()); ++i) (void) s.step (16);
+}
+
+void theFiveByHand()
+{
+    felitronics::test::group ("the glue's five by hand: each wins alone, the rest keep the law at the amount, the machine layer is what applies");
+    const Mix mix;
+    constexpr const char* names[] = { "threshold", "ratio", "knee", "attack", "release" };
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    GlueFields<Touched> glue; glue.on = true; glue.upToDb = 2.0;
+    ok (s.apply (command::EditDevice { 3, glue }).rejection == Rejection::None, "PRECONDITION: the glue ticked at 2 dB by hand");
+    settle (s);
+    const auto base = s.snapshot();
+    const auto law = plannedFive (base);
+    ok (base.view().plan.glue.state == GlueState::Active && law[0] && law[1] && law[2] && law[3] && law[4] && noHandFive (s),
+        "PRECONDITION: the glue compresses, all five numbers stated, none by hand");
+    const auto placed = s.project().devices.glue.machine;
+    ok (sameFive (machineFive (base), law) && ! same (placed.ratio, *law[1]),
+        "the snapshot's machine layer is the five as they apply — the law at the 2 dB that sounds (ratio "
+            + std::to_string (*law[1]) + "), not the one placed at the machine's 0 (ratio " + std::to_string (placed.ratio) + ")");
+
+    const double hand[5] = { -25.0, 4.0, 2.0, 7.5, 333.0 };
+    std::uint64_t id = 4;
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        GlueFields<Touched> one; setFive (one, i, hand[i]);
+        const bool taken = s.apply (command::EditDevice { id++, one }).rejection == Rejection::None;
+        const auto now = s.snapshot();
+        const auto p = plannedFive (now);
+        ok (taken && p[i] && same (*p[i], hand[i]) && sameFive (p, law, i) && sameFive (machineFive (now), law),
+            std::string (names[i]) + " by hand wins for itself alone: the other four and the whole machine layer do not move");
+        GlueFields<Mark> mark; setFive (mark, i, true);
+        ok (s.apply (command::RevertEdits { id++, mark }).rejection == Rejection::None && noHandFive (s)
+                && sameFive (plannedFive (s.snapshot()), law),
+            std::string (names[i]) + " reverted: back to the law");
+    }
+    GlueFields<Touched> all;
+    for (std::size_t i = 0; i < 5; ++i) setFive (all, i, hand[i]);
+    ok (s.apply (command::EditDevice { id++, all }).rejection == Rejection::None, "PRECONDITION: all five by hand");
+    const auto allHand = s.snapshot();
+    bool asWritten = true;
+    for (std::size_t i = 0; i < 5; ++i) asWritten = asWritten && plannedFive (allHand)[i] && same (*plannedFive (allHand)[i], hand[i]);
+    ok (asWritten && sameFive (machineFive (allHand), law) && same (allHand.view().plan.glue.upToDb, 2.0),
+        "all five by hand sound as written; the machine layer and the amount stay where they were");
+    GlueFields<Mark> marks; for (std::size_t i = 0; i < 5; ++i) setFive (marks, i, true);
+    ok (s.apply (command::RevertEdits { id++, marks }).rejection == Rejection::None && noHandFive (s)
+            && sameFive (plannedFive (s.snapshot()), law), "all five reverted: the law again");
+
+    // Each domain's ends are taken; a step past either is refused and the field keeps the last value taken.
+    const double ends[5][2] = { { -40.0, 0.0 }, { 1.0, 10.0 }, { 0.0, 12.0 }, { 0.1, 100.0 }, { 10.0, 1000.0 } };
+    const double past[5][2] = { { -40.01, 0.01 }, { 0.99, 10.01 }, { -0.01, 12.01 }, { 0.09, 100.01 }, { 9.99, 1000.01 } };
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        bool edges = true;
+        for (const double e : ends[i]) { GlueFields<Touched> f; setFive (f, i, e); edges = edges && s.apply (command::EditDevice { id++, f }).rejection == Rejection::None; }
+        bool refused = true;
+        for (const double e : past[i]) { GlueFields<Touched> f; setFive (f, i, e); refused = refused && s.apply (command::EditDevice { id++, f }).rejection == Rejection::OutOfDomain; }
+        GlueFields<Touched> nan; setFive (nan, i, std::numeric_limits<double>::quiet_NaN());
+        refused = refused && s.apply (command::EditDevice { id++, nan }).rejection != Rejection::None;
+        const auto& h = s.project().devices.glue.hand;
+        const std::optional<double> kept = i == 0 ? h.thresholdDb : i == 1 ? h.ratio : i == 2 ? h.kneeDb : i == 3 ? h.attackMs : h.releaseMs;
+        ok (edges && refused && kept && same (*kept, ends[i][1]),
+            std::string (names[i]) + ": " + std::to_string (ends[i][0]) + " and " + std::to_string (ends[i][1]) + " taken, "
+                + std::to_string (past[i][0]) + ", " + std::to_string (past[i][1]) + " and NaN refused, the value kept");
+    }
+
+    // A field by hand on a glue nobody ticked: the glue stays out, and the other four keep the knob's numbers at the
+    // machine's 0 — a hand value never moves the amount the rest follow.
+    auto qp = measured (mix, "allStreaming"); auto& q = *qp;
+    const auto before = q.snapshot();
+    const auto atZero = plannedFive (before);
+    ok (before.view().plan.glue.state == GlueState::Out && atZero[1] && same (*atZero[1], 1.0) && sameFive (machineFive (before), atZero),
+        "PRECONDITION: the glue out at the machine's 0, ratio 1, the machine layer those numbers");
+    GlueFields<Touched> ratio; ratio.ratio = 3.0;
+    ok (q.apply (command::EditDevice { 3, ratio }).rejection == Rejection::None, "PRECONDITION: a ratio of 3 by hand, no tick");
+    const auto after = q.snapshot();
+    const auto p = plannedFive (after);
+    ok (after.view().plan.glue.state == GlueState::Out && same (after.view().plan.glue.upToDb, 0.0) && p[1] && same (*p[1], 3.0)
+            && sameFive (p, atZero, 1) && sameFive (machineFive (after), atZero),
+        "the glue stays out at 0 dB; threshold, knee, attack and release and the machine layer do not move (knee "
+            + std::to_string (p[2].value_or (-1.0)) + " against " + std::to_string (atZero[2].value_or (-1.0)) + ")");
+}
+
+// THE LIMITER'S THREE BY HAND (owner, 08.10): release, lookahead and oversampling a person may set; the machine keeps the
+// constants. The oversampling is a power of two from 2 to 16 — felitronics-core's true-peak limiter refuses more, so 32
+// is not offered.
+void theLimiterThree()
+{
+    felitronics::test::group ("the limiter's three by hand: release 1…1000 ms, lookahead 0…10 ms, oversampling 2, 4, 8 or 16; the machine keeps the constants");
+    const auto engine = detail::rules().engine;
+    const auto number = [] (auto v) { if (const auto d = v.decimal()) return d->toDouble(); return double (v.integer().value_or (-1)); };
+    const double releaseMs = number (engine.find ("limiter").find ("releaseMs"));
+    const double lookaheadMs = number (engine.find ("limiter").find ("lookaheadMs"));
+    const auto factor = std::int32_t (number (engine.find ("chain").find ("oversampleFactor")));
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    const auto v0 = s.snapshot();
+    const auto& m0 = v0.view().project.devices.limiter.machine;
+    const auto& l0 = v0.view().plan.limiter;
+    ok (same (m0.releaseMs, releaseMs) && same (m0.lookaheadMs, lookaheadMs) && m0.oversampling == factor
+            && same (l0.releaseMs, releaseMs) && same (l0.lookaheadMs, lookaheadMs) && l0.oversampling == factor,
+        "the machine's layer holds [limiter] releaseMs " + std::to_string (releaseMs) + ", lookaheadMs " + std::to_string (lookaheadMs)
+            + " and [chain] oversampleFactor " + std::to_string (factor) + ", and they sound");
+    std::uint64_t id = 3;
+    bool powers = true;
+    for (const std::int32_t n : { 2, 4, 8, 16 })
+    {
+        LimiterFields<Touched> f; f.oversampling = n;
+        powers = powers && s.apply (command::EditDevice { id++, f }).rejection == Rejection::None
+            && s.snapshot().view().plan.limiter.oversampling == n;
+    }
+    ok (powers, "oversampling 2, 4, 8 and 16 are each taken and sound");
+    bool others = true;
+    for (const std::int32_t n : { 32, 3, 1, 0, -2 })
+    {
+        LimiterFields<Touched> f; f.oversampling = n;
+        others = others && s.apply (command::EditDevice { id++, f }).rejection == Rejection::NotOneOf;
+    }
+    ok (others && s.project().devices.limiter.hand.oversampling == 16, "32, 3, 1, 0 and −2 are refused (NotOneOf), 16 kept");
+    LimiterFields<Touched> edges; edges.releaseMs = 1000.0; edges.lookaheadMs = 10.0;
+    ok (s.apply (command::EditDevice { id++, edges }).rejection == Rejection::None && same (s.snapshot().view().plan.limiter.releaseMs, 1000.0)
+            && same (s.snapshot().view().plan.limiter.lookaheadMs, 10.0), "release 1000 ms and lookahead 10 ms are taken and sound");
+    bool past = true;
+    for (const double r : { 0.99, 1000.01 }) { LimiterFields<Touched> f; f.releaseMs = r; past = past && s.apply (command::EditDevice { id++, f }).rejection == Rejection::OutOfDomain; }
+    for (const double l : { -0.01, 10.01 }) { LimiterFields<Touched> f; f.lookaheadMs = l; past = past && s.apply (command::EditDevice { id++, f }).rejection == Rejection::OutOfDomain; }
+    ok (past && same (*s.project().devices.limiter.hand.releaseMs, 1000.0) && same (*s.project().devices.limiter.hand.lookaheadMs, 10.0),
+        "release 0.99 and 1000.01 ms, lookahead −0.01 and 10.01 ms are refused, the values kept");
+    LimiterFields<Mark> back; back.releaseMs = true; back.lookaheadMs = true; back.oversampling = true;
+    const auto reverted = s.apply (command::RevertEdits { id++, back }).rejection == Rejection::None;
+    const auto v1 = s.snapshot();
+    ok (reverted && same (v1.view().plan.limiter.releaseMs, releaseMs) && same (v1.view().plan.limiter.lookaheadMs, lookaheadMs)
+            && v1.view().plan.limiter.oversampling == factor, "reverted: the constants sound again");
+}
+
+// THE AS-WORKED FIVE: a master's exported report prints the glue's five as they applied — a field by hand at its hand
+// value, every other at the law at the amount as it sounded — the numbers its render state gave the compressor, not the
+// ones placed with the machine's own amount.
+void theWorkedFive()
+{
+    felitronics::test::group ("the as-worked report: the glue's five as they applied, not as placed");
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    GlueFields<Touched> glue; glue.on = true; glue.upToDb = 2.0; glue.ratio = 2.5;
+    ok (s.apply (command::EditDevice { 3, glue }).rejection == Rejection::None, "PRECONDITION: the glue ticked at 2 dB, its ratio 2.5 by hand");
+    settle (s);
+    const auto planned = plannedFive (s.snapshot());
+    command::Master request { 4 };
+    request.source = s.source().hash; request.revision = s.revision();
+    ok (s.apply (request).rejection == Rejection::None, "PRECONDITION: the master is taken");
+    (void) finish (s);
+    ok (s.job() == 0 && s.masters().size() == 1, "PRECONDITION: mastered");
+    if (s.masters().size() != 1) return;
+    const auto worked = s.exportWorked (s.masters()[0].id);
+    const std::string_view text = worked.view();
+    // The line `key = value # origin` inside the table that starts at `table`: its value and origin.
+    const auto lineOf = [&] (std::string_view table, std::string_view key) -> std::pair<std::string, std::string>
+    {
+        const auto from = text.find (table);
+        if (from == std::string_view::npos) return {};
+        const auto end = text.find ("\n[", from + table.size());
+        const auto at = text.find ("\n" + std::string (key) + " = ", from);
+        if (at == std::string_view::npos || at > end) return {};
+        const auto value = at + key.size() + 4, hash = text.find (" # ", value), eol = text.find ('\n', value);
+        return { std::string (text.substr (value, hash - value)), std::string (text.substr (hash + 3, eol - hash - 3)) };
+    };
+    constexpr std::string_view keys[] = { "thresholdDb", "ratio", "kneeDb", "attackMs", "releaseMs" };
+    bool applied = true, origins = true, ofThePlan = true;
+    std::string seen;
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        const auto [value, origin] = lineOf ("\n[glue]\n", keys[i]);
+        const auto [rendered, renderedOrigin] = lineOf ("\n[renderState]\n", "params.compressor." + std::string (keys[i]));
+        applied = applied && ! value.empty() && value == rendered;
+        origins = origins && origin == (i == 1 ? "hand" : "machine");
+        // A number the report cannot write short is written as its exact decimal in quotes.
+        const auto digits = value.size() > 1 && value.front() == '"' ? value.substr (1, value.size() - 2) : value;
+        ofThePlan = ofThePlan && planned[i] && ! digits.empty() && same (std::strtod (digits.c_str(), nullptr), *planned[i]);
+        seen += std::string (keys[i]) + " " + value + " (" + origin + ") / " + rendered + "; ";
+    }
+    ok (applied, "the [glue] table's five are the render state's compressor numbers: " + seen);
+    ok (origins, "the ratio by hand says hand, the four left alone say machine");
+    ok (ofThePlan, "and they are the plan's five as the snapshot stated them before the master");
+}
+
+// A person's tick on a glue or a saturation the machine left at 0, nothing else touched (owner, 08.10): the glue takes
+// 2.6 dB and the character "glue, not a compressor" — ratio 2, attack 30 ms, release 300 ms, knee 6 dB, the threshold the
+// travel's at the amount — and the saturation 6 dB of drive, as the machine's layer, no field by hand. A person's own
+// field wins; where the machine places the glue itself (cd) the travel stands.
+void aTickTakesTheCharacter()
+{
+    felitronics::test::group ("a tick on an untouched glue gives 2.6 dB and ratio 2, attack 30, release 300, knee 6; on a saturation 6 dB — the machine's layer");
+    const Mix mix;
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "PRECONDITION: the glue ticked, nothing else");
+        settle (s);
+        const auto v = s.snapshot();
+        const auto& m = v.view().project.devices.glue.machine;
+        const auto& g = v.view().plan.glue;
+        const auto& h = s.project().devices.glue.hand;
+        ok (g.state == GlueState::Active && same (g.upToDb, 2.6) && same (m.upToDb, 2.6) && same (m.ratio, 2.0) && same (m.attackMs, 30.0)
+            && same (m.releaseMs, 300.0) && same (m.kneeDb, 6.0) && g.ratio && same (*g.ratio, 2.0) && g.attackMs && same (*g.attackMs, 30.0)
+            && g.releaseMs && same (*g.releaseMs, 300.0) && g.kneeDb && same (*g.kneeDb, 6.0) && g.thresholdDb && same (m.thresholdDb, *g.thresholdDb)
+            && ! h.upToDb && noHandFive (s) && ! PlanText::glueTempo (g) && ! PlanText::glueRelease (g),
+            "a tick alone: the machine's layer at 2.6 dB, ratio 2, attack 30 ms, release 300 ms, knee 6 dB, none by hand, no tempo said — it is "
+            + std::to_string (m.upToDb) + " dB, ratio " + std::to_string (m.ratio) + ", attack " + std::to_string (m.attackMs));
+        GlueFields<Touched> attack; attack.attackMs = 80.0;
+        ok (s.apply (command::EditDevice { 4, attack }).rejection == Rejection::None, "PRECONDITION: an attack of 80 ms by hand");
+        settle (s);
+        const auto w = s.snapshot();
+        const auto& wm = w.view().project.devices.glue.machine;
+        const auto& wg = w.view().plan.glue;
+        ok (wg.attackMs && same (*wg.attackMs, 80.0) && same (wm.attackMs, 30.0) && wg.ratio && same (*wg.ratio, 2.0)
+            && wg.releaseMs && same (*wg.releaseMs, 300.0) && same (wg.upToDb, 2.6),
+            "a person's attack of 80 ms wins for the attack alone; the machine's layer keeps 30, the rest of the character stands");
+    }
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        GlueFields<Touched> attack; attack.attackMs = 80.0;
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, attack }).rejection == Rejection::None && s.apply (command::EditDevice { 4, tick }).rejection == Rejection::None,
+            "PRECONDITION: an attack of 80 ms by hand, then the tick");
+        settle (s);
+        const auto w = s.snapshot();   // held: a reference into a temporary snapshot dangles past its line
+        const auto& g = w.view().plan.glue;
+        ok (g.attackMs && same (*g.attackMs, 80.0) && g.ratio && same (*g.ratio, 2.0) && same (g.upToDb, 2.6),
+            "a hand attack of 80 ms survives the tick");
+    }
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        SaturationFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "PRECONDITION: the saturation ticked, nothing else");
+        const auto v = s.snapshot();
+        ok (same (v.view().project.devices.saturation.machine.drive, 6.0) && ! s.project().devices.saturation.hand.drive
+            && same (v.view().plan.saturation.knobDb, 6.0) && v.view().plan.saturation.active,
+            "a saturation tick alone: the machine's layer at a drive of 6 dB, none by hand, and it shapes — it is "
+            + std::to_string (v.view().project.devices.saturation.machine.drive));
+        SaturationFields<Touched> zero; zero.drive = 0.0;
+        ok (s.apply (command::EditDevice { 4, zero }).rejection == Rejection::None, "PRECONDITION: a drive of 0 by hand");
+        const auto w = s.snapshot();
+        ok (s.project().devices.saturation.hand.drive && same (*s.project().devices.saturation.hand.drive, 0.0)
+            && same (w.view().plan.saturation.knobDb, 0.0) && ! w.view().plan.saturation.active
+            && same (w.view().project.devices.saturation.machine.drive, 0.0),
+            "a person's drive of 0 is kept: the saturation does not shape, and the machine's layer is the 0 placed");
+    }
+    {
+        auto sp = measured (mix, "cd"); auto& s = *sp;
+        settle (s);
+        const auto before = s.snapshot();
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 3, tick }).rejection == Rejection::None, "PRECONDITION: a tick on cd's glue");
+        settle (s);
+        const auto after = s.snapshot();
+        const auto& m = after.view().project.devices.glue.machine;
+        ok (sameFive (machineFive (before), machineFive (after)) && sameFive (plannedFive (before), plannedFive (after))
+            && same (m.upToDb, 2.6) && ! same (m.ratio, 2.0) && ! same (m.attackMs, 30.0),
+            "cd's glue, which the machine places: the travel's five at 2.6 dB, a tick or none — ratio " + std::to_string (m.ratio));
+    }
+}
+
 int main()
 {
     std::printf ("felitronics::session — glue and saturation from the normalised input\n");
     theCurve();
+    aTickTakesTheCharacter();
     theMachine();
     aPersonsKnob();
     withoutAP95();
@@ -1128,9 +1571,13 @@ int main()
     theCalibration();
     theCut();
     theReport();
+    theBlend();
     theType();
     outStatesItsNumbers();
     limiterAndDitherAsTheChainGetsThem();
     theMix();
+    theFiveByHand();
+    theLimiterThree();
+    theWorkedFive();
     return felitronics::test::report();
 }

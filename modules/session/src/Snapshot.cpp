@@ -4,7 +4,9 @@
 #include "BuildGuards.h"
 #include "SnapshotStorage.h"
 #include "Devices.h"
+#include "Dynamics.h"
 #include "EqCurve.h"
+#include "Grid.h"
 #include "Needles.h"
 #include "Observations.h"
 #include <felitronics/session/Snapshot.h>
@@ -250,8 +252,17 @@ SnapshotView Session::buildView() const noexcept
     v.tempoChoice = tempoForDevice();
     v.measurementsFromSidecar = measurementsFromSidecar_;
     v.sourceMissingAudio = source_.channels != 0 && ! samples_;
-    v.canMaster = mandatoryReady() && pendingMaster_.master == 0
-        && storageFor (command::Master {}).rejection == Rejection::None;
+    // A master is taken whenever it would be accepted: at once, or queued — behind the one being made, or until the first
+    // measurement's readings come.
+    v.canMaster = storageFor (command::Master {}).rejection == Rejection::None;
+    for (std::size_t i = 0; i < masterJobCount_; ++i)
+    {
+        auto row = masterJobs_[i];
+        row.position = 0;
+        for (std::size_t q = 0; q < queuedCount_; ++q)
+            if (masterQueue_[q].id == row.job) row.position = std::uint32_t (q + (job_ != 0 ? 1u : 0u));
+        v.masterJobs.items[v.masterJobs.count++] = row;
+    }
     v.pendingMaster = pendingMaster_;
     v.pendingMasterBytes = double (masterAudioBytes (pendingMaster_));
     v.devicesPlaced = placed();
@@ -260,6 +271,25 @@ SnapshotView Session::buildView() const noexcept
     v.mastering = mastering_;
     v.revision = revision_;
     v.project = project_;
+    if (devicesPlaced_)
+    {
+        // The glue's five in the machine's layer are the values a field left alone gets — at the knob as it sounds, on
+        // the measured P95 and tempo — not the ones placed with the machine's own amount, which a person's amount or
+        // tick no longer follows. Where the law has no number yet (no P95) the placed value stays.
+        auto& glue = v.project.devices.glue.machine;
+        const auto& law = glueMachine_;
+        if (law.ratio) glue.ratio = detail::kept (*law.ratio);
+        if (law.kneeDb) glue.kneeDb = detail::kept (*law.kneeDb);
+        if (law.attackMs) glue.attackMs = detail::kept (*law.attackMs);
+        if (law.thresholdDb) glue.thresholdDb = detail::kept (*law.thresholdDb);
+        if (law.releaseMs) glue.releaseMs = detail::kept (*law.releaseMs);
+        // A person's tick on a knob, or a drive, the machine left at 0 and no one touched: the machine's layer says the
+        // amount, or the drive, the tick gives ([glue] whenTicked, [saturation] whenTicked), not the 0 placed.
+        const auto tickRules = detail::rules();
+        if (detail::glueTicked (project_.devices.glue)) glue.upToDb = detail::kept (detail::glueKnob (tickRules, project_.devices.glue));
+        if (detail::saturationTicked (project_.devices.saturation))
+            v.project.devices.saturation.machine.drive = detail::kept (detail::saturationKnob (tickRules, project_.devices.saturation));
+    }
     const auto rules = detail::rules();
     detail::eachDevice (project_.devices, [&] (Device, const auto& layers)
     {

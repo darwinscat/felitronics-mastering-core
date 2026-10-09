@@ -15,7 +15,9 @@
     "LoudnessMode": [
       "Manual",
       "MaxClean",
-      "MaxDense"
+      "MaxDense",
+      "MaxExtreme",
+      "MaxNuke"
     ],
     "DeliveryMode": [
       "Mastered",
@@ -25,6 +27,13 @@
     "DamageJobState": [
       "Waiting",
       "Running"
+    ],
+    "MasterJobState": [
+      "Queued",
+      "Running",
+      "Done",
+      "Failed",
+      "Cancelled"
     ],
     "MaxStop": [
       "None",
@@ -37,6 +46,19 @@
       "Unguarded",
       "OverBudget",
       "Floor"
+    ],
+    "WaterfallStop": [
+      "Reached",
+      "MixAtOne",
+      "MixAtZero",
+      "CutAtEnd",
+      "CutAtZero",
+      "ComfortRed",
+      "NotSounding",
+      "Passes",
+      "Rest",
+      "NoWish",
+      "DriveAtCeiling"
     ],
     "SaturationType": [
       "Tanh",
@@ -403,7 +425,13 @@
       "fields": {
         "on": "bool",
         "upToDb": "double",
-        "mix": "double"
+        "mix": "double",
+        "thresholdDb": "double",
+        "ratio": "double",
+        "kneeDb": "double",
+        "attackMs": "double",
+        "releaseMs": "double",
+        "share": "double"
       }
     },
     "GlueFieldsTouched": {
@@ -411,7 +439,13 @@
       "fields": {
         "on": "bool?",
         "upToDb": "double?",
-        "mix": "double?"
+        "mix": "double?",
+        "thresholdDb": "double?",
+        "ratio": "double?",
+        "kneeDb": "double?",
+        "attackMs": "double?",
+        "releaseMs": "double?",
+        "share": "double?"
       }
     },
     "GlueFieldsLayers": {
@@ -427,7 +461,8 @@
         "on": "bool",
         "drive": "double",
         "mix": "double",
-        "type": "SaturationType"
+        "type": "SaturationType",
+        "share": "double"
       }
     },
     "SaturationFieldsTouched": {
@@ -436,7 +471,8 @@
         "on": "bool?",
         "drive": "double?",
         "mix": "double?",
-        "type": "SaturationType?"
+        "type": "SaturationType?",
+        "share": "double?"
       }
     },
     "SaturationFieldsLayers": {
@@ -471,14 +507,22 @@
       "cpp": "LimiterFields<Value>",
       "fields": {
         "needles": "Needles",
-        "needlesDb": "double"
+        "needlesDb": "double",
+        "releaseMs": "double",
+        "lookaheadMs": "double",
+        "oversampling": "int32",
+        "cutShare": "double"
       }
     },
     "LimiterFieldsTouched": {
       "cpp": "LimiterFields<Touched>",
       "fields": {
         "needles": "Needles?",
-        "needlesDb": "double?"
+        "needlesDb": "double?",
+        "releaseMs": "double?",
+        "lookaheadMs": "double?",
+        "oversampling": "int32?",
+        "cutShare": "double?"
       }
     },
     "LimiterFieldsLayers": {
@@ -745,7 +789,33 @@
         "guardSteps": "uint32",
         "deliveryMode": "DeliveryMode",
         "deliveryGainDb": "double",
-        "deliveryDithered": "bool"
+        "deliveryDithered": "bool",
+        "waterfall": "MasterWaterfall?"
+      }
+    },
+    "MasterWaterfallZone": {
+      "cpp": "MasterWaterfallZone",
+      "fields": {
+        "asked": "double?",
+        "reached": "double?",
+        "db": "double?",
+        "setting": "double?",
+        "stop": "WaterfallStop",
+        "drive": "double?"
+      }
+    },
+    "MasterWaterfall": {
+      "cpp": "MasterWaterfall",
+      "fields": {
+        "glue": "MasterWaterfallZone",
+        "saturation": "MasterWaterfallZone",
+        "cut": "MasterWaterfallZone",
+        "limiter": "MasterWaterfallZone",
+        "totalDb": "double?",
+        "extraPasses": "uint32",
+        "aloneLufs": "double?",
+        "regrownDb": "double?",
+        "limiterAloneDb": "double?"
       }
     },
     "LandingPass": {
@@ -912,7 +982,16 @@
         "damageProgress": "Phase",
         "loudnessMode": "LoudnessMode",
         "damageJobs": "DamageJobEntry[]",
-        "sourceReport": "SourceReport?"
+        "sourceReport": "SourceReport?",
+        "masterJobs": "MasterJobRow[<=16]"
+      }
+    },
+    "MasterJobRow": {
+      "cpp": "MasterJobRow",
+      "fields": {
+        "job": "uint32",
+        "state": "MasterJobState",
+        "position": "uint32"
       }
     },
     "MasterToken": {
@@ -1593,7 +1672,13 @@
     "EditDeviceGlueFields": {
       "on?": "boolean | null",
       "upToDb?": "WireNumber | null",
-      "mix?": "WireNumber | null"
+      "mix?": "WireNumber | null",
+      "thresholdDb?": "WireNumber | null",
+      "ratio?": "WireNumber | null",
+      "kneeDb?": "WireNumber | null",
+      "attackMs?": "WireNumber | null",
+      "releaseMs?": "WireNumber | null",
+      "share?": "WireNumber | null"
     },
     "EditDeviceSaturationCommand": {
       "kind": "\"editDevice\"",
@@ -1605,7 +1690,8 @@
       "on?": "boolean | null",
       "drive?": "WireNumber | null",
       "mix?": "WireNumber | null",
-      "type?": "SaturationType | null"
+      "type?": "SaturationType | null",
+      "share?": "WireNumber | null"
     },
     "EditDeviceTiltCommand": {
       "kind": "\"editDevice\"",
@@ -1625,7 +1711,11 @@
     },
     "EditDeviceLimiterFields": {
       "needles?": "Needles | null",
-      "needlesDb?": "WireNumber | null"
+      "needlesDb?": "WireNumber | null",
+      "releaseMs?": "WireNumber | null",
+      "lookaheadMs?": "WireNumber | null",
+      "oversampling?": "number | null",
+      "cutShare?": "WireNumber | null"
     },
     "EditDeviceDitherCommand": {
       "kind": "\"editDevice\"",
@@ -1691,7 +1781,13 @@
     "RevertEditsGlueFields": {
       "on?": "boolean",
       "upToDb?": "boolean",
-      "mix?": "boolean"
+      "mix?": "boolean",
+      "thresholdDb?": "boolean",
+      "ratio?": "boolean",
+      "kneeDb?": "boolean",
+      "attackMs?": "boolean",
+      "releaseMs?": "boolean",
+      "share?": "boolean"
     },
     "RevertEditsSaturationCommand": {
       "kind": "\"revertEdits\"",
@@ -1703,7 +1799,8 @@
       "on?": "boolean",
       "drive?": "boolean",
       "mix?": "boolean",
-      "type?": "boolean"
+      "type?": "boolean",
+      "share?": "boolean"
     },
     "RevertEditsTiltCommand": {
       "kind": "\"revertEdits\"",
@@ -1723,7 +1820,11 @@
     },
     "RevertEditsLimiterFields": {
       "needles?": "boolean",
-      "needlesDb?": "boolean"
+      "needlesDb?": "boolean",
+      "releaseMs?": "boolean",
+      "lookaheadMs?": "boolean",
+      "oversampling?": "boolean",
+      "cutShare?": "boolean"
     },
     "RevertEditsDitherCommand": {
       "kind": "\"revertEdits\"",
