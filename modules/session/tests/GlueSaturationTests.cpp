@@ -1520,7 +1520,8 @@ void aTickTakesTheCharacter()
         ok (s.apply (command::EditDevice { 3, attack }).rejection == Rejection::None && s.apply (command::EditDevice { 4, tick }).rejection == Rejection::None,
             "PRECONDITION: an attack of 80 ms by hand, then the tick");
         settle (s);
-        const auto& g = s.snapshot().view().plan.glue;
+        const auto w = s.snapshot();   // held: a reference into a temporary snapshot dangles past its line
+        const auto& g = w.view().plan.glue;
         ok (g.attackMs && same (*g.attackMs, 80.0) && g.ratio && same (*g.ratio, 2.0) && same (g.upToDb, 2.6),
             "a hand attack of 80 ms survives the tick");
     }
