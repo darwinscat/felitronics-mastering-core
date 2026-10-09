@@ -202,8 +202,9 @@ struct MasterDamage
 // (or 3 % of the total, where that is more): its mix at 1 or at 0,
 // the clipper's cut at its domain's end or at 0, its comfort window's red (no moved knob has one yet), a stage that did
 // not sound, or the steering out of moves (Passes). Reached within that; Rest, the limiter's; NoWish, no share asked.
-// DriveAtCeiling: the saturation's mix at 1 and its steered drive at [saturation] steerDriveMaxDb. MixStep: the glue's mix
-// that meets its share lay within the steering's least move of a mix (0.02) of the one in force, so it stayed. TotalMoved:
+// DriveAtCeiling: the saturation's mix at 1 and its steered drive at [saturation] steerDriveMaxDb. MixStep: the glue's or
+// the saturation's mix that meets its share lay within the steering's least move of a mix (0.02) of the one in force, so
+// it stayed. TotalMoved:
 // the steering's last look found the zone within its tolerance of its share of the total it foresaw at the target; the
 // delivered render's total came out elsewhere, and the zone's share of it is off by more.
 enum class WaterfallStop : std::uint8_t { Reached, MixAtOne, MixAtZero, CutAtEnd, CutAtZero, ComfortRed, NotSounding, Passes, Rest,
