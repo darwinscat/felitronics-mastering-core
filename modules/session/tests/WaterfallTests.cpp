@@ -385,6 +385,43 @@ void saturationAtLargeShares()
 }
 
 //==============================================================================
+// A WHOLE SUM KEEPS ITS RATIOS: shares 0.5 / 0.4 / 0.1 (glue, saturation, cut — the limiter asked nothing) and half of
+// each, 0.25 / 0.2 / 0.05, on maxDense, maxExtreme and maxNuke: in both, every zone lands on one common fraction of its
+// asked share (the reached sum over the asked sum), within the steering's tolerance (0.1 dB, or 3 % of the total where
+// that is more). Where the whole sum cannot be met (the glue's mix at 1, the saturation's drive at its ceiling), every
+// zone comes down by the same factor; each held at its own most, the zones of such a sum once all ran to their maxima
+// and the cut took twice its part of what was reached.
+void wholeSumKeepsRatios()
+{
+    felitronics::test::group ("shares summing to the whole keep their ratios where the sum cannot be met");
+    const auto pcm = fixture();
+    for (const std::string_view target : { "maxDense", "maxExtreme", "maxNuke" })
+        for (const double k : { 1.0, 0.5 })
+        {
+            const double asked[] { 0.5 * k, 0.4 * k, 0.1 * k };
+            auto made = loaded (pcm, target);
+            const Kept* m = made && editShares (*made, 10, asked[0], asked[1], asked[2]) ? master (*made, 20) : nullptr;
+            const auto* w = m && m->report->waterfall ? &*m->report->waterfall : nullptr;
+            const MasterWaterfallZone none {};
+            const MasterWaterfallZone* zones[] { w ? &w->glue : &none, w ? &w->saturation : &none, w ? &w->cut : &none };
+            const double total = w ? w->totalDb.value_or (0.0) : 0.0;
+            double reachedSum = 0.0;
+            for (const auto* z : zones) reachedSum += z->reached.value_or (0.0);
+            const double fraction = reachedSum / (k * 1.0);
+            bool kept = total > 0.0;
+            std::string line;
+            for (unsigned i = 0; i < 3; ++i)
+            {
+                const double db = zones[i]->db.value_or (-1.0);
+                kept = kept && std::fabs (fraction * asked[i] * total - db) <= std::fmax (0.1, 0.03 * total);
+                line += (i ? ", " : "") + num (zones[i]->reached.value_or (-1.0)) + " (" + num (db) + " dB)";
+            }
+            ok (w && kept, std::string (target) + ", asked " + num (asked[0]) + "/" + num (asked[1]) + "/" + num (asked[2]) + ": reached "
+                    + line + " of " + num (total) + " dB, the common fraction " + num (fraction));
+        }
+}
+
+//==============================================================================
 // CONVERGENCE: the steering moves the stages at most three times on the fixture (extraPasses; with a cut wish the start
 // clipper's first pass, which measures the peak its threshold is cut from, is one of them), and the landing's own passes
 // after them are no more than the no-wish landing's and two. A max mode's cleaner landing holds the master without the
@@ -693,6 +730,7 @@ int main()
     zeroZone();
     driveCeiling();
     saturationAtLargeShares();
+    wholeSumKeepsRatios();
     convergence();
     cleaner();
     twoClippers();
