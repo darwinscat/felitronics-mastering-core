@@ -1125,7 +1125,8 @@ private:
             // anything — one step lands near — else dB for dB from where it stands.
             const double from = cutNow;
             const double to = std::clamp (cut > 0.05 && from > 0.05 ? from * (want (sCut) / cut) : from + (want (sCut) - cut), 0.0, cutEnd);
-            if (std::fabs (to - from) > 0.1) { (start ? next.startClipCutDb : next.peakClipCutDb) = to; moved = true; peakStale_ = peakStale_ || start; }
+            if (std::fabs (to - from) > kWaterfallCutStepDb) { (start ? next.startClipCutDb : next.peakClipCutDb) = to; moved = true; peakStale_ = peakStale_ || start; }
+            else holds_.cut = SteerHold::Step;
         }
         if (startProbe && chain_->startClipInputPeakDb() > -180.0)
         { next.startClipPeakDb = chain_->startClipInputPeakDb(); moved = true; peakStale_ = true; }
@@ -1403,6 +1404,7 @@ private:
     static constexpr double kWaterfallReadLu = 1.0, kWaterfallToGoLu = 6.0;
     static constexpr double kWaterfallWholeSum = 0.95;
     static constexpr double kWaterfallMixStep = 0.02;   // a mix moves only by more than this
+    static constexpr double kWaterfallCutStepDb = 0.1;  // a clipper's cut moves only by more than this
     bool waterfallOn_ = false, waterfallFrozen_ = false;
     bool peakStale_ = false;      // a start clipper's move since the needles' peak was measured
     bool waterfallFar_ = false;   // the last steering moved nothing on a reading further than kWaterfallReadLu from the target

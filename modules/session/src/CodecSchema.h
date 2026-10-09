@@ -453,7 +453,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (WaterfallStop::DriveAtCeiling) == 10);
         static_assert (unsigned (WaterfallStop::MixStep) == 11);
         static_assert (unsigned (WaterfallStop::TotalMoved) == 12);
-        return 12;
+        static_assert (unsigned (WaterfallStop::CutStep) == 13);
+        return 13;
     }
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
 }
@@ -1016,6 +1017,7 @@ constexpr void checkEnum (WaterfallStop value) noexcept
         case WaterfallStop::DriveAtCeiling: break;
         case WaterfallStop::MixStep: break;
         case WaterfallStop::TotalMoved: break;
+        case WaterfallStop::CutStep: break;
     }
 }
 
