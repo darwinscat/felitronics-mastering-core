@@ -120,6 +120,8 @@ SURFACE[15] = SURFACE[14];
 // devices, terms 154-161), Maximum · extreme and · nuke, the waterfall's shares and report, and the masters' queue in the
 // snapshot, and no entry point.
 SURFACE[16] = SURFACE[15];
+// Version 17 (v0.22.0) appends the waterfall's stops MixStep, TotalMoved and CutStep (11-13), and no entry point.
+SURFACE[17] = SURFACE[16];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];

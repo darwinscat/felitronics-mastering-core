@@ -92,7 +92,10 @@
 //                163); the waterfall — the glue's and the saturation's share and the limiter's cutShare, their words
 //                (164-166), MasterReport.waterfall (MasterWaterfall, MasterWaterfallZone, WaterfallStop); the masters'
 //                queue — Snapshot.masterJobs (MasterJobRow, MasterJobState). All appended; no entry point.
-#define FC_SESSION_ABI_VERSION 16u
+//  17            v0.22.0: the waterfall's three stops that are not out of moves — WaterfallStop MixStep (11, a glue or a
+//                saturation held under the steering's mix step), TotalMoved (12, a zone met on the total the steering
+//                foresaw) and CutStep (13, a cut held under its 0.1 dB step). All appended; no entry point.
+#define FC_SESSION_ABI_VERSION 17u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
