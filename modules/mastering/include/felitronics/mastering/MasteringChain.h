@@ -499,11 +499,12 @@ public:
             if (limiter)    b += lim.bytes()  + alignLim.freshBytes();
             if (startClipper) b += start.bytes();
             // EqEngine's scratch; the compressor's delay rings; Saturator's delay rings and
-            // oversampler reset; the limiter's per-channel buffers/rings and oversampler reset.
+            // oversampler reset; the limiter's per-channel buffers/rings and oversampler reset; the start
+            // clipper's oversampler reset (its float buffer is a storage::Buffer, its aligner's vectors exist).
             const std::uint64_t proxies = (eq ? 1u : 0u) + comp.lines
                 + (clipper ? clip.dryLines + (clip.os.bytes() == 0 ? 7u : 1u) : 0u)
                 + (limiter ? 2u * lim.channels + 1u : 0u)
-                + (startClipper ? (start.os.bytes() == 0 ? 7u : 1u) + 1u : 0u);
+                + (startClipper ? (start.os.bytes() == 0 ? 7u : 1u) : 0u);
             b += proxies * storage::kVectorProxyBytes;
             return b;                                  // MonoBass and Dither allocate nothing — measured
         }
@@ -814,18 +815,19 @@ public:
         return storageFor (sampleRate, numChannels, config, st) ? st.bytes() : 0u;
     }
 
-    // WHAT CONSTRUCTING A CHAIN COSTS, before any preparation: the three dry aligners, which are held BY
+    // WHAT CONSTRUCTING A CHAIN COSTS, before any preparation: the four dry aligners, which are held BY
     // VALUE and whose default state is a 2-slot ring and a 1-sample scratch. It is also the ONE place in
     // this chain where a sum of requests exceeds what is held at once — `prepare()` replaces those seeds
     // for a topology that uses them, so each buffer it re-sizes hands its share of those 12 bytes back.
     // Stated, because a budget that is an upper bound has to say where it is not tight.
     static constexpr std::uint64_t constructBytes() noexcept
     {
-        return 4u * core::DryAligner::constructBytes() + 10u * storage::kVectorProxyBytes
+        return 4u * core::DryAligner::constructBytes()
         // Compressor: 1; Saturator: 7 buffers (os, wet, their two pointer rows, the DC filter's two states, the
         // shape's model state) + delay bank + oversampler (6 + 1); limiter: oversampler (6 + 1), three banks, three
-        // two-vector windows; aligners: 2 each.
-                     + (1u + 15u + 16u + 3u * 2u) * storage::kVectorProxyBytes;
+        // two-vector windows; start clipper: oversampler (6 + 1) — its float buffer is a storage::Buffer, which
+        // constructs empty and has no proxy; aligners: 2 each.
+                     + (1u + 15u + 16u + 7u + 4u * 2u) * storage::kVectorProxyBytes;
     }
 
     // WHAT RE-PREPARING THIS CHAIN ASKS FOR. When the geometry fits, only core's temporary
