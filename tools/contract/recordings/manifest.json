@@ -9,7 +9,7 @@
       "fc_session_abi 16"
     ],
     "configVersion": "09926b4383655c8f",
-    "codecSchemaSha256": "85b563d305631e3d43278534bd729475e3e3da3ac2cc75268aeb855aabcd1f57"
+    "codecSchemaSha256": "f84b64123a47bf1472742ca8762955ef946e596ba334c59c93e3919d7f31b2fb"
   },
   "scenarios": {
     "as-worked": {
