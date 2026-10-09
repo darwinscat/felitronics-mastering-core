@@ -354,41 +354,39 @@ void driveCeiling()
 }
 
 //==============================================================================
-// A LARGE SATURATION WISH IS NEVER TURNED INTO NONE: on maxDense and maxExtreme a saturation asked 80 % (maxDense) or
-// 60 % (maxExtreme) to all of the peak work has its drive raised, and the pass after that move finds the limiter louder
-// than the target by more than it takes — at rest as read at the target. That reading once counted as no work at all:
-// every wish 0 dB, the mix sent to 0, the next pass back to 1, and the moves ran out on a mix of 0 with the drive raised.
-// Now that reading moves nothing: the mix stays at 1 with the drive where it went (the ceiling on maxExtreme), and the
-// saturation takes at least its share — all of the work here, so a share under 1 is overshot (stop Passes; the steering's
-// total holds the limiter's take apart from the saturation's, which on this fixture takes the limiter's whole place).
-// maxDense asked 60 % is not here: the steering's first pass counts it met and the landing's limiter then takes less.
+// A LARGE SATURATION SHARE TAKES ITS SHARE: on maxDense and maxExtreme a saturation asked 30 % to all of the peak work
+// lands on its share of the total the delivered render reports — within the steering's tolerance (0.1 dB, or 3 % of the
+// total where that is more) and 0.1 dB more, the limiter's take the steering read on its last pass near the target
+// against the landing's own last pass — or, where its mix at 1 and its drive at [saturation] steerDriveMaxDb take less,
+// stops there: DriveAtCeiling. The steering once read the zones' work as added on top of the limiter's: a wish past half
+// of the total overshot by more than it missed on every move, and shares 0.6–0.9 took all of the work (before that, none).
 void saturationAtLargeShares()
 {
-    felitronics::test::group ("a large saturation wish: its mix at 1 with the drive raised, never left at 0");
+    felitronics::test::group ("a large saturation share takes its share of the peak work, or stops at the drive's ceiling");
     const double ceiling = number (detail::rules().engine.find ("saturation").find ("steerDriveMaxDb"));
-    const double tolerance = 0.03;
     const auto pcm = fixture();
-    struct Row { std::string_view target; double share; };
-    for (const Row row : { Row { "maxDense", 0.8 }, Row { "maxDense", 0.9 }, Row { "maxExtreme", 0.6 }, Row { "maxExtreme", 0.8 },
-                           Row { "maxExtreme", 0.9 }, Row { "maxExtreme", 1.0 } })
-    {
-        auto made = loaded (pcm, row.target);
-        const Kept* k = made && editShares (*made, 10, std::nullopt, row.share, std::nullopt) ? master (*made, 20) : nullptr;
-        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
-        const auto& z = w ? w->saturation : MasterWaterfallZone {};
-        const double mix = z.setting.value_or (-1.0), drive = z.drive.value_or (-1.0), reached = z.reached.value_or (-1.0);
-        const bool extreme = row.target == "maxExtreme";
-        const bool atOne = mix >= 0.999 && drive > 6.5 /* the machine sets 6 */ && (! extreme || std::fabs (drive - ceiling) <= 0.1) && reached >= row.share - tolerance;
-        const bool stop = row.share < 1.0 || z.stop == WaterfallStop::Reached || z.stop == WaterfallStop::DriveAtCeiling;
-        ok (w && atOne && stop,
-            std::string (row.target) + ", saturation asked " + num (row.share) + ": reached " + num (reached) + " (" + num (z.db.value_or (-1.0))
-                + " dB of " + num (w ? w->totalDb.value_or (-1.0) : -1.0) + "), mix " + num (mix) + ", drive " + num (drive) + " dB, stop "
-                + std::to_string (unsigned (z.stop)) + ", " + std::to_string (w ? w->extraPasses : 0u) + " moves");
-    }
+    for (const std::string_view target : { "maxDense", "maxExtreme" })
+        for (const double share : { 0.3, 0.6, 0.8, 0.9, 1.0 })
+        {
+            auto made = loaded (pcm, target);
+            const Kept* k = made && editShares (*made, 10, std::nullopt, share, std::nullopt) ? master (*made, 20) : nullptr;
+            const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+            const auto& z = w ? w->saturation : MasterWaterfallZone {};
+            const double total = w ? w->totalDb.value_or (0.0) : 0.0, db = z.db.value_or (-1.0);
+            const double mix = z.setting.value_or (-1.0), drive = z.drive.value_or (-1.0);
+            const bool reached = total > 0.0 && std::fabs (share * total - db) <= std::fmax (0.1, 0.03 * total) + 0.1;
+            const bool atCeiling = mix >= 0.999 && std::fabs (drive - ceiling) <= 0.1 && db < share * total
+                                && z.stop == WaterfallStop::DriveAtCeiling;
+            ok (w && (reached || atCeiling),
+                std::string (target) + ", saturation asked " + num (share) + ": reached " + num (z.reached.value_or (-1.0)) + " (" + num (db)
+                    + " dB of " + num (total) + "), mix " + num (mix) + ", drive " + num (drive) + " dB, stop "
+                    + std::to_string (unsigned (z.stop)) + ", " + std::to_string (w ? w->extraPasses : 0u) + " moves");
+        }
 }
 
 //==============================================================================
-// CONVERGENCE: the steering moves the stages at most twice on the fixture (extraPasses), and the landing's own passes
+// CONVERGENCE: the steering moves the stages at most three times on the fixture (extraPasses; with a cut wish the start
+// clipper's first pass, which measures the peak its threshold is cut from, is one of them), and the landing's own passes
 // after them are no more than the no-wish landing's and two. A max mode's cleaner landing holds the master without the
 // wishes first — that landing is the no-wish one — so its passes are counted off before the zones' landing is compared.
 void convergence()
@@ -406,7 +404,7 @@ void convergence()
         const std::uint32_t passes = k && k->landing ? k->landing->passes : 999u;
         const std::uint32_t extra = k && k->report->waterfall ? k->report->waterfall->extraPasses : 999u;
         const std::uint32_t phaseA = target == "maxClean" ? alone : 0u;
-        ok (alone > 0 && extra <= 2u && passes >= extra + phaseA && passes - extra - phaseA <= alone + 2u,
+        ok (alone > 0 && extra <= 3u && passes >= extra + phaseA && passes - extra - phaseA <= alone + 2u,
             std::string (target) + ": the no-wish landing " + std::to_string (alone) + " passes, with three shares "
                 + std::to_string (passes) + " in all, " + std::to_string (extra) + " of them the steering's moves"
                 + (phaseA ? ", " + std::to_string (phaseA) + " the landing without the wishes" : std::string()));
@@ -654,20 +652,20 @@ void noWishAsBefore()
 
 //==============================================================================
 // THE PAGE'S DEFAULT SHARES SOUND AS THEY DID: each max mode with the shares the page starts it on (glue, saturation,
-// cut), mastered on the fixture — the digests below were taken on 0797082, before the fixes of the review and of the
-// saturation's steering at large shares. A fix that moves one of them changes the sound people already heard.
+// cut), mastered on the fixture — the digests below were taken when the steering's total became the peak work the zones
+// and the limiter share at the target (after v0.21.0). A change that moves one of them changes the sound people hear.
 // The steering decides through the platform's libm (a known limit of v0.21.0), so a steered master's bits are the
 // platform's: the digests hold on Apple arm64, where they were taken; elsewhere each master must still be delivered, and
 // Linux is held by the release's golden check of 360 masters on gcc.
 void defaultSharesAsBefore()
 {
-    felitronics::test::group ("the max modes with the page's default shares: 0797082's PCM to the bit");
+    felitronics::test::group ("the max modes with the page's default shares: their PCM to the bit");
     struct Row { std::string_view target; double glue, saturation, cut; std::uint64_t digest; };
     static constexpr Row before[] {
-        { "maxClean", 0.02, 0.10, 0.01, 0xe8986131c50be271ull },
-        { "maxDense", 0.05, 0.20, 0.05, 0xbb5c7839b52eff1cull },
-        { "maxExtreme", 0.15, 0.30, 0.05, 0x3bc9bda8f78129fcull },
-        { "maxNuke", 0.10, 0.40, 0.10, 0xc8cac2253d47cd21ull },
+        { "maxClean", 0.02, 0.10, 0.01, 0xde899fc5d14b4cceull },
+        { "maxDense", 0.05, 0.20, 0.05, 0x3984acf02f4efa47ull },
+        { "maxExtreme", 0.15, 0.30, 0.05, 0x08a781489e2aa025ull },
+        { "maxNuke", 0.10, 0.40, 0.10, 0x71058d33de4a27f8ull },
     };
     const auto pcm = fixture();
     for (const auto& row : before)
@@ -684,6 +682,7 @@ void defaultSharesAsBefore()
         ok (now != 0u && same, std::string (row.target) + " " + num (row.glue) + "/" + num (row.saturation) + "/" + num (row.cut) + ": " + digest);
     }
 }
+
 } // namespace
 
 int main()
