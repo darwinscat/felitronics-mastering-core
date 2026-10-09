@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
-// 0 % out of the chain, the saturation's drive ceiling, a glue held by its step, a zone met on the steering's total, the
+// 0 % out of the chain, the saturation's drive ceiling, a glue and a saturation held by their step, a zone met on the steering's total, the
 // steering's convergence, cleaner not louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
 // take — and a master with no wish, to the bit, as the candidate before the waterfall made it (commit 808c058) on every
 // target.
@@ -475,6 +475,35 @@ void glueUnderStep()
 }
 
 //==============================================================================
+// A SATURATION HELD BY ITS STEP SAYS SO: a Cubic saturation driven by hand at 12 dB (the steering never moves a person's
+// drive) takes its loud places steeply at a small mix — a mix's step of 0.02 there is more than half a dB. Asked 0.06 or
+// 0.10 alone on maxDense, the steering's first move lands the mix near the want; its next look finds the take off by more
+// than its tolerance, but the mix that meets it lies within 0.02 of the one in force, so nothing moves: MixStep, not
+// Passes. Asked 0.20, the second move lands it: Reached.
+void saturationUnderStep()
+{
+    felitronics::test::group ("a saturation's mix the steering holds under its step stops on MixStep");
+    const auto pcm = fixture();
+    struct Row { double share; WaterfallStop stop; };
+    for (const Row row : { Row { 0.06, WaterfallStop::MixStep }, Row { 0.10, WaterfallStop::MixStep }, Row { 0.20, WaterfallStop::Reached } })
+    {
+        auto made = loaded (pcm, "maxDense");
+        SaturationFields<Touched> f; f.drive = 12.0; f.type = SaturationType::Cubic;
+        const bool hand = made && made->apply (command::EditDevice { 5, f }).rejection == Rejection::None;
+        const Kept* k = hand && editShares (*made, 10, std::nullopt, row.share, std::nullopt) ? master (*made, 20) : nullptr;
+        const auto* w = k && k->report->waterfall ? &*k->report->waterfall : nullptr;
+        const auto& z = w ? w->saturation : MasterWaterfallZone {};
+        const double mix = z.setting.value_or (-1.0);
+        const std::uint32_t moves = w ? w->extraPasses : 0u;
+        ok (w && z.stop == row.stop && mix > 0.001 && mix < 0.999 && moves < 4u,
+            "Cubic at 12 dB by hand, saturation asked " + num (row.share) + ": reached " + num (z.reached.value_or (-1.0)) + " ("
+                + num (z.db.value_or (-1.0)) + " dB of " + num (w ? w->totalDb.value_or (0.0) : 0.0) + "), mix " + num (mix) + ", "
+                + std::to_string (moves) + " moves, stop " + std::to_string (unsigned (z.stop)) + " (want "
+                + std::to_string (unsigned (row.stop)) + ")");
+    }
+}
+
+//==============================================================================
 // A ZONE MET ON THE STEERING'S TOTAL SAYS SO: the glue alone on maxClean (0.15, 0.30, 0.50), maxDense (0.40) and
 // maxExtreme (0.10), the cut alone on maxDense (0.25), and the saturation on maxDense at 0.25 beside the page's glue and
 // cut (0.05 each) — the steering's last look finds the zone within its tolerance of its share of the total it foresees at
@@ -896,6 +925,7 @@ int main()
     saturationAtLargeShares();
     wholeSumKeepsRatios();
     glueUnderStep();
+    saturationUnderStep();
     metOnTheSteeringsTotal();
     convergence();
     cleaner();

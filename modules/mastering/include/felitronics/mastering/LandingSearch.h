@@ -1057,6 +1057,7 @@ private:
             const double w = std::fmax (0.0, satAim);
             double mix = 1.0, drive = drive0, take = 0.0, lift = 0.0;
             double full = 0.0, fullLift = 0.0;
+            bool driveSought = false;   // the mix at 1 and short: the drive is what would move
             if (foresee (1.0, drive0, full, fullLift) && full > w)
             {
                 // The mix at the drive in force: the take rises with it, from nothing at 0.
@@ -1073,6 +1074,7 @@ private:
             else if (driveTop > drive0 + 0.05 && full + near < w)
             {
                 // The mix at 1 and still short: the drive, up to this move's top, where the take meets the want.
+                driveSought = true;
                 if (satTop <= w) drive = driveTop;
                 else
                 {
@@ -1095,15 +1097,21 @@ private:
                 moved = true; shift += lift; peakLift += topLift;
                 satArmed_ = true; satFrom_ = saturation; satForeseen_ = take;
             }
+            // Off its want, the drive not what would move, and the mix that meets it within a mix's step of the one in force.
+            else if (! mixMoves && ! driveMoves && ! driveSought) holds_.saturation = SteerHold::Step;
         }
         else if (off (sSaturation, saturation) && ! params_.bypassClipper)
         {
             const double mix = std::isfinite (satFull) ? mixFor (satFull, want (sSaturation)) : 1.0;
-            if (std::fabs (mix - satMix) > kWaterfallMixStep) { next.clipper.mix = float (mix); moved = true; }
+            const bool mixHeld = ! (std::fabs (mix - satMix) > kWaterfallMixStep);
+            if (! mixHeld) { next.clipper.mix = float (mix); moved = true; }
             // THE DRIVE (owner, 08.10): the mix at 1 and even the full path short of the want, the drive rises from where
             // it stands — the full path's take scaled near in proportion to it — up to the request's ceiling.
             const double drive = drive0;
-            if (std::isfinite (driveMax) && mix >= 0.999 && std::isfinite (satFull) && satFull + near < want (sSaturation) && drive < driveMax - 0.05)
+            const bool driveSought = std::isfinite (driveMax) && mix >= 0.999 && std::isfinite (satFull) && satFull + near < want (sSaturation)
+                                  && drive < driveMax - 0.05;
+            if (mixHeld && ! driveSought) holds_.saturation = SteerHold::Step;
+            if (driveSought)
             {
                 const double to = std::fmin (driveMax, satFull > 0.05 && drive > 0.05 ? drive * want (sSaturation) / satFull
                                                                                     : drive + (want (sSaturation) - satFull));
