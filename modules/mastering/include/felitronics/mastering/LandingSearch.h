@@ -940,6 +940,7 @@ private:
         if (! std::isfinite (sSaturation)) held0 += saturation;
         if (! std::isfinite (sCut)) held0 += cut;
         bool capGlue = false, capSaturation = false, capCut = false;
+        const bool whole = sum >= kWaterfallWholeSum;
         double total = held0;
         if (! pinned)
         {
@@ -955,6 +956,7 @@ private:
                 { if (! std::isfinite (share)) return; if (capped) held += most; else free += share; };
             zone (sGlue, capGlue, glueMost); zone (sSaturation, capSaturation, satMost); zone (sCut, capCut, cutMost);
             total = held / std::fmax (0.05, 1.0 - free);
+            if (whole) break;
             bool changed = false;
             const auto cap = [&] (double share, bool& capped, double most)
                 { if (std::isfinite (share) && ! capped && share * total > most) { capped = true; changed = true; } };
@@ -967,7 +969,28 @@ private:
         // every wished stage to nothing, the next pass back, and the moves would run out on a mix of 0).
         const bool restAtTarget = ! (total > 0.05) && limiter > 0.05;
         if (! (total > 0.05)) total = 0.0;
-        const auto want = [&] (double share) noexcept { return share * total; };
+        // A WHOLE SUM (kWaterfallWholeSum or more of the work: the limiter asked nothing, or next to it) asks proportions
+        // among the zones: where a zone's want lies past the most it can take — the saturation's at its mix at 1 and its
+        // drive at the ceiling — every wished zone comes down by the same factor, so the shares they reach keep the asked
+        // ratios and the limiter takes what they leave. (Each held at its own most, the zones of such a sum all ran to
+        // their maxima and the ratios between them were lost.) Below it each wish stands alone: a zone short of its share
+        // leaves the rest to the limiter. A stage that takes nothing even at its most does not set the factor.
+        double fit = 1.0;
+        if (whole && total > 0.0)
+        {
+            double satCeil = satMost;
+            if (foreseen && std::isfinite (driveMax) && driveMax > driveTop + 0.05)
+            {
+                auto q = params_.clipper;
+                q.mix = 1.0f; q.driveDb = float (driveMax);
+                double take = 0.0, lift = 0.0, top = 0.0;
+                if (chain_->clipperForesee (request_.clipperLoudShare, q, take, lift, top)) satCeil = take;
+            }
+            const auto fitTo = [&] (double share, double most) noexcept
+                { if (std::isfinite (share) && share > 0.0 && most > 0.05 && share * total > most) fit = std::fmin (fit, most / (share * total)); };
+            fitTo (sGlue, glueMost); fitTo (sSaturation, satCeil); fitTo (sCut, cutMost);
+        }
+        const auto want = [&] (double share) noexcept { return share * total * fit; };
         // A zone within kWaterfallToleranceDb, or that share of the total where it is larger, of its want is met: it stays.
         const double near = std::fmax (kWaterfallToleranceDb, kWaterfallToleranceShare * total);
         const auto off = [&] (double share, double taken) noexcept
@@ -1333,6 +1356,7 @@ private:
     static constexpr double kWaterfallToleranceDb = 0.1, kWaterfallToleranceShare = 0.03;
     static constexpr double kWaterfallDriveStepDb = 6.0;
     static constexpr double kWaterfallReadLu = 1.0, kWaterfallToGoLu = 6.0;
+    static constexpr double kWaterfallWholeSum = 0.95;
     bool waterfallOn_ = false, waterfallFrozen_ = false;
     bool waterfallFar_ = false;   // the last steering moved nothing on a reading further than kWaterfallReadLu from the target
     int waterfallSteps_ = 0;
