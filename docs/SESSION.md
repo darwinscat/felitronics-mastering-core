@@ -995,7 +995,9 @@ is a decode error, and a snapshot is never persisted. `Snapshot` owns the pass r
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles,
 mastering, and a delivered master's damage — last, behind every other work. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
-`Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
+`Done` when none does. A master queued behind a delivered one is not such a job while it waits only for that master's PCM
+to be taken or released: no step advances it, so `step` returns `Done`; the take or the release readies it, and the
+shell steps again. Zero units poll without progress. The shell measures its own speed and converts time to
 units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
 publishes at most four newly decided clipping runs, or advances report finalization by at most 1024 entries.
 The report drains reference true peak and scans tail energy, integrated gates, and short-term gates without changing
@@ -1994,10 +1996,14 @@ wish moves another field. A master the session decides (version 0) with any wish
 (`LandingSearch::steerWaterfall`): each pass reads the four takes — the glue's P95 through its mix, the saturation's usual
 cut, the clipper's P95 over what it clipped, the limiter's P95 on its active windows (a max mode's at its budget) — and
 moves each wished stage to its share of their total: the glue's and the saturation's mix by the blend's own law, the
-clipper's cut by the shortfall in dB within `[limiter.peakClipper] manualDomain`. Shares that add up past 1 are scaled to
-1. The saturation's take is foreseen from the clipper's peak counters (`MasteringChain::clipperForesee`) and solved in
+clipper's cut by the shortfall in dB within `[limiter.peakClipper] manualDomain`. On a loudness target the total is the
+peak work the zones and the limiter share there — what the stages before the gain node take now and what the limiter
+takes at the target — so a dB a wished zone takes more is a dB the limiter takes less. Shares that add up past 1 are
+scaled to 1. Shares that add up to 0.95 or more ask proportions: where a zone cannot take its share (the glue's mix at 1,
+the saturation's drive at its ceiling), every wished zone comes down by the same factor, so the shares reached keep the
+asked ratios and the limiter takes what they leave. The saturation's take is foreseen from the clipper's peak counters (`MasteringChain::clipperForesee`) and solved in
 one move — its mix first, then, once the mix is at 1, its drive, by at most 6 dB a move and up to `[saturation]
-steerDriveMaxDb` (10 dB on the knob, aligned to the programme's peak as the placed drive is; never a person's drive) —
+steerDriveMaxDb` (12 dB on the knob, aligned to the programme's peak as the placed drive is; never a person's drive) —
 with a secant on the foresight's own error from the last move. A pass that moved the stages is never a candidate: every
 render before it is forgotten, and the next pass is aimed from its budget excess, lowered by the peak the move adds. At
 most four moves, none once fewer than four passes are left; a zone within 0.1 dB of its share of the total, or 3 % of the
@@ -2008,21 +2014,28 @@ zone the share `asked` (the limiter's, the rest), the share `reached`, the `db` 
 to (the glue's and the saturation's mix, the clipper's cut in dB), the saturation's steered `drive` on the knob's dB, and
 the `stop` — `Reached`, `MixAtOne`, `MixAtZero`, `CutAtEnd`, `CutAtZero`, `ComfortRed` (no moved knob has one yet),
 `NotSounding`, `Passes` (out of moves), `Rest` (the limiter's), `NoWish`, `DriveAtCeiling` (the mix at 1 and the drive at
-its ceiling); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
+its ceiling), `MixStep` (the glue's or the saturation's mix that meets its share within the steering's least move of a
+mix, 0.02, of the one in force, so the mix stayed), `TotalMoved` (the steering's last look found the zone within its tolerance of its share of the
+total it foresaw at the target and left it; the delivered render's total came out elsewhere, and the zone's share of it
+misses by more), `CutStep` (the clipper's cut that meets its share within the steering's least move of a cut, 0.1 dB, of
+the one in force, so the cut stayed); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
 `extraPasses` the renders the steering moved the stages after. The as-worked export prints each zone's asked, reached, dB
 and stop, under names held to `WaterfallStop` at compile time. A master with no wish is the master it was before the
-waterfall, to the bit, on every target. Known: a large saturation share can take all of the peak work rather than its
-share; the limiter's clipper's threshold is not read again after the last move of the start cut; and the steering is
-outside the det-math zone, so its decisions use the platform's libm. `felitronics_session_waterfall_tests` holds the share
-fields, the report, a 0 % zone, the drive's ceiling, the convergence, cleaner and its switch, the two clippers and
-`place`, Maximum · nuke, the queue's recipe taken at the command, and the masters with no wish to the bit.
+waterfall, to the bit, on every target. Known: the steering is outside the det-math zone, so its decisions use the
+platform's libm. `felitronics_session_waterfall_tests` holds the share fields, the report, a 0 % zone, the drive's
+ceiling, a large saturation share, a whole sum's ratios, a zone held by its step or met on the steering's total, the
+convergence, cleaner and its switch, the two clippers and `place`, the needles' threshold after the last start cut,
+Maximum · nuke, the queue's recipe taken at the command, and the masters with no wish to the bit.
 
 TWO CLIPPERS (`[limiter.peakClipper] place`). With a cut wish where the glue or the saturation sounds, the cut zone is a
 peak clipper at the start of the chain — after the high-pass and mono bass, ahead of the glue, on an oversampler of its
 own at the chain's factor (the limiter's oversampling) — its threshold cut from the peak its first pass measures and
 steered from the cut the wish starts at (the limiter's cut as placed, else `betweenCutDb`). `place = "both"` (the
 config's) keeps the limiter's clipper as the wish set it, unsteered, for the peaks the glue and the saturation regrow:
-what it took is the waterfall's `regrownDb` (a P95 over what it clipped), a part of the limiter's rest. `"start"` turns
+what it took is the waterfall's `regrownDb` (a P95 over what it clipped), a part of the limiter's rest. A move of the
+start clipper moves the peak at the limiter's input by an amount nothing foresees, so after its last move the landing
+measures that peak again, once — one render more, never a candidate — and the limiter's clipper takes its configured cut
+of the peaks that move left. `"start"` turns
 the limiter's clipper off; `"limiter"` keeps the cut in the limiter's clipper alone, as before. Without a sounding glue or
 saturation the limiter's clipper takes the cut whatever `place` says.
 

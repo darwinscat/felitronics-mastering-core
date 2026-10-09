@@ -2198,6 +2198,60 @@ void testPreLimiterTapIsTheRealSignal()
 }
 
 // =============================================================================================
+void testTheSaturationTraceCountsTheStartClipper()
+{
+    test::group ("the saturation trace's window counts the start clipper's latency");
+    // `clipperShaveDb[j]` is chain input sample j - (compressorTapOffset + compressorLookahead + clipperLatency): the
+    // start clipper sits in front of the compressor and delays everything behind it. A window cropped without it
+    // starts that many frames early and drops the programme's last frames. The shave is one value per quantum, so
+    // the burst is placed against the quantum grid: the last quantum carrying programme starts `kLead` frames before
+    // the end, only the last `kBurst` frames are loud, and a window ending `startLat` (> kLead) frames early does not
+    // reach that quantum at all.
+    MasteringChainConfig cfg;
+    cfg.compressor = false; cfg.clipper = true; cfg.startClipper = true;
+    MasteringChain chain;
+    if (! test::run (chain.prepare (kFs, 2, cfg))) return;
+    const MasteringChainResolved res = chain.resolved();
+    const int K = chain.internalBlock();
+    const long long off = (long long) res.compressorTapOffset + res.compressorLookahead + res.clipperLatency;
+    constexpr int kLead = 48, kBurst = 40;
+    test::ok (res.compressorTapOffset > kLead, "precondition: the start clipper's latency ("
+              + std::to_string (res.compressorTapOffset) + ") is longer than the lead");
+    Programme src = makeMusic (2.2, 0.02);
+    int frames = (int) (2.0 * kFs);
+    frames += (int) ((((long long) kLead - (frames + off)) % K + K) % K);
+    for (auto& c : src.ch)
+    {
+        c.resize ((std::size_t) frames);
+        for (int i = frames - kBurst; i < frames; ++i)
+            c[(std::size_t) i] = (float) (0.95 * std::sin (2.0 * kPi * 1000.0 * (double) i / kFs));
+    }
+    src.bind();
+    Programme out; out.ch = src.ch; out.bind();
+
+    MasteringChainParams p;
+    p.clipper.driveDb = 12.0f;
+    p.limiter.ceilingDbTp = -1.0;
+    chain.setParams (p);
+    OfflineRenderer renderer;
+    TargetLoudnessSolver solver;
+    if (! test::run (renderer.prepare (2, 4096))) return;
+    if (! test::run (solver.prepare (kFs, 2, 4096, K, chain.tapOversampleFactor()))) return;
+    LoudnessRequest req;
+    req.targetLufs = -30.0; req.maxTruePeakDbTp = -1.0; req.grTraceBuckets = 50;
+    const LoudnessSolution sol = solver.solve (chain, renderer, p, src.in(), out.out(), 2, frames, req);
+    const GainReductionTrace& t = sol.saturationTrace;
+    test::ok (t.valid && t.buckets == 50, "precondition: the saturation trace is a measurement of 50 buckets");
+    if (! t.valid || t.buckets != 50) return;
+    const double last = t.bucket.back().maxDb, before = t.bucket[(std::size_t) t.buckets - 2].maxDb;
+    test::ok (before < 1.0, "precondition: the quiet body shaves under 1 dB (" + std::to_string (before) + ")");
+    test::ok (last > 3.0, "the burst in the programme's last " + std::to_string (kBurst)
+              + " frames shows in the trace's last bucket (" + std::to_string (last) + " dB)");
+    std::printf ("      saturation trace: last bucket %.3f dB, the one before %.3f dB (offset %lld, K %d)\n",
+                 last, before, off, K);
+}
+
+// =============================================================================================
 void testTargetBetweenAchievable()
 {
     test::group ("a target between two achievable values is reported as that, with both sides");
@@ -5069,6 +5123,7 @@ int main (int argc, char** argv)
     testCrossChannelAliasingIsRefused();
     testTwoConstraintsAtOnce();
     testPreLimiterTapIsTheRealSignal();
+    testTheSaturationTraceCountsTheStartClipper();
     testTargetBetweenAchievable();
     testTheAnswerDoesNotDependOnWhereItStarted();
     testAnUnmeasurableStartIsNotAnUnmeasurableProgramme();

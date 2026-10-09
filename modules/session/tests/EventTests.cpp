@@ -579,8 +579,9 @@ void pump()
     // alone, restated above (cd8695e50c1f280c / 3a842aeaf3dc4689 before it).
     // The waterfall's two keys ([saturation] steerDriveMaxDb, [limiter.peakClipper] place) and Maximum · nuke (its target
     // row, its budget, its expected passes) move the config's version alone, restated above (26f65dd0dff72c76 /
-    // 0dd125250dcb6791 before them); the scenario's master asks no share.
-    ok (eventsHash (one) == 0x4d7e59b4a48dc8aeull && eventsHash (cancelled) == 0xba321f6a6122d2a5ull,
+    // 0dd125250dcb6791 before them); the scenario's master asks no share. The drive ceiling by measurement ([saturation]
+    // steerDriveMaxDb 12, 09.10) moves the config's version alone (4d7e59b4a48dc8ae / ba321f6a6122d2a5 before it).
+    ok (eventsHash (one) == 0x7c74778354f32279ull && eventsHash (cancelled) == 0xc4acdbdbf69676e1ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

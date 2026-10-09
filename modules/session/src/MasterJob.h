@@ -241,6 +241,7 @@ struct MasterJob final
     bool waterfall = false;
     double waterfallGlueShare = 0.0, waterfallSaturationShare = 0.0, waterfallCutShare = 0.0, waterfallCutMaxDb = 0.0;
     std::uint32_t waterfallSteps = 0;
+    mastering::SteerHolds holds {};   // LandingSearch::holds() of that landing
     mastering::MasteringChainParams steered {};
     double saturationDriveScale = std::numeric_limits<double>::quiet_NaN(), saturationDriveMaxDb = std::numeric_limits<double>::quiet_NaN();
     void steer (mastering::MasteringChainParams& params) const noexcept;
