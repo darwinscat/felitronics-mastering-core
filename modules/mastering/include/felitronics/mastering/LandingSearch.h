@@ -177,7 +177,7 @@ public:
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;
         waterfallOn_ = request.productLanding && request.waterfall();
-        waterfallFrozen_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
+        waterfallFrozen_ = waterfallFar_ = false; waterfallSteps_ = 0; waterfallFrom_ = 0; satArmed_ = false;
         wall_ = false; wallSlope_ = std::numeric_limits<double>::quiet_NaN();
         records_ = {};
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
@@ -601,7 +601,8 @@ private:
                 phase_ = Phase::PassBegin;
                 return StepResult::More;
             }
-            waterfallFrozen_ = true;
+            // A reading far from the target counts no wish met: the steering waits for a nearer pass before it freezes.
+            if (! (valid && waterfallFar_)) waterfallFrozen_ = true;
         }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
         const double err = valid ? std::fabs (level_ - request_.targetLufs)
@@ -855,6 +856,7 @@ private:
     bool steerWaterfall (const SolvePassRecord& rec, bool probe, double& shift) noexcept
     {
         shift = 0.0;
+        waterfallFar_ = false;
         if (waterfallSteps_ >= kWaterfallSteps || passes_ > request_.maxPasses - 4) return false;
         const auto& m = measurement_;
         // THE START CLIPPER (MasteringChainConfig::startClipper) takes the cut zone where it is in the chain; the
@@ -872,9 +874,14 @@ private:
         const double limiter = std::isfinite (rec.limiterP95Db) ? std::fmax (0.0, rec.limiterP95Db) : 0.0;
         // The limiter's take where the landing will settle: a max mode's at its budget; else this pass's moved by the
         // loudness still to go, a dB of reduction per dB of drive (only once the limiter works at all).
-        const double toGo = std::isfinite (level_) ? std::clamp (request_.targetLufs - level_, -6.0, 6.0) : 0.0;
-        const double limiterAt = budgetOn_ && request_.budgetAimsAtCrossing && std::isfinite (request_.limiterGr.limitDb)
-            ? request_.limiterGr.limitDb : limiter > 0.05 ? std::fmax (0.0, limiter + toGo) : limiter;
+        const double toGo = std::isfinite (level_) ? std::clamp (request_.targetLufs - level_, -kWaterfallToGoLu, kWaterfallToGoLu) : 0.0;
+        const bool pinned = budgetOn_ && request_.budgetAimsAtCrossing && std::isfinite (request_.limiterGr.limitDb);
+        // A landing on a loudness target reads the limiter's take through it: a reading further than kWaterfallReadLu
+        // from the target is too coarse to count a wish met on (the zones wait for a nearer pass, which the landing aims
+        // every pass at), and one past the loudness the read goes through (kWaterfallToGoLu) moves nothing either.
+        const double offTarget = std::isfinite (level_) ? std::fabs (request_.targetLufs - level_) : 0.0;
+        const bool far = ! pinned && offTarget > kWaterfallReadLu, lost = ! pinned && offTarget > kWaterfallToGoLu;
+        const double limiterAt = pinned ? request_.limiterGr.limitDb : limiter > 0.05 ? std::fmax (0.0, limiter + toGo) : limiter;
         double sum = 0.0;
         for (const double share : { request_.waterfallGlueShare, request_.waterfallSaturationShare, request_.waterfallCutShare })
             if (std::isfinite (share)) sum += std::clamp (share, 0.0, 1.0);
@@ -916,17 +923,32 @@ private:
         const double glueMost = params_.bypassCompressor ? 0.0 : glueFull;
         const double satMost = params_.bypassClipper ? 0.0 : foreseen ? satTop : satFull;
         const double cutMost = clipping ? std::fmax (0.0, cut + cutEnd - cutNow) : 0.0;
-        // THE TOTAL WHERE EVERY WISH IS MET: the limiter's take and every zone with no wish as they are, every zone at its
-        // most where its share of that total lies past it, the rest of the total shared by the wishes — T = held / (1 − free).
-        // With the start clipper taking the cut zone, the limiter's own clipper's take (the peaks the glue and the
-        // saturation regrow) is a part of the limiter's rest: held as the limiter's take is.
+        // THE TOTAL WHERE EVERY WISH IS MET. With the start clipper taking the cut zone, the limiter's own clipper's take
+        // (the peaks the glue and the saturation regrow) is a part of the limiter's rest: held as the limiter's take is.
+        // A landing on a loudness target: the stages before the gain node do not move with the gain, so at the target the
+        // peak work they and the limiter share is what they take now and what the limiter takes there — a dB a wished zone
+        // takes more is a dB the limiter takes less. That sum is the total, and each wish is its share of it. The limiter's
+        // part is read through the target unclamped: a working limiter's take moved by the loudness still to go, a resting
+        // one's by how far the true peak there stays under the ceiling (under 0 where the zones take more than the target
+        // needs). Read as work added on top of the limiter's, T = held / (1 − free), a wish past half of the total
+        // overshot by more than it missed on every move: a large saturation share took all of the work, or none.
+        // A max mode's landing on its budget holds the limiter's take there: every zone adds its work on top of it, so the
+        // total is the limiter's take and every zone with no wish as they are, every zone at its most where its share of
+        // that total lies past it, the rest of the total shared by the wishes — T = held / (1 − free).
         double held0 = limiterAt + (start ? std::fmax (0.0, m.peakClipReductionP95Db) : 0.0);
         if (! std::isfinite (sGlue)) held0 += glue;
         if (! std::isfinite (sSaturation)) held0 += saturation;
         if (! std::isfinite (sCut)) held0 += cut;
         bool capGlue = false, capSaturation = false, capCut = false;
         double total = held0;
-        for (int round = 0; round < 4; ++round)
+        if (! pinned)
+        {
+            const double under = std::isfinite (m.truePeakDbTp) ? m.truePeakDbTp + toGo - request_.maxTruePeakDbTp : 0.0;
+            const double limiterThere = limiter > 0.05 ? limiter + toGo : std::fmin (limiter, under);   // never above its take here
+            total = std::fmax (0.0, held0 - limiterAt + limiterThere + (std::isfinite (sGlue) ? glue : 0.0)
+                                    + (std::isfinite (sSaturation) ? saturation : 0.0) + (std::isfinite (sCut) ? cut : 0.0));
+        }
+        for (int round = 0; pinned && round < 4; ++round)
         {
             double held = held0, free = 0.0;
             const auto zone = [&] (double share, bool capped, double most)
@@ -949,7 +971,7 @@ private:
         // A zone within kWaterfallToleranceDb, or that share of the total where it is larger, of its want is met: it stays.
         const double near = std::fmax (kWaterfallToleranceDb, kWaterfallToleranceShare * total);
         const auto off = [&] (double share, double taken) noexcept
-            { return ! restAtTarget && std::isfinite (share) && std::fabs (want (share) - taken) > near; };
+            { return ! restAtTarget && ! lost && std::isfinite (share) && std::fabs (want (share) - taken) > near; };
         MasteringChainParams next = params_;
         bool moved = false;
         // What the moves before the gain node add to the loudest peak, for the needles' threshold of the next pass.
@@ -1039,7 +1061,11 @@ private:
         }
         if (startProbe && chain_->startClipInputPeakDb() > -180.0)
         { next.startClipPeakDb = chain_->startClipInputPeakDb(); moved = true; }
-        if (! moved) return false;
+        if (! moved)
+        {
+            waterfallFar_ = far;
+            return false;
+        }
         // The clipper's threshold is worked out from the peak at the limiter's input, which the stages before it move:
         // this pass's, at a gain of 0.
         if (params_.limiter.peakClip && std::isfinite (params_.peakClipPeakDb)
@@ -1306,7 +1332,9 @@ private:
     static constexpr int kWaterfallSteps = 4;
     static constexpr double kWaterfallToleranceDb = 0.1, kWaterfallToleranceShare = 0.03;
     static constexpr double kWaterfallDriveStepDb = 6.0;
+    static constexpr double kWaterfallReadLu = 1.0, kWaterfallToGoLu = 6.0;
     bool waterfallOn_ = false, waterfallFrozen_ = false;
+    bool waterfallFar_ = false;   // the last steering moved nothing on a reading further than kWaterfallReadLu from the target
     int waterfallSteps_ = 0;
     int waterfallFrom_ = 0;
     bool satArmed_ = false;               // the saturation moved last step: its take then and the take foreseen
