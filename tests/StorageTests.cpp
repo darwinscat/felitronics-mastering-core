@@ -82,6 +82,25 @@ void configureMatchesPreparation()
               "configure renders the same samples as a full preparation with new parameters");
 }
 
+// THE START CLIPPER ON A FRESH CHAIN: prepare() allocates what prepareBytes() publishes, byte for byte, the MSVC
+// Debug proxies included. This suite runs with iterator debugging; the chain's own budget matrix does not.
+void startClipperPreparation()
+{
+    mastering::MasteringChainConfig cfg;
+    cfg.startClipper = true;
+    for (const int nch : { 1, 2 })
+    {
+        const auto budget = mastering::MasteringChain::prepareBytes (48000.0, nch, cfg);
+        mastering::MasteringChain chain;
+        const auto before = test::alloc::bytes.load();
+        const bool prepared = chain.prepare (48000.0, nch, cfg);
+        const auto got = test::alloc::bytes.load() - before;
+        std::printf ("  start clipper chain, %d ch: %lld bytes, published %llu\n", nch, got, (unsigned long long) budget);
+        test::ok (prepared && budget > 0u && got == (long long) budget,
+                  "a fresh chain with the start clipper allocates its prepareBytes(), to the byte");
+    }
+}
+
 void analyzerStorage()
 {
     const auto exercise = []<class T> (const char* name, std::uint64_t declared, auto prepare)
@@ -157,6 +176,7 @@ int main()
     c[0] = 4.0;
     test::ok (a[0] == 3.0 && c[0] == 4.0 && c.size() == a.size(), "a copy owns its own array");
     analyzerStorage();
+    startClipperPreparation();
     configureMatchesPreparation();
     configureSequences();
     return test::report();

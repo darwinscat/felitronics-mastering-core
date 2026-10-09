@@ -91,7 +91,7 @@ int firstDiff (const Buf& a, const Buf& b) noexcept
 // `compressor`, `limiter` and `dither` were on in all 48 rows and `monoBass` in none. A budget that added
 // the EQ engine's 331 KiB unconditionally — for a chain that never builds one — was green on every row of
 // that matrix (found by the diverse-testing round, as a mutation that survived the whole suite).
-constexpr int kTopologies = 10;
+constexpr int kTopologies = 11;
 mastering::MasteringChainConfig topologyFor (int topo)
 {
     mastering::MasteringChainConfig c;
@@ -110,8 +110,9 @@ mastering::MasteringChainConfig topologyFor (int topo)
                                                                   // seed its constructor took, so the ring
                                                                   // asks for nothing (the budget over-stated
                                                                   // it by 8 B until `freshBytes()`)
+        case 9: c.startClipper = true; break;                     // its own oversampler, buffer and aligner
         default:                                                  // the legal maximum
-            c.clipper = true; c.sidechainHpfHz = 80.0; c.internalBlock = 8192;
+            c.clipper = true; c.startClipper = true; c.sidechainHpfHz = 80.0; c.internalBlock = 8192;
             c.oversampleFactor = 16; c.tapsPerPhase = 1024;
             c.compressorLookaheadMs = 250.0; c.limiterLookaheadMs = 20.0;
             break;
