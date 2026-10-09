@@ -172,9 +172,9 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
     `ctest --test-dir build -R '^felitronics_session_scenario_tests$' --output-on-failure`.
   - Wasm: `tools/wasm/build.sh` (with `FELITRONICS_CORE_DIR` and `FELITRONICS_TOML_DIR` set), which runs
     `node tools/wasm/scenario-parity.mjs <out>/session-scenario.txt`.
-  - What the run prints (release 0.21.0, felitronics-core 0.59.0, defaults `2026-10`): the input
-    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `be07aaa73e1c26bf`, the config version
-    `12f308d730c8e2b3`, and `plan=8043eff22be0264c facts=be4ff10ec942c73a pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0`.
+  - What the run prints (release 0.22.0, felitronics-core 0.59.0, defaults `2026-10`): the input
+    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `2ccf8164502e8c2b`, the config version
+    `09926b4383655c8f`, and `plan=8043eff22be0264c facts=be4ff10ec942c73a pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0`.
 - **A5. HELD, private.** The replay of the 11 finished measurements is private and held outside this repository.
 
 ### B. Behaviour

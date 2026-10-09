@@ -2,6 +2,95 @@
 
 # Changelog
 
+## v0.22.0 — 2026-10-09
+
+### session — `step` says `Done` while the masters' queue waits only for a take
+
+- A master queued behind a delivered one is not work while it waits only for that master's PCM to be taken or released:
+  no step advances it, so `step` returns `Done` instead of `More` with 0 units, and a shell that pumps until `Done` no
+  longer spins. The take or the release readies the next master, and the shell steps again. No sample of any master
+  moves.
+
+### mastering · session — a large saturation share takes its share of the peak work
+
+- On a loudness target the steering's total is the peak work the zones and the limiter share there: what the stages
+  before the gain node take now and what the limiter takes at the target, so a dB a wished zone takes more is a dB the
+  limiter takes less. It read the zones' work as added on top of the limiter's, so a wish past half of the total
+  overshot by more than it missed on every move, and saturation shares of 0.6–0.9 took all of the peak work. A share the
+  saturation can take is now reached within the steering's tolerance; one it cannot stops at the mix at 1 and the drive
+  at its ceiling (`DriveAtCeiling`).
+- Masters with a wish move: on the test fixture every max mode's master at the page's shares. A master with no wish is
+  the same, to the bit.
+
+### mastering — shares that add up to the whole keep their ratios
+
+- Shares that add up to 0.95 or more ask proportions. Where such a sum cannot be met (the glue's mix at 1, the
+  saturation's drive at its ceiling), every wished zone comes down by the same factor, so the shares reached keep the
+  asked ratios and the limiter takes what they leave. Before, each zone ran into its own maximum and the ratios were
+  lost: asked 0.5 / 0.4 / 0.1, the cut took twice its part of what was reached.
+- Only masters whose shares add up to 0.95 or more move. The page's default shares add up to less: their masters do not.
+
+### session — the saturation's steered drive goes up to 12 dB
+
+- `[saturation] steerDriveMaxDb` is 12 dB (was 10), for every mode, by measurement: Maximum · nuke at the page's shares
+  (0.10 / 0.40 / 0.10) reaches its saturation share of 0.4 at 10 dB on the measured songs (the test fixture 0.34 at
+  most), and past 12 dB more drive buys no share — the steering stops by 12.3–13.0 dB. A person's drive stays within
+  `driveDomain` [0, 12] as before.
+- Only masters whose steering wants more than 10 dB of drive move: Maximum · nuke at the page's shares. Maximum · clean,
+  dense and extreme at theirs never reach 10 dB on the measured songs, and their masters do not move.
+
+### mastering — the limiter's clipper takes its configured cut after the start clipper's last move
+
+- With two clippers, the limiter's own clipper is set to take `[limiter.peakClipper]`'s cut off the loudest peak at its
+  input. A move of the start clipper moves that peak, and its threshold kept the peak measured before the move, so the
+  regrown peaks were cut by more or less than the configured 1.5 dB. The landing now measures that peak again after the
+  start clipper's last move — one render more, never a candidate — and the cut lands on its configured amount.
+- Masters with a cut wish while the glue or the saturation sounds move: on the test fixture Maximum · dense, extreme and
+  nuke at the page's shares. Masters with no wish do not.
+
+### mastering — the saturation's trace window counts the start clipper's latency
+
+- The saturation's trace is cropped at the soft clipper's output time, which now counts the start clipper's latency
+  too. On a master with the start clipper (a cut wish where the glue or the saturation sounds) the window started and
+  ended that many frames early, so the programme's last frames were missing from the trace. Statistics only: no sample of
+  any master moves.
+
+### session · mastering — a glue held by its mix step says `MixStep`
+
+- `WaterfallStop::MixStep` (11, appended): the glue's mix that meets its share lay within the steering's least move of a
+  mix (0.02) of the one in force, so the glue stayed. The report said `Passes` (out of moves) while moves were left.
+  Codec, schema, the as-worked export's names (`mixStep`) and the ABI manifest carry it. A label only: no sample of any
+  master moves.
+
+### session · mastering — a zone met on the steering's total says `TotalMoved`
+
+- `WaterfallStop::TotalMoved` (12, appended): the steering's last look found the zone within its tolerance of its share
+  of the total it foresaw at the target and left it; the delivered render's total came out elsewhere, and the zone's
+  share of it misses by more. The report said `Passes` with moves left — the glue alone on Maximum · clean at 0.15–0.5,
+  on dense at 0.40, on extreme at 0.10, and the same for the saturation and the cut. Codec, schema, the as-worked
+  export's names (`totalMoved`) and the ABI manifest carry it. A label only: no sample of any master moves.
+
+### mastering — a saturation held by its mix step says `MixStep`
+
+- The saturation's mix that meets its share within the steering's least move of a mix (0.02) of the one in force — the
+  drive not what would move — stops on `MixStep`, as the glue's does, not `Passes`. A label only: no sample of any master
+  moves.
+
+### session · mastering — a cut held by its step says `CutStep`
+
+- `WaterfallStop::CutStep` (13, appended): the clipper's cut that meets its share lay within the steering's least move
+  of a cut (0.1 dB) of the one in force, so the cut stayed. The report said `Passes` with moves left. Codec, schema, the
+  as-worked export's names (`cutStep`) and the ABI manifest carry it. A label only: no sample of any master moves.
+
+### session · mastering — what moves, and the waterfall's known limit
+
+- Together, at the page's shares: the Maximum · dense, extreme and nuke masters move, and Maximum · clean on some songs.
+  Every master with no wish, on every target, is the same to the bit.
+- Of v0.21.0's known limits of the waterfall, one remains: the steering's decisions use the platform's libm, the landing
+  search being outside the det-math zone.
+- `FC_SESSION_ABI_VERSION` moves to 17: the three stops `MixStep`, `TotalMoved` and `CutStep` (11-13), appended; no
+  entry point.
+
 ## v0.21.0 — 2026-10-09
 
 ### session — the glue's five and the limiter's three by hand, Maximum · extreme, Maximum · clean by default
