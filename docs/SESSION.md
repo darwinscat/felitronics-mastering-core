@@ -1952,11 +1952,11 @@ slope is smaller. No probe is added. `LandingSummary.limiterWall` names that sto
 There is no miss or mix hint for that stop. Max modes do not enable the wall. The landing-search suite holds a dense
 fixture's wall, a normal streaming landing's unchanged PCM and both max budgets' unchanged PCM.
 
-THE THIRD MAX MODE AND THE DEFAULT (owner, 07.10). `maxExtreme` «Максимум · экстрим» is appended after `maxDense`
+THE THIRD MAX MODE AND THE DEFAULT (owner, 07.10). `maxExtreme` «Экстрим» is appended after `maxDense`
 (`LoudnessMode` 3, `[landing.max] extreme.budgetDb` 3 dB, its target row's high-pass floor 50 Hz and mono bass 150 Hz).
 The floor is the machine's top (owner, 08.10), so the machine's cutoff on that target is always 50 Hz, whatever the note.
-`[targets] default` is `maxClean`: a new session, and a project that names no target, start on Maximum · clean.
-`maxNuke` «Максимум · нюк» is appended after it (`LoudnessMode` 4, `[landing.max] nuke.budgetDb` 7 dB,
+`[targets] default` is `maxClean`: a new session, and a project that names no target, start on Clean.
+`maxNuke` «Нюк» is appended after it (`LoudnessMode` 4, `[landing.max] nuke.budgetDb` 7 dB,
 a number by ear; its target row is extreme's with lufs −7, the manual mode's start). Each max mode's `cleaner` (true
 when absent) says whether a wish of shares lands cleaner, not louder — the master without the wishes on the budget
 first, the zones at its loudness; `cleaner = false` lands the zones on the budget in one landing. No mode writes it.
@@ -2021,11 +2021,18 @@ misses by more), `CutStep` (the clipper's cut that meets its share within the st
 the one in force, so the cut stayed); a zone asked 0 % whose stage is out of the chain reached it. `totalDb` is the four takes' sum and
 `extraPasses` the renders the steering moved the stages after. The as-worked export prints each zone's asked, reached, dB
 and stop, under names held to `WaterfallStop` at compile time. A master with no wish is the master it was before the
-waterfall, to the bit, on every target. Known: the steering is outside the det-math zone, so its decisions use the
-platform's libm. `felitronics_session_waterfall_tests` holds the share fields, the report, a 0 % zone, the drive's
-ceiling, a large saturation share, a whole sum's ratios, a zone held by its step or met on the steering's total, the
-convergence, cleaner and its switch, the two clippers and `place`, the needles' threshold after the last start cut,
-Maximum · nuke, the queue's recipe taken at the command, and the masters with no wish to the bit.
+waterfall, to the bit, on every target. Known: a steered master's bits are the platform's. The steering's files are
+outside the det-math zone, but its own arithmetic calls `core::det` already (`LandingSearch.h` and `LoudnessSolver.h`
+call no transcendental of the platform's libm; `MasteringChain.h` calls four, each once a setting, none per sample).
+What runs on the platform's libm is the audio the steering measures: the saturator's `tanh` on every oversampled
+sample, the compressor's `log10` and `pow` on every sample and the limiter's `log10` and `pow` (felitronics-core's
+`Saturator.h`, `Compressor.h` and `GainReductionPath.h`, `TruePeakLimiter.h`), so a last-bit difference in a take can
+move a 0.1 dB step of the steering. It stays so by decision: those stages on det-math were measured at about ×1.7 of a
+master's time (Apple M5 Pro, native, three masters, one run) and not taken. `felitronics_session_waterfall_tests` holds
+the share fields, the report, a 0 % zone, the drive's ceiling, a large saturation share, a whole sum's ratios, a zone
+held by its step or met on the steering's total, the convergence, cleaner and its switch, the two clippers and `place`,
+the needles' threshold after the last start cut, Nuke, the queue's recipe taken at the command, and the masters with no
+wish to the bit.
 
 TWO CLIPPERS (`[limiter.peakClipper] place`). With a cut wish where the glue or the saturation sounds, the cut zone is a
 peak clipper at the start of the chain — after the high-pass and mono bass, ahead of the glue, on an oversampler of its
@@ -2048,10 +2055,14 @@ when absent; no mode writes it) lands its zones on its budget in one landing.
 
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
-theirs (`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes
+theirs (`maxClean` «Чисто», `maxDense` «Плотно», the streaming group's medium), and any target takes
 one by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense, 3 maxExtreme, 4 maxNuke; null gives the row's back; set
 and cleared at once is `Contract`, a sixth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's target
-layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`). Manual is
+layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`). A mode's
+display name is the catalog's (`[terms.loudnessMode]`): «Вручную» "Manual", «Чисто» "Clean", «Плотно» "Dense", «Экстрим»
+"Extreme", «Нюк» "Nuke" — one capitalised word, and every message that takes a mode opens with it and a colon, so it is
+never declined. The four max modes' names carry no "Maximum": the group a page lists them under («Loudness
+Optimization») is the page's label, not a text of the core. Manual is
 the landing above, unchanged. A max mode asks for no number: it asks for the loudest master the mode's limiter budget
 allows. Its landing aims at `[landing.max] ceilingLufs` (−5 LUFS) with the mode's budget — `clean.budgetDb` 0.5 dB,
 `dense.budgetDb` 1.75 dB (owner, 04.10, by ear: the budget-curve ladder's medians land them near −13 and −11 LUFS), the

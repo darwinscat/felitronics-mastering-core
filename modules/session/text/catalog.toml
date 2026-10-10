@@ -1326,17 +1326,20 @@ high.en = "high"
 
 # What held a landing short of its target — the landing's solver's binding constraint, as a noun phrase.
 # The loudness modes (LoudnessMode): how a landing takes its loudness — a number, or a promise of BS.1116.
+# A loudness mode's name, as a master's label and a max verdict's first word print it: one capitalised word. The four max
+# modes carry no "Maximum": the group a page lists them under is the page's own label, not a term here. Every message
+# that takes a mode opens with it and a colon ("{mode}: …"), so no case and no lower-case form of it is ever needed.
 [terms.loudnessMode]
 manual.ru = "Вручную"
 manual.en = "Manual"
-maxClean.ru = "Максимум · чисто"
-maxClean.en = "Maximum · clean"
-maxDense.ru = "Максимум · плотно"
-maxDense.en = "Maximum · dense"
-maxExtreme.ru = "Максимум · экстрим"
-maxExtreme.en = "Maximum · extreme"
-maxNuke.ru = "Максимум · нюк"
-maxNuke.en = "Maximum · nuke"
+maxClean.ru = "Чисто"
+maxClean.en = "Clean"
+maxDense.ru = "Плотно"
+maxDense.en = "Dense"
+maxExtreme.ru = "Экстрим"
+maxExtreme.en = "Extreme"
+maxNuke.ru = "Нюк"
+maxNuke.en = "Nuke"
 
 [terms.landingLimit]
 unnamed.ru = "одно из ограничений"

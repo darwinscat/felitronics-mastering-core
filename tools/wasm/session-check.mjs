@@ -117,8 +117,8 @@ SURFACE[14] = SURFACE[13];
 // Version 15 (v0.20.0) appends no entry point: the low-frequency energy fact (458), the two diodes' words (terms 152, 153).
 SURFACE[15] = SURFACE[14];
 // Version 16 (v0.21.0) appends the glue's five and the limiter's three by hand (fields of the glue and the limiter
-// devices, terms 154-161), Maximum · extreme and · nuke, the waterfall's shares and report, and the masters' queue in the
-// snapshot, and no entry point.
+// devices, terms 154-161), the max modes Extreme and Nuke (`maxExtreme`, `maxNuke`), the waterfall's shares and report,
+// and the masters' queue in the snapshot, and no entry point.
 SURFACE[16] = SURFACE[15];
 // Version 17 (v0.22.0) appends the waterfall's stops MixStep, TotalMoved and CutStep (11-13), and no entry point.
 SURFACE[17] = SURFACE[16];
