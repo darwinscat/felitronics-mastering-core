@@ -902,7 +902,7 @@ void maxFloor()
         const bool overBudget = detail && detail->payload.fact.view().args[3].number > 0.5
             && detail->payload.fact.view().args[1].number < -14.0 - tolerance;
         ok (master != 0 && report && report->maxStop == MaxStop::Floor && atFloor && verdict && verdict->payload.fact.view().argCount == 2
-                && said.starts_with ("Maximum · clean: ") && said.find ("budget") == std::string::npos && detail && verdictAt < detailAt
+                && said.starts_with ("Clean: ") && said.find ("budget") == std::string::npos && detail && verdictAt < detailAt
                 && overBudget && logged.find ("0.5 dB") != std::string::npos && logged.find ("−14.0 LUFS") != std::string::npos
                 && logged.find ("held") == std::string::npos,
             name + ": a dense mix is pulled up to −14 LUFS (" + std::to_string (report ? report->achievedLufs.value_or (0.0) : 0.0)
@@ -943,8 +943,10 @@ void maxFloor()
         MasterReport passes = floored; passes.maxStop = MaxStop::Passes;
         const auto en = above ? text::Text::text (*above, text::Lang::En) : std::string {};
         const auto en2 = within ? text::Text::text (*within, text::Lang::En) : std::string {};
-        ok (en == "Maximum · clean: the first landing stopped at −15.3\u00A0LUFS, under −14.0\u00A0LUFS; brought up to −14.0\u00A0LUFS, "
+        const auto ru = above ? text::Text::text (*above, text::Lang::Ru) : std::string {};
+        ok (en == "Clean: the first landing stopped at −15.3\u00A0LUFS, under −14.0\u00A0LUFS; brought up to −14.0\u00A0LUFS, "
                   "the limiter takes off 0.6\u00A0dB (P95) against the mode's budget of 0.5\u00A0dB."
+                && ru.starts_with ("Чисто: первая посадка остановилась на ")
                 && en2.find ("takes off 0.3\u00A0dB (P95)") != std::string::npos
                 && ! MasterReportText::maxFloorDetail (passes, 0.5, 0.51, -14.0, -15.27),
             "the floor's log line says where the first landing stopped and what the limiter took beside the budget, claiming "

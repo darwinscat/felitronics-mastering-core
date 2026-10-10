@@ -577,7 +577,7 @@ void pump()
     // above (41508f599701f864 / 1a81582c5bc4ef89 before them); the scenario names allStreaming and its master is the same.
     // A person's tick (08.10: [glue] whenTicked 2.6 and its character, [saturation] whenTicked) moves the config's version
     // alone, restated above (cd8695e50c1f280c / 3a842aeaf3dc4689 before it).
-    // The waterfall's two keys ([saturation] steerDriveMaxDb, [limiter.peakClipper] place) and Maximum · nuke (its target
+    // The waterfall's two keys ([saturation] steerDriveMaxDb, [limiter.peakClipper] place) and Nuke, `maxNuke` (its target
     // row, its budget, its expected passes) move the config's version alone, restated above (26f65dd0dff72c76 /
     // 0dd125250dcb6791 before them); the scenario's master asks no share. The drive ceiling by measurement ([saturation]
     // steerDriveMaxDb 12, 09.10) moves the config's version alone (4d7e59b4a48dc8ae / ba321f6a6122d2a5 before it).
