@@ -3,7 +3,7 @@
 
 // THE WATERFALL AND WHAT CAME WITH IT, theme by theme: the three share fields, the master's waterfall report, a zone at
 // 0 % out of the chain, the saturation's drive ceiling, a glue, a saturation and a cut held by their step, a zone met on the steering's total, the
-// steering's convergence, cleaner not louder and its switch, the two clippers, Maximum · nuke, the queue's snapshot at the command, a queue waiting for the
+// steering's convergence, cleaner not louder and its switch, the two clippers, Nuke (`maxNuke`), the queue's snapshot at the command, a queue waiting for the
 // take — and a master with no wish, to the bit, as the candidate before the waterfall made it (commit 808c058) on every
 // target.
 
@@ -723,7 +723,7 @@ void needlesAfterStartCut()
 // limiter budget read from the config (7 dB), and a master planned on the row lands in it.
 void nuke()
 {
-    felitronics::test::group ("Maximum · nuke: enum 4, its target row, its budget from the config");
+    felitronics::test::group ("Nuke (maxNuke): enum 4, its target row, its budget from the config");
     const auto r = detail::rules();
     const auto row = r.find ("maxNuke");
     const double budget = number (r.engine.find ("landing").find ("max").find ("nuke").find ("budgetDb"));

@@ -118,7 +118,7 @@ constexpr Golden kGolden[] = {
     // 3299e8a01bc682c9; updated in place, as above.
     // ...and the waterfall and the fourth max mode (09.10): [saturation] steerDriveMaxDb 10 (the drive the steering may
     // raise), [limiter.peakClipper] place both (the start clipper beside the limiter's), a max mode's cleaner (true when
-    // absent, written by none) and Maximum · nuke (a target row appended, its 7 dB budget, its expected passes) — numbers
+    // absent, written by none) and Nuke, `maxNuke` (a target row appended, its 7 dB budget, its expected passes) — numbers
     // added, none of an existing target's changed: each moves a master only where a person asks a share or picks nuke,
     // so no untouched master moves (the WAV contract's recording holds); it was 2b0de0cc2cc8ac7b; updated in place, as above.
     // ...and the steering's drive ceiling by measurement (09.10): [saturation] steerDriveMaxDb 12 — it moves a master only
@@ -229,7 +229,7 @@ std::vector<std::string> departures (const config::Config& c)
                                       : x.album.has_value() && same (x.album->lufs, r.albumLufs) && x.album->desktopOnly,
               at + ".album");
     }
-    need (t.defaultTarget == "maxClean", "a session starts on Maximum · clean (owner, 07.10)");
+    need (t.defaultTarget == "maxClean", "a session starts on Clean, maxClean (owner, 07.10)");
     need (t.main == std::vector<std::string> { "allStreaming", "lp", "cdDynamic", "cd", "bandcamp", "club" }, "the main targets");
 
     // THE ENGINE'S DECIDED NUMBERS.

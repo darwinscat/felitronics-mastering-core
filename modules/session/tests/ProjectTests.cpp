@@ -50,7 +50,7 @@ std::unique_ptr<Session> fresh (unsigned units = 10)
 {
     auto made = Session::create();
     ok (made.status == Status::Ok, "create succeeds");
-    // On allStreaming, which every file here names: a session starts on the config's default, Maximum · clean.
+    // On allStreaming, which every file here names: a session starts on the config's default, Clean (`maxClean`).
     (void) made.session->apply (command::SetTarget { 1, "allStreaming" });
     Audio audio;
     ok (made.session->apply (audio.load()).rejection == Rejection::None, "load succeeds");

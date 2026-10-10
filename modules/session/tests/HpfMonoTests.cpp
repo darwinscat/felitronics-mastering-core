@@ -259,7 +259,7 @@ void theCutoffOnTheChainsResponse()
     }
     ok (underTop, "the machine's cutoff is never above 50 Hz on every target, note and rate — the knob's 80 is a person's");
     ok (aboveFloor, "the machine's cutoff is never below the target's floor on every target, note and rate");
-    ok (floors, "the floor is 32 Hz on every target but Maximum · extreme, 50 Hz (owner, 07.10 and 08.10)");
+    ok (floors, "the floor is 32 Hz on every target but Extreme (maxExtreme), 50 Hz (owner, 07.10 and 08.10)");
     ok (exact, "a note that decides: core's own high-pass takes exactly the target's loss there (1 dB, club 0.3), on every target, slope and rate" + (worst.empty() ? "" : " — not " + worst));
     ok (unrounded, "the cutoff is not rounded to the hertz");
     ok (stops, "a floor above the note's cutoff takes more of it, and says how much; a top below it takes less");
@@ -279,7 +279,7 @@ void theCutoffOnTheChainsResponse()
     ok (top.cut == HpfCut::Top && same (top.cutoffHz, 50.0), "a note whose cutoff is above 50 Hz: the top");
     const auto topText = text::Text::text (PlanText::hpf (top), text::Lang::Ru);
     ok (topText.find ("упёрся в 50,0") != std::string::npos, "and the report says it stopped there, at the machine's top: " + topText);
-    // Maximum · extreme's floor is the machine's top (owner, 08.10): a low note and a high one both get 50 Hz, never a
+    // Extreme's (`maxExtreme`) floor is the machine's top (owner, 08.10): a low note and a high one both get 50 Hz, never a
     // cutoff below the target's floor — a floor above the top would let a high note's top undercut it.
     double extremeFloor = 0.0;
     for (std::uint16_t row = 0; row < r.rows; ++row)
@@ -290,7 +290,7 @@ void theCutoffOnTheChainsResponse()
         const auto p = plan (in.inputs ("maxExtreme", 60));
         ok (extremeFloor > 0.0 && p.devices.hpf.machine.fq >= extremeFloor && p.found.hpf.cutoffHz >= extremeFloor
             && same (p.devices.hpf.machine.fq, 50.0) && same (p.found.hpf.cutoffHz, 50.0),
-            "Maximum · extreme, a note at " + std::to_string (midiHz (midi)) + " Hz: the cutoff 50 Hz, never below the target's floor "
+            "Extreme (maxExtreme), a note at " + std::to_string (midiHz (midi)) + " Hz: the cutoff 50 Hz, never below the target's floor "
             + std::to_string (extremeFloor) + " Hz — it is " + std::to_string (p.devices.hpf.machine.fq));
     }
 }
