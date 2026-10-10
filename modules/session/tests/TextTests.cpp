@@ -866,6 +866,50 @@ void theObservationsHaveTheirWords()
         "each worded in Russian and English");
 }
 
+// THE LOUDNESS MODES' NAMES, as a master's label and a max verdict's first word print them: one capitalised word in each
+// language, the four max modes without the word "Maximum" — the group a page lists them under is the page's own label,
+// no term of the catalog. Every message that takes a mode opens with it and a colon, so the name is never declined and
+// never met in lower case inside a sentence.
+void theLoudnessModesHaveTheirNames()
+{
+    felitronics::test::group ("the loudness modes' names: one capitalised word in Russian and English, no \"Maximum\"");
+    struct Mode { text::Term term; std::string_view ru, en; };
+    const Mode modes[] = {
+        { text::Term::LoudnessModeManual, "Вручную", "Manual" },
+        { text::Term::LoudnessModeMaxClean, "Чисто", "Clean" },
+        { text::Term::LoudnessModeMaxDense, "Плотно", "Dense" },
+        { text::Term::LoudnessModeMaxExtreme, "Экстрим", "Extreme" },
+        { text::Term::LoudnessModeMaxNuke, "Нюк", "Nuke" },
+    };
+    const std::string MINUS = "\xE2\x88\x92";
+    for (const auto& m : modes)
+    {
+        same (arg (Arg::term (m.term), Lang::Ru), m.ru, "ru " + std::string (m.en));
+        same (arg (Arg::term (m.term), Lang::En), m.en, "en " + std::string (m.en));
+        const Fact floor = Fact::of (FactId::MasterMaxFloor, Arg::term (m.term), Arg::value (-13.2, Unit::Lufs, 1));
+        same (render (floor, Lang::Ru), std::string (m.ru) + ": " + MINUS + "13,2\u00A0LUFS.", "ru masterMaxFloor, " + std::string (m.en));
+        same (render (floor, Lang::En), std::string (m.en) + ": " + MINUS + "13.2\u00A0LUFS.", "en masterMaxFloor, " + std::string (m.en));
+    }
+    const Fact budget = Fact::of (FactId::MasterMaxBudget, Arg::term (text::Term::LoudnessModeMaxDense),
+                                  Arg::value (-11.4, Unit::Lufs, 1), Arg::value (1.75, Unit::Db, 2));
+    same (render (budget, Lang::Ru),
+          "Плотно: " + MINUS + "11,4\u00A0LUFS — дальше лимитеру пришлось бы срезать больше 1,75\u00A0дБ (P95), это предел режима.",
+          "ru masterMaxBudget");
+    same (render (budget, Lang::En),
+          "Dense: " + MINUS + "11.4\u00A0LUFS — further, the limiter would have to take off more than 1.75\u00A0dB (P95), the mode's limit.",
+          "en masterMaxBudget");
+    bool none = true;
+    for (const auto& t : detail::kTerms)
+        if (t.group == "loudnessMode")
+            for (const Lang l : { Lang::Ru, Lang::En })
+            {
+                const auto word = arg (Arg::term (t.id), l);
+                none = none && word.find ("Maximum") == std::string::npos && word.find ("Максимум") == std::string::npos
+                    && word.find ("\xC2\xB7") == std::string::npos;
+            }
+    ok (none, "no term of the group says \"Maximum\" or carries a middle dot");
+}
+
 // THE NAMED BANDS' WORDS ARE FELITRONICS-BANDS': a field or device term of tilt, low or the five bands prints the band's name
 // from text/<lang>.toml; the catalog that writes one is refused, and so is a language of the core whose bands text lacks a
 // name, or a languages.toml that is not the catalog's languages.
@@ -1283,6 +1327,7 @@ int main (int argc, char** argv)
     everyMessageRenders();
     everyRejectionIsAFact();
     theObservationsHaveTheirWords();
+    theLoudnessModesHaveTheirNames();
     typedNumbersAreParsed();
     theDemandCoversWhatTextAsksFor();
     theCorpusIsTheSameBytesOnEveryRow();
