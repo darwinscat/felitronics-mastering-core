@@ -2,6 +2,31 @@
 
 # Changelog
 
+## v0.22.1 — 2026-10-10
+
+### session — the max modes' names lose "Maximum"
+
+- The display names of the four max modes (`[terms.loudnessMode]` of the text catalog) are one capitalised word, as
+  `manual` «Вручную» "Manual" already was: `maxClean` «Чисто» "Clean", `maxDense` «Плотно» "Dense", `maxExtreme`
+  «Экстрим» "Extreme", `maxNuke` «Нюк» "Nuke" (they were «Максимум · чисто» "Maximum · clean" and so on). The group a
+  page lists them under is the page's own label; the core has no text for it.
+- Every message that takes a mode opens with it and a colon, so a max verdict now reads "Clean: −13.2 LUFS." and the
+  floor's log line "Clean: the first landing stopped at …" (facts 608–617); no message's own words change.
+- Texts only: the target keys, `LoudnessMode`, the config, the project file, the ABI (17) and every master's sound are
+  as they were. A shell that compares a rendered name against the old words must take the new ones.
+
+### docs — the waterfall's known limit, said as it is
+
+- `docs/SESSION.md` said the steering is outside the det-math zone, so its decisions use the platform's libm. Its
+  files are outside the zone, but its own arithmetic calls `core::det` already (`LandingSearch.h` and `LoudnessSolver.h`
+  call no transcendental of the platform's libm; `MasteringChain.h` calls four, each once a setting, none per sample).
+  What runs on the platform's libm is the audio the steering measures: the saturator's `tanh` on every oversampled
+  sample, the compressor's `log10` and `pow` on every sample and the limiter's `log10` and `pow`, all
+  felitronics-core's. So a steered master's bits are the platform's, and a last-bit difference in a take can move a
+  0.1 dB step of the steering.
+- It stays so by decision: those stages on det-math were measured at about ×1.7 of a master's time (Apple M5 Pro,
+  native, three masters, one run) and not taken. No code moves.
+
 ## v0.22.0 — 2026-10-09
 
 ### session — `step` says `Done` while the masters' queue waits only for a take
