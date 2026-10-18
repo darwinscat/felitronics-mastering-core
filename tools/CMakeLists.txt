@@ -231,8 +231,8 @@ if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     if(FELITRONICS_ENABLE_SANITIZERS)
         set_tests_properties(fcore_session_contract PROPERTIES ENVIRONMENT FC_SESSION_CONTRACT_TIMEOUT_MS=600000)
     endif()
-    add_test(NAME felitronics_wav_recording_replay
-        COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/wav-recording-check.mjs)
+    # The WAV recording's engine-free replay (contract/wav-recording-check.mjs) is no test of its own: the recording is
+    # build output, and wav-contract.mjs replays the one it has just written.
 endif()
 
 find_program(FELITRONICS_ABI_NODE NAMES node nodejs REQUIRED)
