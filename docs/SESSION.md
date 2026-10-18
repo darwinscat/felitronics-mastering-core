@@ -1801,7 +1801,10 @@ writer is checked byte for byte on grid, clamp and odd RIFF padding cases. If a 
 format after release, it must retain PCM externally and use a separate future contract.
 
 The synthetic site contract is `tools/contract/wav-input.json` plus
-`tools/contract/recordings/wav-contract.json`. Regenerate and verify it with
+`tools/contract/recordings/wav-contract.json`, which a run writes once it matches
+`tools/contract/recordings/wav-contract.manifest.json` — the recording less its archive's base64, the only part in
+git (the session recordings beside it are held the same way by `manifest.json`; the release workflow attaches the
+recordings to the tag). Rewrite the manifest with
 `node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js>
 <wasm-job-test.js> <fcore_session> --rebuild`, then omit `--rebuild` for the gate. The recording
 states the retrieval call sequence, input and artifact hashes, dependency and codec versions, the
