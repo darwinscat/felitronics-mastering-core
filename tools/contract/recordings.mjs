@@ -76,13 +76,13 @@ export function recordings(traces, versions, rewrite = false) {
         expected.set(name, data);
     }
     const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2) + '\n');
-    if (rewrite) {
-        mkdirSync(root, {recursive:true});
-        for (const [name, data] of expected) writeFileSync(join(root, `${name}.json`), data);
-        writeFileSync(join(root, 'manifest.json'), manifestBytes);
-    }
+    // ONLY THE MANIFEST IS SOURCE. The recordings are this run's output: the manifest names each one's sha256, so the
+    // manifest matching proves every recording byte for byte, and the files are written only once it does — what lies in
+    // recordings/ always answers to the manifest in git. The release workflow attaches them to the tag
+    // (pack-recordings.mjs); the site downloads them by version and checks them against its copy of this manifest.
+    mkdirSync(root, {recursive:true});
+    if (rewrite) writeFileSync(join(root, 'manifest.json'), manifestBytes);
     assert.deepEqual(readFileSync(join(root, 'manifest.json')), manifestBytes, `stale site recording manifest; rebuild: ${rebuild}`);
-    for (const [name, data] of expected)
-        assert.deepEqual(readFileSync(join(root, `${name}.json`)), data, `stale site recording ${name}; rebuild: ${rebuild}`);
+    for (const [name, data] of expected) writeFileSync(join(root, `${name}.json`), data);
     return expected.size;
 }
