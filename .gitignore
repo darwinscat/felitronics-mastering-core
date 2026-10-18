@@ -71,3 +71,9 @@ xcuserdata/
 
 # browser-automation scratch (page snapshots, console logs) from driving the probe page
 .playwright-mcp/
+
+# Contract recordings are build output: tools/contract/run.mjs and wav-contract.mjs write them once the run matches the
+# manifests, and the release workflow (recordings.yml) attaches them to the tag. Only the manifests are source.
+/tools/contract/recordings/*
+!/tools/contract/recordings/manifest.json
+!/tools/contract/recordings/wav-contract.manifest.json

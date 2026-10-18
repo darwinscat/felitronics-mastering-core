@@ -9,6 +9,7 @@ import {resolve} from 'node:path';
 import {types} from '../session-wire-types.mjs';
 import {sizeOf} from '../wasm/fc-master-layout.mjs';
 import {decodeWavRecording} from './wav-recording.mjs';
+import {checkWavRecording} from './wav-recording-check.mjs';
 import {childTimeout} from './child-timeout.mjs';
 
 const [nativeAbi, nativeJob, wasmModule, wasmJob, nativeCli, option] = process.argv.slice(2);
@@ -17,6 +18,7 @@ if (!nativeAbi || !nativeJob || !wasmModule || !wasmJob || !nativeCli || (option
     process.exit(2);
 }
 const file = new URL('recordings/wav-contract.json', import.meta.url);
+const manifestFile = new URL('recordings/wav-contract.manifest.json', import.meta.url);
 const input = new URL('wav-input.json', import.meta.url);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 // Six minutes a child by default: the wasm session check is the longest, about a minute on a desktop. A slower tier
@@ -261,13 +263,16 @@ const recording = {
     contractArchive:{codec:'br+base64', bytes:archiveBytes.length, sha256:sha(archiveBytes),
         base64:archive.toString('base64')}
 };
-const bytes = Buffer.from(JSON.stringify(recording, null, 2) + '\n');
-if (option === '--rebuild') writeFileSync(file, bytes);
-else {
-    const saved = JSON.parse(readFileSync(file));
-    assert.deepEqual({...saved, contractArchive:null}, {...recording, contractArchive:null},
-        `stale WAV contract recording; rebuild: ${recording.rebuild}`);
-    assert.equal(sha(Buffer.from(JSON.stringify(decodeWavRecording(saved)))), sha(archiveBytes),
-        `stale WAV contract responses; rebuild: ${recording.rebuild}`);
-}
+// ONLY THE MANIFEST IS SOURCE: the recording less its archive's base64 — every field above, and the archive's codec,
+// size and the sha256 of its uncompressed text. The base64 stays out because brotli's bytes belong to the zlib that ran,
+// not to the contract (the gate always held the archive by its decoded text). The recording itself is this run's output,
+// written once the manifest matches; the release workflow attaches it to the tag (pack-recordings.mjs).
+const {base64, ...archiveEntry} = recording.contractArchive;
+const manifest = {...recording, contractArchive:archiveEntry};
+if (option === '--rebuild') writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
+assert.deepEqual(JSON.parse(readFileSync(manifestFile)), manifest, `stale WAV contract recording; rebuild: ${recording.rebuild}`);
+assert.equal(sha(Buffer.from(JSON.stringify(decodeWavRecording(recording)))), sha(archiveBytes),
+    `the WAV contract archive does not decode to its responses; rebuild: ${recording.rebuild}`);
+writeFileSync(file, JSON.stringify(recording, null, 2) + '\n');
+console.log(`WAV recording replays ${checkWavRecording(JSON.parse(readFileSync(file)))} codec scenarios without running an engine`);
 console.log(`WAV contract: native/wasm identical ${recording.wavFnv64}; repeat, release and outcomes verified`);

@@ -1,0 +1,79 @@
+{
+  "format": 2,
+  "rebuild": "node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js> <wasm-job-test.js> <fcore_session> --rebuild",
+  "command": "fc_session_master_wav_size → fc_session_master_wav_copy(offset, <=65536 bytes) → fc_session_master_audio_release; retain bytes by masterId",
+  "inputSpecSha256": "79b3885fdf8d58e44bc814d391ad16c0ef9a84b5f28f3fbfc77bcaac69313404",
+  "inputPcmSha256": "fe6f65b9449f0600f820adf8bae80d9362de73253a4df4befbe7819551fb7010",
+  "versions": [
+    "felitronics-mastering-core 0.22.1",
+    "felitronics-core 0.59.0",
+    "fc_session_abi 17"
+  ],
+  "codecSchemaSha256": "f84b64123a47bf1472742ca8762955ef946e596ba334c59c93e3919d7f31b2fb",
+  "wasmSha256": "a091d673bd0f9caa1b4a5373cbc7de4fbfbdbf7516dcee2aa524d61845ea85ef",
+  "wavFnv64": "9a601c4c5e044b00",
+  "wavHeaderHex": "5249464624ca080057415645666d7420100000000100020080bb000000650400060018006461746100ca0800",
+  "outcomes": [
+    "cancel:false",
+    "refusal:false",
+    "unavailable:false",
+    "miss:true",
+    "unsafe:true"
+  ],
+  "scenarios": [
+    "refusal",
+    "safe",
+    "formats",
+    "formatRefusals",
+    "warm",
+    "cancel",
+    "miss",
+    "unavailable",
+    "unsafe",
+    "lateCrest"
+  ],
+  "refusalCodes": {
+    "invalidInput": 12,
+    "unavailable": 4,
+    "unsafe": 1
+  },
+  "missMeasurements": {
+    "status": 1,
+    "passes": 2,
+    "achievedLufs": -6.116748167917071,
+    "missLu": -1.1167481679170708,
+    "truePeakDbTp": -6.022384675288116
+  },
+  "memory": {
+    "safePrice": {
+      "bytes": 34761524,
+      "largestBlockBytes": 28423312,
+      "liveBytes": 4845089
+    },
+    "latePrice": {
+      "bytes": 37007000,
+      "largestBlockBytes": 28423952,
+      "liveBytes": 7880358
+    },
+    "sourcePcmBytes": 768000,
+    "deliveredPcmBytes": 768000,
+    "browser": {
+      "playbackBytes": 768000,
+      "wavBytes": 576044,
+      "copyChunkBytes": 997
+    },
+    "observedHeap": {
+      "beforeGrowthBytes": 25690112,
+      "afterGrowthBytes": 38928384
+    },
+    "lateObservedHeap": {
+      "beforeGrowthBytes": 67371008,
+      "afterGrowthBytes": 80871424
+    }
+  },
+  "contractArchive": {
+    "codec": "br+base64",
+    "bytes": 97388407,
+    "sha256": "2ba3559f584251ef97055c0bedba94be124139bccd9b57c231a556ce70afbf59"
+  }
+}

@@ -1,0 +1,105 @@
+name: recordings
+
+# THE SITE RECORDINGS, ATTACHED TO THE RELEASE. The site's page tests replay the session's answers recorded from the wasm
+# codec (tools/contract/run.mjs, wav-contract.mjs). They are build output, not source: git holds only their manifests,
+# and every release tag builds them from its own tree, proves them against those manifests and attaches them to the tag's
+# GitHub release. The site keeps a copy of the manifests, downloads the files by version and checks each sha256.
+#
+# A tag push builds its own tree. workflow_dispatch attaches them to a tag already out — from before the recordings left
+# git (v0.22.1 and older) too: that tag's gate verifies its tracked recordings against the fresh build, and the packing
+# script is taken from the workflow's own commit, since such a tag has none.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the release tag to attach the recordings to (vX.Y.Z)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: recordings-${{ inputs.tag || github.ref_name }}
+
+jobs:
+  recordings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: src
+      - name: The packing script, from this workflow's own commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: tools-head
+          sparse-checkout: tools/contract
+      - name: Install emsdk 6.0.9
+        # As the ci workflow's wasm job: from upstream, pinned on the clone as well as the SDK version.
+        run: |
+          git clone --depth 1 --branch 6.0.9 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install 6.0.9
+          "$HOME/emsdk/emsdk" activate 6.0.9
+          source "$HOME/emsdk/emsdk_env.sh"
+          echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
+          echo "PATH=$PATH"   >> "$GITHUB_ENV"
+      - name: Compiler cache — ccache under emcc, read from the ci workflow's pinned wasm row
+        run: |
+          sudo apt-get install -y -qq ccache >/dev/null
+          {
+            echo "EM_COMPILER_WRAPPER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=4G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE/src"
+            echo "CCACHE_COMPILERCHECK=string:emsdk-6.0.9"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.ccache
+          key: ccache-wasm-modules-pin-${{ github.sha }}
+          restore-keys: ccache-wasm-modules-pin-
+      - name: The native references
+        working-directory: src
+        run: |
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON
+          cmake --build build-native -j "$(nproc)" --target fcore_session felitronics_session_master_abi_tests felitronics_session_master_job_tests
+      - name: The wasm modules (tools/wasm/build.sh)
+        working-directory: src
+        run: |
+          export FELITRONICS_CORE_DIR="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
+          export FELITRONICS_TOML_DIR="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
+          export FELITRONICS_BANDS_DIR="$(sed -n 's/^FELITRONICS_MASTERING_BANDS_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
+          test -n "$FELITRONICS_CORE_DIR" && test -n "$FELITRONICS_TOML_DIR"
+          ./tools/wasm/build.sh
+      - name: Session recordings — native vs wasm, proved against the manifest
+        working-directory: src
+        run: node tools/contract/run.mjs build-native/tools/fcore_session tools/wasm/build/fcsession.node.js
+      - name: WAV contract recording — native vs wasm, proved against its manifest
+        working-directory: src
+        env:
+          FC_SESSION_CONTRACT_TIMEOUT_MS: 900000
+        run: |
+          node tools/contract/wav-contract.mjs build-native/tools/felitronics_session_master_abi_tests \
+            build-native/modules/session/felitronics_session_master_job_tests \
+            tools/wasm/build/fcsession.node.js tools/wasm/build/session-master-job-tests.js \
+            build-native/tools/fcore_session
+      - name: Pack
+        run: node tools-head/tools/contract/pack-recordings.mjs src/tools/contract/recordings out
+      - name: Attach to the tag's release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # The release's notes are the tag's own CHANGELOG.md section.
+            awk -v v="$TAG" '$0 ~ "^## " v "( |$)" {on = 1; next} on && /^## / {exit} on' src/CHANGELOG.md > notes.md
+            test -s notes.md || echo "See CHANGELOG.md." > notes.md
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" out/* --repo "$GITHUB_REPOSITORY" --clobber
