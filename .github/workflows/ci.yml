@@ -536,6 +536,10 @@ jobs:
         core: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["pin","main"]' || '["pin"]') }}
     env:
       CORE_TAG: ${{ matrix.core == 'main' && '-DFELITRONICS_MASTERING_FCORE_TAG=main' || '' }}
+      # The committed recording manifests belong to the pin: they name its version, and every version-keyed id in the
+      # recordings moves with it. Against core's main the two contracts still compare native with wasm on every scenario
+      # and leave the manifests alone — otherwise this row is red every night from the first core release past the pin.
+      CONTRACT_CORE: ${{ matrix.core == 'main' && '--core-main' || '' }}
     steps:
       - uses: actions/checkout@v7
       - name: Install emsdk 6.0.9
@@ -581,7 +585,7 @@ jobs:
           test -n "$FELITRONICS_CORE_DIR" && test -n "$FELITRONICS_TOML_DIR" && test -n "$FELITRONICS_BANDS_DIR"
           ./tools/wasm/build.sh
       - name: Session contract — native vs wasm, all scenarios and refusal controls
-        run: node tools/contract/run.mjs build-native/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
+        run: node tools/contract/run.mjs build-native/tools/fcore_session tools/wasm/build/fcsession.node.js --controls $CONTRACT_CORE
       - name: WAV delivery contract — native vs wasm and recorded site inputs
         env:
           # Per child process (tools/contract/child-timeout.mjs): the wasm session check is the longest, a few minutes
@@ -591,7 +595,7 @@ jobs:
           node tools/contract/wav-contract.mjs build-native/tools/felitronics_session_master_abi_tests \
             build-native/modules/session/felitronics_session_master_job_tests \
             tools/wasm/build/fcsession.node.js tools/wasm/build/session-master-job-tests.js \
-            build-native/tools/fcore_session
+            build-native/tools/fcore_session $CONTRACT_CORE
       - name: Share the pinned session artifact with the native CI rows
         if: matrix.core == 'pin'
         uses: actions/upload-artifact@v4
@@ -1057,11 +1061,13 @@ jobs:
   # pin, same core, and the same strictness: --no-tests=error, so a suite that went missing is red.
   wasm-checked:
     name: wasm-audio checked tier + three-tier parity (core ${{ matrix.core }})
-    # The night's and on demand only: ~50 minutes, the longest row a pull request waited on. A release runs this tier
-    # on kozmo@deb before the tag.
+    # The night's and on demand only: the longest row a pull request waited on. A release runs this tier on kozmo@deb
+    # before the tag. 120 minutes, not 60: hosted runners differ about twice on the same work — on 2026-10-18 one commit
+    # finished here in 44 minutes on one runner and was killed at 56 of 159 tests on another — and the suite outgrew the
+    # ten minutes the old limit left (every night from 10-05 to 10-18 lost a row to it).
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -1090,10 +1096,15 @@ jobs:
           cmake --build build-wasm-checked -j "$(nproc)"
           ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector|session_abi_generation|session_measurement_budget_600s'
       - name: The three parity executables — native and the plain wasm-audio tier
+        # Built against the core the checked build fetched, not a fetch of their own: the night's second row follows
+        # core's main, and main can move between two fetches of one job. On 2026-10-17 the checked build got v0.59.0 and
+        # these two v0.60.0, merged five minutes later, and the query parity read the version-keyed measurementKey apart.
         run: |
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
+          core="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-wasm-checked/CMakeCache.txt)"
+          test -n "$core"
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON -DFELITRONICS_MASTERING_FCORE_DIR="$core"
           cmake --build build-native -j "$(nproc)" --target felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests
-          cmake --preset wasm-audio $CORE_TAG
+          cmake --preset wasm-audio -DFELITRONICS_MASTERING_FCORE_DIR="$core"
           cmake --build --preset wasm-audio -j "$(nproc)" --target felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests
       - name: Owned source measurements — native and both Wasm tiers
         run: |

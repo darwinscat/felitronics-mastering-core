@@ -30,8 +30,11 @@ manifest after an intentional contract change:
 node tools/contract/run.mjs build/tools/fcore_session tools/wasm/build/fcsession.node.js --rebuild-recordings
 ```
 
-Normal verification omits the rebuild flag and fails on a manifest it does not match. `--native-only` runs on a host
-without Emscripten; `--controls` also proves reordered events, corrupted fields and rows,
+Normal verification omits the rebuild flag and fails on a manifest it does not match. Both manifests belong to the
+pinned felitronics-core: they name its version, and the version-keyed ids in the recordings move with it. A build
+against core's main (CI's nightly second row) passes `--core-main` to `run.mjs` and `wav-contract.mjs`: every
+native/wasm comparison runs, the manifests are not compared, no recording is written, and a rebuild is refused.
+`--native-only` runs on a host without Emscripten; `--controls` also proves reordered events, corrupted fields and rows,
 and stale fixtures fail. The wasm modules must be one `tools/wasm/build.sh` run from the sources checked out:
 the check refuses a production module or its `contract-trap/` copy that `contract-modules.sha256` does not name,
 and a stamp made from other sources (`module-stamp.mjs`). `tools/wasm/build.sh` builds the production and checked
