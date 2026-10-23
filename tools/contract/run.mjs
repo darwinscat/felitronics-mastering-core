@@ -183,6 +183,8 @@ async function main() {
     const args = process.argv.slice(2), cli = resolve(args.shift() ?? '');
     const nativeOnly = args.includes('--native-only'), controls = args.includes('--controls');
     const reorder = args.includes('--reorder'), rewrite = args.includes('--rebuild-recordings');
+    const coreMain = args.includes('--core-main');
+    assert.ok(!(coreMain && rewrite), 'the manifest belongs to the pinned core: rebuild it against the pin, not core main');
     const modulePath = nativeOnly ? null : resolve(args.find(a => !a.startsWith('--')) ?? '');
     if (!nativeOnly) checkStamp(modulePath);
     const start = performance.now(); fixtures(); grammarTest(cli);
@@ -199,7 +201,10 @@ async function main() {
         }
         console.log(`contract ${name}: ${nativeOnly ? 'native assertions' : tolerance !== undefined ? `native/wasm within ${tolerance}` : 'byte-identical native/wasm'} (${native.length} bytes)`);
     }
-    if (!nativeOnly && !reorder) {
+    // AGAINST CORE'S MAIN the manifest is not this core's: it names the pinned version, and the version-keyed ids in every
+    // recording move with it. The scenarios above still compared native with wasm; only the pin's manifest is left alone.
+    if (coreMain) console.log('contract recordings: not compared — built against core main, the manifest names the pin');
+    else if (!nativeOnly && !reorder) {
         const versions = {
             components:nativeRun(cli, 'version').toString('utf8').replace(/\r\n/g, '\n').trim().split('\n'),
             configVersion:nativeRun(cli, 'config', 'version').toString('utf8').trim(),

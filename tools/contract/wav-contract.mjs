@@ -13,8 +13,8 @@ import {checkWavRecording} from './wav-recording-check.mjs';
 import {childTimeout} from './child-timeout.mjs';
 
 const [nativeAbi, nativeJob, wasmModule, wasmJob, nativeCli, option] = process.argv.slice(2);
-if (!nativeAbi || !nativeJob || !wasmModule || !wasmJob || !nativeCli || (option && option !== '--rebuild')) {
-    console.error('usage: node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js> <wasm-job-test.js> <fcore_session> [--rebuild]');
+if (!nativeAbi || !nativeJob || !wasmModule || !wasmJob || !nativeCli || (option && option !== '--rebuild' && option !== '--core-main')) {
+    console.error('usage: node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js> <wasm-job-test.js> <fcore_session> [--rebuild | --core-main]');
     process.exit(2);
 }
 const file = new URL('recordings/wav-contract.json', import.meta.url);
@@ -269,10 +269,15 @@ const recording = {
 // written once the manifest matches; the release workflow attaches it to the tag (pack-recordings.mjs).
 const {base64, ...archiveEntry} = recording.contractArchive;
 const manifest = {...recording, contractArchive:archiveEntry};
+// AGAINST CORE'S MAIN the manifest is the pin's — its versions and wasmSha256 name the pinned build — so it is not
+// compared, and neither it nor the recording file is written; the comparisons above ran and the recording is checked here.
+const coreMain = option === '--core-main';
 if (option === '--rebuild') writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
-assert.deepEqual(JSON.parse(readFileSync(manifestFile)), manifest, `stale WAV contract recording; rebuild: ${recording.rebuild}`);
+if (coreMain) console.log('WAV contract manifest: not compared — built against core main, the manifest names the pin');
+else assert.deepEqual(JSON.parse(readFileSync(manifestFile)), manifest, `stale WAV contract recording; rebuild: ${recording.rebuild}`);
 assert.equal(sha(Buffer.from(JSON.stringify(decodeWavRecording(recording)))), sha(archiveBytes),
     `the WAV contract archive does not decode to its responses; rebuild: ${recording.rebuild}`);
-writeFileSync(file, JSON.stringify(recording, null, 2) + '\n');
-console.log(`WAV recording replays ${checkWavRecording(JSON.parse(readFileSync(file)))} codec scenarios without running an engine`);
+const text = JSON.stringify(recording, null, 2) + '\n';
+if (!coreMain) writeFileSync(file, text);
+console.log(`WAV recording replays ${checkWavRecording(JSON.parse(text))} codec scenarios without running an engine`);
 console.log(`WAV contract: native/wasm identical ${recording.wavFnv64}; repeat, release and outcomes verified`);
