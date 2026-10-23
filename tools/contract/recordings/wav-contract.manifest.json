@@ -5,12 +5,12 @@
   "inputSpecSha256": "79b3885fdf8d58e44bc814d391ad16c0ef9a84b5f28f3fbfc77bcaac69313404",
   "inputPcmSha256": "fe6f65b9449f0600f820adf8bae80d9362de73253a4df4befbe7819551fb7010",
   "versions": [
-    "felitronics-mastering-core 0.22.1",
+    "felitronics-mastering-core 0.23.0",
     "felitronics-core 0.61.2",
     "fc_session_abi 17"
   ],
   "codecSchemaSha256": "f84b64123a47bf1472742ca8762955ef946e596ba334c59c93e3919d7f31b2fb",
-  "wasmSha256": "758bd2aafa7fb98ec5261fa587050af6786316a49a3a1f254e21ce9114506611",
+  "wasmSha256": "eec4572b3ed4f8b5aab37a460d8167eabd457b0d46a911bfd9a465c36f3c5d64",
   "wavFnv64": "9a601c4c5e044b00",
   "wavHeaderHex": "5249464624ca080057415645666d7420100000000100020080bb000000650400060018006461746100ca0800",
   "outcomes": [
@@ -73,7 +73,7 @@
   },
   "contractArchive": {
     "codec": "br+base64",
-    "bytes": 97388376,
-    "sha256": "32d984be22dec30ec73fc8eaa190c6fe2829e23add41df23d9fd56d1b48ef48b"
+    "bytes": 97387846,
+    "sha256": "7d90a5358d1ea696731a90b5d0e5ae348f0036b7a513df0a1901c89ce7fe7a96"
   }
 }
