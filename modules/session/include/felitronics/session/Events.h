@@ -34,7 +34,7 @@ struct AnalyzerProgress
 struct Phase
 {
     PhaseName name = PhaseName::Stream;
-    double fraction = 0.0;                  // weighted estimate for the whole job; may move backwards
+    double fraction = 0.0;                  // weighted estimate for the whole job; a master's never moves back, others' may
     std::uint64_t weightsVersion = 0;
     std::uint32_t pass = 0;                 // the human line is "pass N"; no budget in that line
     std::uint32_t totalPasses = 0;          // diagnostic journal only

@@ -329,6 +329,13 @@ void pump()
         {
             if (const auto at = text.find (line); at != std::string::npos) text.erase (at, text.find ('\n', at + 1) - at);
         };
+        // The bar's expected passes (owner, 23.10), after everything below: 4 by hand and 12 for every max mode back to 3,
+        // 7, 6, 6 and 6.
+        replace (engine, "\nexpectedPasses = 4\n", "\nexpectedPasses = 3\n");
+        replace (engine, "\nexpectedPassesMaxClean = 12\n", "\nexpectedPassesMaxClean = 7\n");
+        replace (engine, "\nexpectedPassesMaxDense = 12\n", "\nexpectedPassesMaxDense = 6\n");
+        replace (engine, "\nexpectedPassesMaxExtreme = 12\n", "\nexpectedPassesMaxExtreme = 6\n");
+        replace (engine, "\nexpectedPassesMaxNuke = 12\n", "\nexpectedPassesMaxNuke = 6\n");
         // v0.21.0 (07.10 and 08.10), after v0.20.0: the default target back to allStreaming, the third max
         // mode out (its target row, its budget, its expected passes), the glue's five and the limiter's three by hand out
         // (their domains, ranges, steps and comfort windows).
@@ -542,9 +549,14 @@ void pump()
     const auto cancelledWithoutDamage = eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first));
     std::printf ("event fingerprints, without damage: %016llx %016llx\n",
         (unsigned long long) oneWithoutDamage, (unsigned long long) cancelledWithoutDamage);
-    ok (oneWithoutDamage == 0x62e8614384dd5419ull && cancelledWithoutDamage == 0x1804ac8904cb82c3ull,
+    // The bar's expected passes (owner, 23.10: 4 by hand, 12 for every max mode) and its rule — the renders on from the
+    // wait, a render past the count taking half of what is left, a time estimate's units never under the work done — move
+    // the master's phases alone: their fraction, totalPasses and totalUnits (the config's version restated above). Without
+    // the phases the old and the new code give the same events, e7e7117fe077f1ae / 7162ad71ee0b92fb; these pins were
+    // 62e8614384dd5419 / 1804ac8904cb82c3 before it.
+    ok (oneWithoutDamage == 0x90c9529880a3f938ull && cancelledWithoutDamage == 0x2fc5d2e0505d8af3ull,
         "the damage moves its own job's events, the master's two lines and the config's version alone: without them the "
-        "retained-winner and pass-log pins 62e8614384dd5419 / 1804ac8904cb82c3 hold");
+        "retained-winner and pass-log pins 90c9529880a3f938 / 2fc5d2e0505d8af3 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The max modes (v0.15.0) moved the config's version alone here: with it restated (withoutMax) every pin above holds.
@@ -581,7 +593,9 @@ void pump()
     // row, its budget, its expected passes) move the config's version alone, restated above (26f65dd0dff72c76 /
     // 0dd125250dcb6791 before them); the scenario's master asks no share. The drive ceiling by measurement ([saturation]
     // steerDriveMaxDb 12, 09.10) moves the config's version alone (4d7e59b4a48dc8ae / ba321f6a6122d2a5 before it).
-    ok (eventsHash (one) == 0x7c74778354f32279ull && eventsHash (cancelled) == 0xc4acdbdbf69676e1ull,
+    // The bar's expected passes and its rule (owner, 23.10) move the master's phases and the config's version, as the
+    // pins without the damage above (7c74778354f32279 / c4acdbdbf69676e1 before them).
+    ok (eventsHash (one) == 0x5baf2d59ebc0a73full && eventsHash (cancelled) == 0xa4cdad1d12b3aa41ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

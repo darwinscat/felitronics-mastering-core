@@ -981,17 +981,22 @@ tempo = 337.33
 waveformIndex = 140.0
 excursionsIndex = 450.0
 
-# master: the phases of a master — every landing pass weighs passWeight and the measurement of the delivered file
-#   measureWeight, against expectedPasses passes; a max master's against its mode's own count: 7 for max clean, 6 for
-#   max dense (an owner decision, 06.10).
+# master: the phases of a master, one bar from 0 to 1 that never moves back. A master waiting for what its devices read
+#   moves it by measureWeight against expectedPasses·passWeight + measureWeight; its renders then take 0.8 of the bar
+#   evenly over the passes its loudness mode expects — expectedPasses by hand, its own count for each max mode — and
+#   every pass past the count half of what is left: the bar keeps moving and is 1 only when the master is done.
+#   4 by hand and 12 for every max mode (owner, 23.10; 3, 7 and 6 since 06.10, before the second landing of 09.10,
+#   "cleaner, not louder"): measured on 5 songs (v0.22.1), a manual target takes 1–3 passes (median 2); a max mode with
+#   the page's zone shares 8–12 in all — the landing alone, the landing with the zones and the steering (median 10–11) —
+#   so a max master's bar reached its end early and sat there.
 [progress.master]
 passWeight = 1
 measureWeight = 0.15
-expectedPasses = 3
-expectedPassesMaxClean = 7
-expectedPassesMaxDense = 6
-expectedPassesMaxExtreme = 6
-expectedPassesMaxNuke = 6
+expectedPasses = 4
+expectedPassesMaxClean = 12
+expectedPassesMaxDense = 12
+expectedPassesMaxExtreme = 12
+expectedPassesMaxNuke = 12
 
 # THE BLIND PAIRED PREFERENCE TEST — a development tool, never on a public page: its protocol. Two lanes A / B without
 # labels at equal loudness, "A better / B better / no preference", revealed after the last answer. Nothing here feeds the

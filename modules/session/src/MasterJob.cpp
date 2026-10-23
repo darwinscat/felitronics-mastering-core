@@ -194,6 +194,16 @@ std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) no
     return std::uint32_t (*master.find (key).integer());
 }
 
+double landingBar (double rendered, std::uint32_t expected) noexcept
+{
+    const double e = double (std::max (1u, expected));
+    const double r = std::max (0.0, rendered);
+    if (r <= e) return 0.8 * r / e;
+    double left = 0.2, past = r - e;
+    for (; past >= 1.0 && left > 0.0; past -= 1.0) left *= 0.5;
+    return 1.0 - left * (1.0 - 0.5 * past);
+}
+
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();

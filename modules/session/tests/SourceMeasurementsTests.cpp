@@ -597,6 +597,45 @@ void waitingMaxMasterExpects()
         "a max clean master waiting for tempo expects " + std::to_string (wanted) + " renders ("
             + std::to_string (asked.totalPasses) + " asked, " + std::to_string (stepped.totalPasses) + " waiting)");
 }
+// A WAITING MASTER'S BAR RUNS ONCE (owner, 23.10): the CD master waits for tempo, and its wait moves the bar by its share
+// ([progress.master] measureWeight); its renders go on from there, never back to zero, under 1 until the master is done
+// and exactly 1 then. Before, the start of the renders dropped the bar from the wait's share back to zero.
+void waitingMasterBarRunsOnce()
+{
+    felitronics::test::group ("a waiting master's bar: the wait, then the renders, from 0 to 1 once");
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, frames, rate }, {} });
+    (void) s.apply (command::SetTarget { 2, "cd" });
+    while (s.state() == State::Loaded) (void) s.step (16);
+    const auto job = s.apply (command::Master { 3 }).job;
+    const bool waiting = s.snapshot().view().masterProgress.name == PhaseName::Analyzers;
+    double last = 0.0, waited = 0.0, firstRender = -1.0;
+    bool monotone = true, underOne = true, endsAtOne = false;
+    for (unsigned i = 0; i < 4000000 && job != 0 && s.job() == job; ++i)
+    {
+        (void) s.step (1);
+        for (const auto& e : s.events())
+        {
+            if (e.jobId != job || e.kind != EventKind::Phase) continue;
+            const auto& p = e.payload.phase;
+            monotone = monotone && p.fraction >= last;
+            if (p.name == PhaseName::Final) endsAtOne = p.fraction == 1.0;
+            else underOne = underOne && p.fraction < 1.0;
+            if (p.name == PhaseName::Analyzers) waited = p.fraction;
+            if (p.name == PhaseName::Pass && firstRender < 0.0) firstRender = p.fraction;
+            last = p.fraction;
+        }
+    }
+    ok (job != 0 && waiting && waited > 0.0, "PRECONDITION: the CD master waits for tempo, its wait moving the bar ("
+        + std::to_string (waited) + ")");
+    ok (monotone && firstRender >= waited, "the bar never moves back: the renders start at " + std::to_string (firstRender)
+        + ", where the wait left it (" + std::to_string (waited) + ")");
+    ok (underOne && endsAtOne, "under 1 until the master is done, exactly 1 then");
+}
 void masterWaitsForTempo()
 {
     constexpr unsigned rate = 48000, frames = rate * 12;
@@ -948,7 +987,7 @@ int main()
     fixture (2, 8000, 800, 1, false);
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
-    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); waitingMaxMasterExpects(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
+    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); waitingMaxMasterExpects(); waitingMasterBarRunsOnce(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
     wholeFileWall();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet
