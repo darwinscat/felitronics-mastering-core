@@ -32,8 +32,14 @@ struct Rules;
 // schema only checks it (written, it is false), Config holds no copy of it.
 [[nodiscard]] bool maxCleaner (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // [progress.master]: the renders a master's bar expects in its loudness mode — expectedPasses by hand,
-// expectedPassesMaxClean / expectedPassesMaxDense for the max modes; a waiting master's and a rendering one's alike.
+// expectedPassesMaxClean / MaxDense / MaxExtreme / MaxNuke for the max modes; a waiting master's and a rendering one's alike.
 [[nodiscard]] std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept;
+// THE MASTER'S BAR ON ITS RENDERS (owner, 23.10): `rendered` renders (MasterJob::renderProgress — the passes of both
+// landings and of the steering, counted on, the current one by its walk) of the `expected` ones. They take 0.8 of the bar
+// evenly up to the expected count; each render past it takes half of what is left, spread evenly along its walk. The bar
+// rises with every render and never reaches 1 — that is the master done. Halvings and the four operations alone: every
+// platform draws the same bar.
+[[nodiscard]] double landingBar (double rendered, std::uint32_t expected) noexcept;
 // WHAT ENDED A MAX MODE (MasterReport::maxStop), from the landing alone (v0.16.0: no guard in the loop), in this order: a
 // render above the ceiling; a render over the mode's limiter budget (no render kept it — the same status and binding as
 // a budget that held, told apart by the delivered render's own excess); landed again on [landing.max] floorLufs, which

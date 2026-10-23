@@ -237,9 +237,10 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.input.quietWarningLufs, -40.0) && same (e.input.quietGainOnlyLufs, -55.0),
           "a quiet input: a warning below −40 LUFS, gain and ceiling only below −55");
     need (e.landing.passes == 12, "the landing: one budget of 12 passes");
-    need (e.progress.masterExpectedPasses == 3 && e.progress.masterExpectedPassesMaxClean == 7
-          && e.progress.masterExpectedPassesMaxDense == 6,
-          "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)");
+    need (e.progress.masterExpectedPasses == 4 && e.progress.masterExpectedPassesMaxClean == 12
+          && e.progress.masterExpectedPassesMaxDense == 12 && e.progress.masterExpectedPassesMaxExtreme == 12
+          && e.progress.masterExpectedPassesMaxNuke == 12,
+          "the bar expects 4 renders of a manual master and 12 of every max mode (owner, 23.10)");
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
     need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
@@ -441,11 +442,11 @@ void aDepartureIsNamed()
         { false, "hzMax = 80", "hzMax = 81", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
-        { false, "expectedPasses = 3", "expectedPasses = 4", "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)" },
-        { false, "expectedPassesMaxClean = 7", "expectedPassesMaxClean = 6",
-          "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)" },
-        { false, "expectedPassesMaxDense = 6", "expectedPassesMaxDense = 7",
-          "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)" },
+        { false, "expectedPasses = 4", "expectedPasses = 3", "the bar expects 4 renders of a manual master and 12 of every max mode (owner, 23.10)" },
+        { false, "expectedPassesMaxClean = 12", "expectedPassesMaxClean = 7", "the bar expects 4 renders of a manual master and 12 of every max mode (owner, 23.10)" },
+        { false, "expectedPassesMaxDense = 12", "expectedPassesMaxDense = 6", "the bar expects 4 renders of a manual master and 12 of every max mode (owner, 23.10)" },
+        { false, "expectedPassesMaxExtreme = 12", "expectedPassesMaxExtreme = 6", "the bar expects 4 renders of a manual master and 12 of every max mode (owner, 23.10)" },
+        { false, "expectedPassesMaxNuke = 12", "expectedPassesMaxNuke = 6", "the bar expects 4 renders of a manual master and 12 of every max mode (owner, 23.10)" },
         { false, "onSourceGate = true", "onSourceGate = false", "the landing lands the level on the source's gate (owner, 04.10)" },
         { false, "clean = { budgetDb = 0.5 }", "clean = { budgetDb = 0.75 }",
           "max clean: the limiter's budget 0.5 dB, about −13 LUFS, a little above streaming (owner, 04.10, by ear)" },

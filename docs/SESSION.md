@@ -1015,14 +1015,22 @@ Every completed unit publishes a phase. The source's `Analyzers` phase moves by 
 weights of the analyzers that ended and the read share of the current one, against the sum of all nine — lowEnd120 (the
 120 Hz run, and the infra-low run, the same geometry at another crossover), lowEnd150, forensics, stereo, crest, hum,
 stereoBursts, tempo; so a 0.13 s stereo pass moves the bar a sliver and the 3 s crest a long stretch. The live
-`Stream`/`Report` phases keep their own fractions. Master passes use `passWeight` against `expectedPasses * passWeight + measureWeight`; remeasurement
-finishes at one. A max master's bar expects its mode's renders, `expectedPassesMaxClean` / `expectedPassesMaxDense`
-(`[progress.master]`). A max master pulled up to its floor keeps one record across both landings: the first landing's
-passes stay in its pass log ahead of the floor landing's, and its pass number, render count and bar run on across the
+`Stream`/`Report` phases keep their own fractions. A master's bar runs once from 0 to 1 and never moves back (owner,
+23.10). A master waiting for what its devices read moves it by its wait: `measureWeight` against
+`expectedPasses * passWeight + measureWeight`. Its renders go on from there (`detail::landingBar`): they take 0.8 of the
+bar evenly over the renders its loudness mode expects (`[progress.master]`: `expectedPasses` 4 by hand,
+`expectedPassesMaxClean` / `MaxDense` / `MaxExtreme` / `MaxNuke` 12 each), and each render past that count takes half of
+what is left, spread along its walk — 12 of 12 at 0.8, 13 at 0.9, 14 at 0.95 — so the bar keeps moving and stays under
+1. Once the search and its certificate have ended it stands at 0.8 at least; it is 1 only at the master's end. The count
+runs over everything the master renders: a max master pulled up to its floor, or a max master with the zones (the
+landing without the wishes, then the zones' landing and its steering), keeps one record across both landings: the first
+landing's passes stay in its pass log ahead of the second's, and its pass number, render count and bar run on across the
 switch. An as-is or peaks-only delivery moves by its own walks: the copy; each render (the rate conversion, the gain,
-the check), the first render to 0.8 and a correction render to 0.9. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
-estimates; the interface permits them to move backwards. The human pass label uses only `pass`; `totalPasses` belongs
-to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
+the check), the first render to 0.8 and a correction render to 0.9. `weightsVersion` is the config's complete version, which includes progress weights. Other
+fractions are estimates; the interface permits them to move backwards. The human pass label uses only `pass`;
+`totalPasses` belongs to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's
+time estimate: a rendering master's total is one render's units times its expected renders, and never less than the
+units done and one render more, so before the end some work is always left.
 `stepFraction` (v0.14.0) is the current walk over the file, 0..1, a new count for every walk: the measurement's stream;
 a master's source statistics, each landing pass (its own units), the delivered render's check, the crest's impact render
 and the cost's read (all `Pass`), and the damage job's two walks, `Reference` (both chains' loudness) and `Damage`

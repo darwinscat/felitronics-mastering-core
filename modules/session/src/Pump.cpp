@@ -509,7 +509,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     ++units;
                     continue;
                 }
+                // ONE BAR (owner, 23.10): the renders go on from where the wait left it, never from zero again.
+                const double waited = masterProgress_.fraction;
                 startMaster (plan);
+                masterProgress_.fraction = waited;
                 if (! planInputs (project_).needlesCurrent) requestNeedles();
                 event.payload.phase = masterProgress_;
                 emit (event);
@@ -523,17 +526,15 @@ Stepped Session::step (std::uint32_t budget) noexcept
             ++masterUnit_;
             const bool end = outcome != mastering::StepResult::More;
             const auto expectedRenders = delivery ? 0u : expectedIn (masterJob_->mode);
-            const auto total = std::uint32_t (std::min<std::uint64_t> (
-                4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u)
-                    * std::max (1u, expectedRenders)));
+            // The work units a shell's time estimate counts against: the expected renders' — and past them one render's
+            // more than the units done, so before the end some work is always left (owner, 23.10).
+            const std::uint64_t perRender = source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u;
+            const auto total = std::uint32_t (std::min<std::uint64_t> (4294967295u, std::max (
+                perRender * std::max (1u, expectedRenders), std::uint64_t (masterUnit_) + (end ? 0u : perRender))));
             double fraction = masterProgress_.fraction;
             if (! delivery && ! end)
             {
-                const double expected = double (std::max (1u, expectedRenders));
-                const double rendered = masterJob_->renderProgress();
-                const double scaled = rendered <= expected ? 0.8 * rendered / expected
-                    : 1.0 - 0.2 * expected / rendered;
-                fraction = std::max (fraction, scaled);
+                fraction = std::max (fraction, detail::landingBar (masterJob_->renderProgress(), expectedRenders));
                 // Once the search and its certificate have ended, leave only the fixed 20% completion reserve.
                 if (! masterJob_->search.active()) fraction = std::max (fraction, 0.8);
             }

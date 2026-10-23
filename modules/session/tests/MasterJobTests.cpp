@@ -1139,8 +1139,45 @@ void maxFloorRecord()
     ok (switched && floorSecond > atSwitch, "its bar moves with the floor landing's first render ("
         + std::to_string (atSwitch) + " -> " + std::to_string (floorSecond) + ")");
 }
+// THE BAR PAST ITS EXPECTATION (owner, 23.10): a master's renders take 0.8 of its bar evenly up to the count its mode
+// expects, and each render past that count half of what is left, spread along its walk — the bar rises with every render
+// and never reaches 1, which is the master done. Before, a render past the count took 1/(count + k) of what was left
+// (1 − 0.2·count/renders): a max master past its 7 renders crept from 0.8 and sat there.
+void landingBarPastItsExpectation()
+{
+    felitronics::test::group ("the master's bar: 0.8 evenly over the expected renders, then half of what is left a render");
+    const auto near = [] (double a, double b) { return std::fabs (a - b) < 1e-12; };
+    ok (near (detail::landingBar (0.0, 12), 0.0) && near (detail::landingBar (6.0, 12), 0.4)
+            && near (detail::landingBar (12.0, 12), 0.8) && near (detail::landingBar (2.0, 4), 0.4)
+            && near (detail::landingBar (4.0, 4), 0.8),
+        "within the expectation the renders take 0.8 of the bar evenly: 6 of 12 at 0.4, 2 of 4 at 0.4, the count at 0.8");
+    char seen[96];
+    std::snprintf (seen, sizeof seen, "%.6f %.6f %.6f %.6f", detail::landingBar (13.0, 12), detail::landingBar (14.0, 12),
+                   detail::landingBar (12.5, 12), detail::landingBar (5.0, 4));
+    ok (near (detail::landingBar (13.0, 12), 0.9) && near (detail::landingBar (14.0, 12), 0.95)
+            && near (detail::landingBar (15.0, 12), 0.975) && near (detail::landingBar (12.5, 12), 0.85)
+            && near (detail::landingBar (13.5, 12), 0.925) && near (detail::landingBar (5.0, 4), 0.9),
+        std::string ("past it each render takes half of what is left, evenly along its walk: 13, 14, 12.5 of 12 and 5 of 4 at ")
+            + seen + " (want 0.9, 0.95, 0.85, 0.9)");
+    bool rising = true, underOne = true;
+    for (const std::uint32_t expected : { 1u, 4u, 12u })
+    {
+        double previous = -1.0;
+        for (std::uint32_t step = 0; step <= 64u * (expected + 32u); ++step)
+        {
+            const double bar = detail::landingBar (double (step) / 64.0, expected);
+            rising = rising && bar > previous;
+            underOne = underOne && bar < 1.0;
+            previous = bar;
+        }
+    }
+    ok (rising && underOne, "from no render to 32 past the expectation (the solver's log holds 32), a 64th of a render apiece, the bar "
+        "rises at every step and stays under 1");
+}
+
 int main()
 {
+    landingBarPastItsExpectation();
     damageResampler();
     manualBudgetResolution();
     glueAtFullMix();

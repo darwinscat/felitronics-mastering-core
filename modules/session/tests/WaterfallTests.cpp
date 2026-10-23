@@ -18,6 +18,7 @@
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -589,6 +590,58 @@ void convergence()
 }
 
 //==============================================================================
+// ONE BAR FOR A MAX MASTER WITH THE ZONES (owner, 23.10): it lands without the wishes first, then the zones, and steers —
+// one bar and one pass count over all of it. Its renders, more than the 7 the bar expected of max clean before, are within
+// the 12 it expects now: the bar stays under the landing's end, 0.8, for the whole search; it never moves back, the
+// pass number runs on across the switch, and the bar is under 1 until the master is done and exactly 1 then.
+void oneBarForTheZones()
+{
+    felitronics::test::group ("one bar for a max master with the zones: both landings and the steering, 0 to 1 once");
+    const auto pcm = fixture();
+    auto made = loaded (pcm, "maxClean");
+    if (! made) { ok (false, "PRECONDITION: a measured session"); return; }
+    Session& s = *made;
+    const auto job = editShares (s, 10, 0.2, 0.3, 0.2) ? s.apply (command::Master { 20 }).job : JobId {};
+    const auto expected = detail::expectedPasses (detail::rules().engine, LoudnessMode::MaxClean);
+    double last = 0.0, searchTop = 0.0;
+    std::uint32_t lastPass = 0, alonePasses = 0, firstZonesPass = 0, renders = 0, units = 0, ofUnits = 0;
+    bool monotone = true, underOne = true, endsAtOne = false, switched = false, unitsLeft = true;
+    for (unsigned i = 0; i < 4000000 && job != 0 && s.job() == job; ++i)
+    {
+        (void) s.step (1);
+        const auto* j = detail::Inspector::masterJob (s);
+        if (j && j->cleanDone && ! switched) { switched = true; alonePasses = j->floorFirstPasses; }
+        const bool searching = j && j->search.active();
+        for (const auto& e : s.events())
+        {
+            if (e.jobId != job || e.kind != EventKind::Phase) continue;
+            const auto& p = e.payload.phase;
+            monotone = monotone && p.fraction >= last && p.pass >= lastPass;
+            if (p.name == PhaseName::Final) endsAtOne = p.fraction == 1.0;
+            else { underOne = underOne && p.fraction < 1.0; unitsLeft = unitsLeft && p.completedUnits < p.totalUnits; }
+            if (searching) searchTop = std::max (searchTop, p.fraction);
+            if (switched && firstZonesPass == 0 && p.pass > alonePasses) firstZonesPass = p.pass;
+            last = p.fraction; lastPass = p.pass; renders = std::max (renders, p.pass);
+            if (p.name == PhaseName::Pass) { units = p.completedUnits; ofUnits = p.totalUnits; }
+        }
+    }
+    std::printf ("        one bar: %u renders, %u of %u work units at the last render\n", renders, units, ofUnits);
+    const auto* k = s.masters().empty() ? nullptr : &s.masters().back();
+    ok (job != 0 && k && k->id == job && switched && alonePasses > 0 && renders > 7u && renders <= expected,
+        "PRECONDITION: the master lands without the wishes (" + std::to_string (alonePasses) + " renders), then the zones: "
+            + std::to_string (renders) + " renders in all, over the old 7 and within the " + std::to_string (expected)
+            + " expected");
+    ok (searchTop < 0.8, "within its expected renders the bar stays under the landing's end, 0.8, for the whole search ("
+        + std::to_string (searchTop) + ")");
+    ok (monotone && firstZonesPass == alonePasses + 1u,
+        "the bar and the pass number never move back; the zones' first render is number " + std::to_string (firstZonesPass)
+            + ", after the landing without the wishes' " + std::to_string (alonePasses));
+    ok (underOne && endsAtOne, "under 1 until the master is done, exactly 1 then");
+    ok (unitsLeft, "and a shell's time estimate always has work left before the end: the work units done stay under the "
+        "total (" + std::to_string (units) + " of " + std::to_string (ofUnits) + " at the last render)");
+}
+
+//==============================================================================
 // CLEANER, NOT LOUDER: a max mode with a wish lands the master without the wishes first on its budget, then the zones
 // at that loudness — the delivered master within toleranceLu of it. With `cleaner = false` written for the mode (a test
 // config), the master's plan lands the zones on the mode's budget in one landing; the key's one reader says so.
@@ -953,6 +1006,7 @@ int main()
     cutUnderStep();
     metOnTheSteeringsTotal();
     convergence();
+    oneBarForTheZones();
     cleaner();
     twoClippers();
     needlesAfterStartCut();
